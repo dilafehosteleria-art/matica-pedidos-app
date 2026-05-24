@@ -2,9 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { DELIVERY_WINDOW } from "@/lib/constants";
 import { toDateInputValue } from "@/lib/format";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
-import type { ProductType } from "@/lib/types";
+import type { OrderStatus, ProductType } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
+
+const PAYMENT_REQUIRED = false;
 
 type IncomingOrder = {
   customer?: {
@@ -96,7 +98,8 @@ export async function POST(request: NextRequest) {
     .map((item) => ({
       product_id: item.product_id as string,
       quantity: Math.min(Math.max(1, Number(item.quantity ?? 1)), 20),
-      metadata: item.metadata ?? {}
+      metadata: item.metadata ?? {},
+      supplement_total: Math.min(Math.max(0, Number(item.metadata?._supplement_total ?? 0)), 20)
     }));
 
   if (!normalizedItems.length) {
@@ -178,8 +181,13 @@ export async function POST(request: NextRequest) {
     }
 
     const basePrice = Number(product.base_price);
-    const lineSubtotal = Number((basePrice * item.quantity).toFixed(2));
+    const unitPrice = Number((basePrice + item.supplement_total).toFixed(2));
+    const lineSubtotal = Number((unitPrice * item.quantity).toFixed(2));
     const possibleSubsidy = subsidyByType.get(product.product_type) ?? 0;
+    const displayName =
+      item.metadata.display_name?.trim() && item.metadata.display_name.length <= 80
+        ? item.metadata.display_name.trim()
+        : product.name;
     const lineSubsidy =
       possibleSubsidy > 0 && !priorSubsidyUsed && !subsidyApplied
         ? Number(Math.min(possibleSubsidy, lineSubtotal).toFixed(2))
@@ -195,9 +203,9 @@ export async function POST(request: NextRequest) {
 
     return {
       product_id: product.id,
-      name: product.name,
+      name: displayName,
       quantity: item.quantity,
-      unit_price: basePrice,
+      unit_price: unitPrice,
       base_price: basePrice,
       subsidy_amount: lineSubsidy,
       total_price: lineTotal,
@@ -206,6 +214,7 @@ export async function POST(request: NextRequest) {
   });
 
   const total = Number((subtotal - subsidyTotal).toFixed(2));
+  const initialStatus: OrderStatus = PAYMENT_REQUIRED ? "pendiente_pago" : "nuevo";
 
   const { data: order, error: orderError } = await supabase
     .from("orders")
@@ -216,7 +225,7 @@ export async function POST(request: NextRequest) {
       customer_name: customerName,
       customer_email: customerEmail,
       customer_phone: customerPhone,
-      status: "nuevo",
+      status: initialStatus,
       subtotal,
       subsidy_total: subsidyTotal,
       total,

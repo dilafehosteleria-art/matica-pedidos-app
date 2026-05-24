@@ -7,6 +7,7 @@ import { formatCurrency, formatTime } from "@/lib/format";
 import type { AdminOrder, OrderStatus } from "@/lib/types";
 
 const COLUMNS: { status: OrderStatus; title: string }[] = [
+  { status: "pendiente_pago", title: "Pendiente pago" },
   { status: "nuevo", title: "Nuevos" },
   { status: "preparando", title: "En preparación" },
   { status: "listo", title: "Listos" },
@@ -15,6 +16,7 @@ const COLUMNS: { status: OrderStatus; title: string }[] = [
 ];
 
 const STATUS_OPTIONS: { status: OrderStatus; label: string }[] = [
+  { status: "pendiente_pago", label: "Pendiente pago" },
   { status: "nuevo", label: "Nuevo" },
   { status: "preparando", label: "En preparación" },
   { status: "listo", label: "Listo" },
@@ -94,7 +96,7 @@ function OrdersBoard({ pin, clearPin }: { pin: string; clearPin: () => void }) {
         acc[column.status] = orders.filter((order) => order.status === column.status);
         return acc;
       },
-      { nuevo: [], preparando: [], listo: [], entregado: [], cancelado: [] }
+      { pendiente_pago: [], nuevo: [], preparando: [], listo: [], entregado: [], cancelado: [] }
     );
   }, [orders]);
 
@@ -130,7 +132,7 @@ function OrdersBoard({ pin, clearPin }: { pin: string; clearPin: () => void }) {
           <Loader2 className="h-7 w-7 animate-spin text-matica-green" />
         </div>
       ) : (
-        <div className="grid gap-4 lg:grid-cols-2 2xl:grid-cols-5">
+        <div className="grid gap-4 lg:grid-cols-2 2xl:grid-cols-6">
           {COLUMNS.map((column) => (
             <section key={column.status} className="rounded-lg border border-matica-line bg-white p-3">
               <div className="mb-3 flex items-center justify-between gap-2">

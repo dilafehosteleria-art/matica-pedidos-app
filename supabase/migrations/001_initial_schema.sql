@@ -74,7 +74,7 @@ create table if not exists public.orders (
   customer_email text not null,
   customer_phone text not null,
   status text not null default 'nuevo' check (
-    status in ('nuevo', 'preparando', 'listo', 'entregado', 'cancelado')
+    status in ('pendiente_pago', 'nuevo', 'preparando', 'listo', 'entregado', 'cancelado')
   ),
   subtotal numeric(10, 2) not null default 0,
   subsidy_total numeric(10, 2) not null default 0,

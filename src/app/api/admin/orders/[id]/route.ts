@@ -5,7 +5,7 @@ import type { OrderStatus } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
-const VALID_STATUSES: OrderStatus[] = ["nuevo", "preparando", "listo", "entregado", "cancelado"];
+const VALID_STATUSES: OrderStatus[] = ["pendiente_pago", "nuevo", "preparando", "listo", "entregado", "cancelado"];
 
 export async function PATCH(
   request: NextRequest,

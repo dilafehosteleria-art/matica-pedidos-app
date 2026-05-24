@@ -7,6 +7,7 @@ export type ProductType =
   | "other";
 
 export type OrderStatus =
+  | "pendiente_pago"
   | "nuevo"
   | "preparando"
   | "listo"
