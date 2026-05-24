@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { isOrderWindowOpen } from "@/lib/schedule";
+import { DELIVERY_WINDOW } from "@/lib/constants";
+import { toDateInputValue } from "@/lib/format";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
+import type { ProductType } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -19,15 +21,29 @@ type IncomingOrder = {
   notes?: string;
 };
 
+type SupabaseProduct = {
+  id: string;
+  name: string;
+  base_price: number | string;
+  product_type: ProductType;
+};
+
+type SubsidyRule = {
+  product_type: ProductType;
+  subsidy_amount: number | string;
+};
+
+type ExistingSubsidyOrder = {
+  created_at: string;
+  status: string;
+  order_items: { subsidy_amount: number | string }[] | null;
+};
+
 function badRequest(message: string, status = 400) {
   return NextResponse.json({ error: message }, { status });
 }
 
 export async function POST(request: NextRequest) {
-  if (!isOrderWindowOpen()) {
-    return badRequest("Los pedidos están disponibles de lunes a jueves de 09:30 a 12:30.", 403);
-  }
-
   const supabase = getSupabaseServerClient();
 
   if (!supabase) {
@@ -46,29 +62,201 @@ export async function POST(request: NextRequest) {
     return badRequest("El carrito está vacío.");
   }
 
-  const payload = {
-    company_slug: "bureau-veritas",
-    customer: {
-      name: customer.name.trim(),
-      email: customer.email.trim().toLowerCase(),
-      phone: customer.phone.trim(),
-      company_branch_id: customer.company_branch_id
-    },
-    items: items.map((item) => ({
-      product_id: item.product_id,
-      quantity: Math.max(1, Number(item.quantity ?? 1)),
-      metadata: item.metadata ?? {}
-    })),
-    notes: body.notes?.trim() ?? ""
-  };
+  const customerName = customer.name.trim();
+  const customerEmail = customer.email.trim().toLowerCase();
+  const customerPhone = customer.phone.trim();
+  const companyBranchId = customer.company_branch_id;
+  const notes = body.notes?.trim() ?? "";
 
-  const { data, error } = await supabase.rpc("submit_b2b_order", {
-    order_payload: payload
-  });
+  const { data: company, error: companyError } = await supabase
+    .from("companies")
+    .select("id")
+    .eq("slug", "bureau-veritas")
+    .eq("active", true)
+    .maybeSingle();
 
-  if (error) {
-    return badRequest(error.message);
+  if (companyError || !company) {
+    return badRequest("Empresa Bureau Veritas no encontrada.");
   }
 
-  return NextResponse.json({ order: data });
+  const { data: branch, error: branchError } = await supabase
+    .from("company_branches")
+    .select("id")
+    .eq("id", companyBranchId)
+    .eq("company_id", company.id)
+    .eq("active", true)
+    .maybeSingle();
+
+  if (branchError || !branch) {
+    return badRequest("Empresa/sociedad no válida.");
+  }
+
+  const normalizedItems = items
+    .filter((item) => item.product_id)
+    .map((item) => ({
+      product_id: item.product_id as string,
+      quantity: Math.min(Math.max(1, Number(item.quantity ?? 1)), 20),
+      metadata: item.metadata ?? {}
+    }));
+
+  if (!normalizedItems.length) {
+    return badRequest("El carrito está vacío.");
+  }
+
+  const productIds = Array.from(new Set(normalizedItems.map((item) => item.product_id)));
+  const { data: products, error: productsError } = await supabase
+    .from("products")
+    .select("id,name,base_price,product_type")
+    .in("id", productIds)
+    .eq("active", true)
+    .eq("sold_out", false);
+
+  if (productsError) {
+    return badRequest(productsError.message);
+  }
+
+  const productMap = new Map((products as SupabaseProduct[] | null)?.map((product) => [product.id, product]) ?? []);
+
+  if (productMap.size !== productIds.length) {
+    return badRequest("Algún producto del carrito ya no está disponible.");
+  }
+
+  const { data: subsidyRules, error: subsidyRulesError } = await supabase
+    .from("subsidy_rules")
+    .select("product_type,subsidy_amount")
+    .eq("company_id", company.id)
+    .eq("active", true);
+
+  if (subsidyRulesError) {
+    return badRequest(subsidyRulesError.message);
+  }
+
+  const subsidyByType = new Map(
+    ((subsidyRules as SubsidyRule[] | null) ?? []).map((rule) => [rule.product_type, Number(rule.subsidy_amount)])
+  );
+
+  const recentLimit = new Date(Date.now() - 36 * 60 * 60 * 1000).toISOString();
+  const today = toDateInputValue();
+  const { data: existingOrders, error: subsidyUsageError } = await supabase
+    .from("orders")
+    .select("created_at,status,order_items(subsidy_amount)")
+    .eq("company_id", company.id)
+    .eq("customer_email", customerEmail)
+    .gte("created_at", recentLimit);
+
+  if (subsidyUsageError) {
+    return badRequest(subsidyUsageError.message);
+  }
+
+  const priorSubsidyUsed = ((existingOrders as ExistingSubsidyOrder[] | null) ?? []).some((order) => {
+    const sameMadridDay = toDateInputValue(new Date(order.created_at)) === today;
+    const hasSubsidy = (order.order_items ?? []).some((item) => Number(item.subsidy_amount) > 0);
+
+    return sameMadridDay && order.status !== "cancelado" && hasSubsidy;
+  });
+
+  await supabase.from("customers").upsert(
+    {
+      name: customerName,
+      email: customerEmail,
+      phone: customerPhone,
+      company_id: company.id,
+      company_branch_id: companyBranchId
+    },
+    { onConflict: "company_id,email" }
+  );
+
+  let subtotal = 0;
+  let subsidyTotal = 0;
+  let subsidyApplied = false;
+
+  const orderItems = normalizedItems.map((item) => {
+    const product = productMap.get(item.product_id);
+
+    if (!product) {
+      throw new Error("Producto no disponible.");
+    }
+
+    const basePrice = Number(product.base_price);
+    const lineSubtotal = Number((basePrice * item.quantity).toFixed(2));
+    const possibleSubsidy = subsidyByType.get(product.product_type) ?? 0;
+    const lineSubsidy =
+      possibleSubsidy > 0 && !priorSubsidyUsed && !subsidyApplied
+        ? Number(Math.min(possibleSubsidy, lineSubtotal).toFixed(2))
+        : 0;
+    const lineTotal = Number((lineSubtotal - lineSubsidy).toFixed(2));
+
+    if (lineSubsidy > 0) {
+      subsidyApplied = true;
+    }
+
+    subtotal = Number((subtotal + lineSubtotal).toFixed(2));
+    subsidyTotal = Number((subsidyTotal + lineSubsidy).toFixed(2));
+
+    return {
+      product_id: product.id,
+      name: product.name,
+      quantity: item.quantity,
+      unit_price: basePrice,
+      base_price: basePrice,
+      subsidy_amount: lineSubsidy,
+      total_price: lineTotal,
+      metadata: item.metadata
+    };
+  });
+
+  const total = Number((subtotal - subsidyTotal).toFixed(2));
+
+  const { data: order, error: orderError } = await supabase
+    .from("orders")
+    .insert({
+      customer_id: null,
+      company_id: company.id,
+      company_branch_id: companyBranchId,
+      customer_name: customerName,
+      customer_email: customerEmail,
+      customer_phone: customerPhone,
+      status: "nuevo",
+      subtotal,
+      subsidy_total: subsidyTotal,
+      total,
+      notes,
+      delivery_window: DELIVERY_WINDOW
+    })
+    .select("id")
+    .single();
+
+  if (orderError || !order) {
+    return badRequest(orderError?.message ?? "No se pudo crear el pedido.");
+  }
+
+  const { error: orderItemsError } = await supabase.from("order_items").insert(
+    orderItems.map((item) => ({
+      ...item,
+      order_id: order.id
+    }))
+  );
+
+  if (orderItemsError) {
+    await supabase
+      .from("orders")
+      .update({
+        status: "cancelado",
+        notes: `${notes ? `${notes}\n` : ""}Error creando líneas: ${orderItemsError.message}`
+      })
+      .eq("id", order.id);
+
+    return badRequest(orderItemsError.message);
+  }
+
+  return NextResponse.json({
+    order: {
+      id: order.id,
+      subtotal,
+      subsidy_total: subsidyTotal,
+      total,
+      subsidy_applied: subsidyApplied,
+      prior_subsidy_used: priorSubsidyUsed
+    }
+  });
 }

@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  AlertCircle,
   CheckCircle2,
   Clock,
   Leaf,
@@ -15,7 +14,6 @@ import { useEffect, useMemo, useState } from "react";
 import { DELIVERY_WINDOW } from "@/lib/constants";
 import { formatCurrency } from "@/lib/format";
 import { calculateCartTotals, getSubsidyAmount } from "@/lib/pricing";
-import { getOrderWindowState } from "@/lib/schedule";
 import type { CartItem, CustomerForm, DailyMenu, Product, PublicData } from "@/lib/types";
 
 const STORAGE_KEY = "matica:bureau-veritas:customer";
@@ -123,7 +121,6 @@ export function BureauVeritasOrderApp() {
   const [choices, setChoices] = useState<MenuChoiceState>({});
   const [subsidyAlreadyUsed, setSubsidyAlreadyUsed] = useState(false);
   const [submitState, setSubmitState] = useState<SubmitState>({ status: "idle" });
-  const [windowState, setWindowState] = useState(getOrderWindowState());
   const [customerLoaded, setCustomerLoaded] = useState(false);
 
   useEffect(() => {
@@ -148,14 +145,6 @@ export function BureauVeritasOrderApp() {
           message: "No se pudo cargar la carta. Revisa la conexión e intenta de nuevo."
         });
       });
-  }, []);
-
-  useEffect(() => {
-    const timer = window.setInterval(() => {
-      setWindowState(getOrderWindowState());
-    }, 30000);
-
-    return () => window.clearInterval(timer);
   }, []);
 
   useEffect(() => {
@@ -214,6 +203,12 @@ export function BureauVeritasOrderApp() {
   const totals = useMemo(() => calculateCartTotals(cart, subsidyAlreadyUsed), [cart, subsidyAlreadyUsed]);
   const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
   const hasSubsidizedItem = cart.some((item) => getSubsidyAmount(item.product_type) > 0);
+  const canConfirmOrder =
+    Boolean(customer.name.trim()) &&
+    Boolean(customer.email.trim()) &&
+    Boolean(customer.phone.trim()) &&
+    Boolean(customer.company_branch_id) &&
+    cart.length > 0;
 
   function updateCustomer(field: keyof CustomerForm, value: string) {
     setCustomer((current) => ({ ...current, [field]: value }));
@@ -260,11 +255,6 @@ export function BureauVeritasOrderApp() {
 
   async function submitOrder() {
     setSubmitState({ status: "idle" });
-
-    if (!windowState.open) {
-      setSubmitState({ status: "error", message: windowState.message });
-      return;
-    }
 
     if (!customer.name.trim() || !customer.email.trim() || !customer.phone.trim() || !customer.company_branch_id) {
       setSubmitState({ status: "error", message: "Completa tus datos antes de confirmar." });
@@ -339,15 +329,11 @@ export function BureauVeritasOrderApp() {
 
       <div className="mx-auto grid max-w-7xl gap-5 px-4 py-5 sm:px-6 lg:grid-cols-[minmax(0,1fr)_380px] lg:px-8">
         <section className="space-y-5">
-          <div
-            className={`flex items-start gap-3 rounded-lg border px-4 py-3 ${
-              windowState.open
-                ? "border-matica-green bg-white text-matica-green"
-                : "border-amber-200 bg-amber-50 text-amber-900"
-            }`}
-          >
-            {windowState.open ? <CheckCircle2 className="mt-0.5 h-5 w-5" /> : <AlertCircle className="mt-0.5 h-5 w-5" />}
-            <p className="text-sm font-bold">{windowState.message}</p>
+          <div className="flex items-start gap-3 rounded-lg border border-matica-green bg-white px-4 py-3 text-matica-green">
+            <CheckCircle2 className="mt-0.5 h-5 w-5" />
+            <p className="text-sm font-bold">
+              Pedidos habilitados para el piloto. Completa tus datos y elige al menos un producto para confirmar.
+            </p>
           </div>
 
           <section className="rounded-lg border border-matica-line bg-white p-4 shadow-soft">
@@ -550,7 +536,7 @@ export function BureauVeritasOrderApp() {
 
           <button
             className="matica-focus mt-4 flex min-h-14 w-full items-center justify-center gap-2 rounded-lg bg-matica-green px-4 py-3 text-base font-black text-white disabled:cursor-not-allowed disabled:bg-matica-ink/30"
-            disabled={submitState.status === "loading" || !cart.length || !windowState.open}
+            disabled={submitState.status === "loading" || !canConfirmOrder}
             onClick={submitOrder}
           >
             {submitState.status === "loading" ? <Loader2 className="h-5 w-5 animate-spin" /> : <CheckCircle2 className="h-5 w-5" />}
