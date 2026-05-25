@@ -53,7 +53,8 @@ function ProductsEditor({ pin, clearPin }: { pin: string; clearPin: () => void }
             sold_out: product.sold_out,
             base_price: Number(product.base_price),
             customer_price: Number(product.customer_price),
-            description: product.description
+            description: product.description,
+            image_url: product.image_url
           }
         ])
       )
@@ -244,6 +245,15 @@ function ProductEditorCard({
           Guardar
         </button>
       </div>
+      <label className="mt-3 block space-y-1">
+        <span className="text-sm font-bold text-matica-ink/70">URL imagen</span>
+        <input
+          className="matica-focus w-full rounded-lg border border-matica-line px-3 py-3"
+          value={draft.image_url ?? ""}
+          onChange={(event) => onChange("image_url", event.target.value || null)}
+          placeholder="https://..."
+        />
+      </label>
     </article>
   );
 }

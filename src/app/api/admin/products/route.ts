@@ -59,7 +59,8 @@ export async function PATCH(request: NextRequest) {
       sold_out: body.sold_out,
       base_price: Number(body.base_price),
       customer_price: Number(body.customer_price),
-      description: body.description
+      description: body.description,
+      image_url: body.image_url?.trim() ? body.image_url.trim() : null
     })
     .eq("id", body.id)
     .select("*")

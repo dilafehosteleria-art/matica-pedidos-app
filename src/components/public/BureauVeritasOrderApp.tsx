@@ -1,8 +1,12 @@
 "use client";
 
 import {
+  ArrowLeft,
+  Building2,
   CheckCircle2,
   Clock,
+  CreditCard,
+  ImageIcon,
   Leaf,
   Loader2,
   Minus,
@@ -16,7 +20,7 @@ import { useEffect, useMemo, useState } from "react";
 import { DELIVERY_WINDOW } from "@/lib/constants";
 import { formatCurrency } from "@/lib/format";
 import { calculateCartTotals, getSubsidyAmount } from "@/lib/pricing";
-import type { CartItem, CustomerForm, DailyMenu, Product, PublicData } from "@/lib/types";
+import type { CartItem, CompanyBranch, CustomerForm, DailyMenu, Product, PublicData } from "@/lib/types";
 
 const STORAGE_KEY = "matica:bureau-veritas:customer";
 
@@ -34,6 +38,7 @@ type SubmitState =
   | { status: "error"; message: string };
 
 type MenuChoiceState = Record<string, Record<string, string>>;
+type PublicStep = "catalog" | "checkout" | "confirmation";
 
 type SectionKind =
   | "daily_menu"
@@ -471,8 +476,13 @@ function getOptionPrice(spec: ConfigSpec, groupKey: string, optionLabel: string)
   return spec.groups.find((group) => group.key === groupKey)?.options.find((option) => option.label === optionLabel)?.price ?? 0;
 }
 
+function getProductImageUrl(product: Product) {
+  return product.image_url ?? (product as Product & { imageUrl?: string }).imageUrl ?? "";
+}
+
 export function BureauVeritasOrderApp() {
   const [data, setData] = useState<PublicData | null>(null);
+  const [step, setStep] = useState<PublicStep>("catalog");
   const [customer, setCustomer] = useState<CustomerForm>(EMPTY_CUSTOMER);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [notes, setNotes] = useState("");
@@ -481,6 +491,7 @@ export function BureauVeritasOrderApp() {
   const [subsidyAlreadyUsed, setSubsidyAlreadyUsed] = useState(false);
   const [submitState, setSubmitState] = useState<SubmitState>({ status: "idle" });
   const [customerLoaded, setCustomerLoaded] = useState(false);
+  const [lastOrder, setLastOrder] = useState<{ id: string; total: number } | null>(null);
 
   useEffect(() => {
     const stored = window.localStorage.getItem(STORAGE_KEY);
@@ -553,7 +564,7 @@ export function BureauVeritasOrderApp() {
         case "wraps_signature":
           return wraps.filter((product) => !normalize(product.name).includes("manera"));
         case "custom_wrap":
-          return wraps.filter((product) => normalize(product.name).includes("manera") || normalize(product.name).includes("wrap"));
+          return wraps.filter((product) => normalize(product.name).includes("manera"));
         case "grill":
           return categoryProducts("matica-grill");
         case "sandwiches":
@@ -587,6 +598,11 @@ export function BureauVeritasOrderApp() {
     setCustomer((current) => ({ ...current, [field]: value }));
   }
 
+  function goToStep(nextStep: PublicStep) {
+    setStep(nextStep);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
   function setProductChoice(product: Product, key: string, value: string) {
     setChoices((current) => ({
       ...current,
@@ -618,6 +634,7 @@ export function BureauVeritasOrderApp() {
         cartItem.key === item.key ? { ...cartItem, quantity: cartItem.quantity + 1 } : cartItem
       );
     });
+    setSubmitState({ status: "idle" });
   }
 
   function changeQuantity(key: string, delta: number) {
@@ -666,23 +683,28 @@ export function BureauVeritasOrderApp() {
 
     setCart([]);
     setNotes("");
+    setLastOrder({
+      id: payload.order?.id ?? "",
+      total: Number(payload.order?.total ?? totals.total)
+    });
     setSubsidyAlreadyUsed(Boolean(payload.order?.prior_subsidy_used || payload.order?.subsidy_applied));
     setSubmitState({
       status: "success",
       message: `Pedido confirmado. Total: ${formatCurrency(Number(payload.order?.total ?? totals.total))}.`
     });
+    goToStep("confirmation");
   }
 
   return (
-    <main className="min-h-screen pb-28 text-matica-ink lg:pb-10">
+    <main className="min-h-screen pb-28 text-matica-ink">
       <header className="border-b border-matica-line bg-white">
-        <div className="mx-auto flex max-w-7xl flex-col gap-5 px-4 py-5 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-8">
+        <div className="mx-auto flex max-w-7xl flex-col gap-5 px-4 py-5 pr-36 sm:px-6 lg:flex-row lg:items-end lg:justify-between lg:px-8">
           <div>
             <div className="mb-2 inline-flex items-center gap-2 rounded-lg bg-matica-mint px-3 py-1 text-sm font-semibold text-matica-green">
               <Leaf className="h-4 w-4" />
               Matica Fresh Food
             </div>
-            <h1 className="text-2xl font-black tracking-normal sm:text-4xl">
+            <h1 className="max-w-3xl text-2xl font-black tracking-normal sm:text-4xl">
               Matica Fresh Food para Bureau Veritas
             </h1>
             <p className="mt-2 max-w-2xl text-base font-medium text-matica-ink/70">
@@ -702,40 +724,31 @@ export function BureauVeritasOrderApp() {
         </div>
       </header>
 
-      <div className="mx-auto grid max-w-7xl gap-5 px-4 py-5 sm:px-6 lg:grid-cols-[minmax(0,1fr)_380px] lg:px-8">
-        <section className="space-y-5">
-          <section className="rounded-lg border border-matica-line bg-white p-4 shadow-soft">
-            <h2 className="text-lg font-black">Tus datos</h2>
-            <div className="mt-4 grid gap-3 md:grid-cols-2">
-              <InputField label="Nombre" value={customer.name} onChange={(value) => updateCustomer("name", value)} placeholder="Nombre y apellidos" />
-              <InputField
-                label="Correo corporativo"
-                value={customer.email}
-                onChange={(value) => updateCustomer("email", value)}
-                placeholder="nombre@bureauveritas.com"
-                type="email"
-              />
-              <InputField label="Teléfono" value={customer.phone} onChange={(value) => updateCustomer("phone", value)} placeholder="600 000 000" />
-              <label className="space-y-1">
-                <span className="text-sm font-bold text-matica-ink/70">Empresa</span>
-                <select
-                  className="matica-focus w-full rounded-lg border border-matica-line bg-white px-3 py-3"
-                  value={customer.company_branch_id}
-                  onChange={(event) => updateCustomer("company_branch_id", event.target.value)}
-                >
-                  <option value="">Selecciona empresa</option>
-                  {(data?.branches ?? []).map((branch) => (
-                    <option key={branch.id} value={branch.id}>
-                      {branch.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-          </section>
+      <button
+        type="button"
+        className="matica-focus fixed right-3 top-3 z-30 flex min-h-12 items-center gap-3 rounded-lg bg-matica-ink px-3 py-2 text-white shadow-soft sm:right-5 sm:top-5 sm:px-4"
+        onClick={() => goToStep("checkout")}
+      >
+        <span className="relative grid h-9 w-9 place-items-center rounded-lg bg-white/12">
+          <ShoppingBag className="h-5 w-5" />
+          {cartCount > 0 ? (
+            <span className="absolute -right-2 -top-2 grid h-5 min-w-5 place-items-center rounded-full bg-matica-lime px-1 text-xs font-black text-matica-ink">
+              {cartCount}
+            </span>
+          ) : null}
+        </span>
+        <span className="hidden text-left sm:block">
+          <span className="block text-xs font-bold text-white/65">Carrito</span>
+          <span className="block text-sm font-black">{formatCurrency(totals.total)}</span>
+        </span>
+        <span className="text-sm font-black sm:hidden">{formatCurrency(totals.total)}</span>
+      </button>
 
+      {step === "catalog" ? (
+        <div className="mx-auto max-w-7xl px-4 py-5 sm:px-6 lg:px-8">
+          <section className="space-y-5">
           {data ? (
-            <nav className="sticky top-0 z-20 -mx-4 overflow-x-auto border-y border-matica-line bg-matica-soft/95 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6 lg:static lg:mx-0 lg:rounded-lg lg:border lg:bg-white lg:px-3">
+            <nav className="sticky top-0 z-20 -mx-4 overflow-x-auto border-y border-matica-line bg-matica-soft/95 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6 lg:mx-0 lg:rounded-lg lg:border lg:bg-white lg:px-3">
               <div className="flex min-w-max gap-2">
                 {publicSections.map((section) => (
                   <a
@@ -769,7 +782,7 @@ export function BureauVeritasOrderApp() {
                       </span>
                     ) : null}
                   </div>
-                  <div className="grid gap-3 md:grid-cols-2">
+                  <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
                     {section.products.map((product) => (
                       <ProductCard
                         key={`${section.slug}-${product.id}`}
@@ -795,33 +808,38 @@ export function BureauVeritasOrderApp() {
               ))}
             </div>
           )}
-        </section>
+          </section>
 
-        <CartPanel
+        </div>
+      ) : null}
+
+      {step === "checkout" ? (
+        <CheckoutPanel
+          branches={data?.branches ?? []}
           cart={cart}
           cartCount={cartCount}
+          customer={customer}
           totals={totals}
           notes={notes}
           setNotes={setNotes}
+          updateCustomer={updateCustomer}
           submitState={submitState}
           canConfirmOrder={canConfirmOrder}
           hasSubsidizedItem={hasSubsidizedItem}
           subsidyAlreadyUsed={subsidyAlreadyUsed}
           changeQuantity={changeQuantity}
           submitOrder={submitOrder}
+          onBack={() => goToStep("catalog")}
         />
-      </div>
+      ) : null}
 
-      <a
-        href="#cart"
-        className="matica-focus fixed inset-x-3 bottom-3 z-30 flex items-center justify-between rounded-lg bg-matica-ink px-4 py-3 text-white shadow-soft lg:hidden"
-      >
-        <span className="flex items-center gap-2 font-black">
-          <ShoppingBag className="h-5 w-5" />
-          Carrito · {cartCount}
-        </span>
-        <span className="font-black">{formatCurrency(totals.total)}</span>
-      </a>
+      {step === "confirmation" ? (
+        <ConfirmationPanel
+          order={lastOrder}
+          submitState={submitState}
+          onBackToCatalog={() => goToStep("catalog")}
+        />
+      ) : null}
 
       {configuring ? (
         <ConfigModal
@@ -883,9 +901,34 @@ function ProductCard({
   const canAdd = !product.sold_out && hasMenuChoices(product, menu);
   const subsidy = getSubsidyAmount(product.product_type);
   const displayName = getDisplayName(product, section.kind);
+  const imageUrl = getProductImageUrl(product);
+  const [imageFailed, setImageFailed] = useState(false);
 
   return (
-    <article className="rounded-lg border border-matica-line bg-white p-4 shadow-sm">
+    <article className="overflow-hidden rounded-lg border border-matica-line bg-white shadow-sm">
+      <div className="relative aspect-[4/3] bg-matica-soft">
+        {imageUrl && !imageFailed ? (
+          <img
+            className="h-full w-full object-cover"
+            src={imageUrl}
+            alt={displayName}
+            onError={() => setImageFailed(true)}
+          />
+        ) : (
+          <div className="grid h-full place-items-center bg-matica-mint text-matica-green">
+            <div className="grid h-16 w-16 place-items-center rounded-lg bg-white/80">
+              <ImageIcon className="h-7 w-7" />
+            </div>
+          </div>
+        )}
+        {product.sold_out ? (
+          <span className="absolute left-3 top-3 rounded-lg bg-white px-3 py-1 text-xs font-black text-matica-ink/60">
+            Agotado
+          </span>
+        ) : null}
+      </div>
+
+      <div className="flex min-h-[260px] flex-col p-4">
       <div className="flex items-start justify-between gap-3">
         <div>
           <h3 className="text-lg font-black">{displayName}</h3>
@@ -946,7 +989,7 @@ function ProductCard({
         </div>
       ) : null}
 
-      <div className="mt-4 flex items-center justify-between gap-3">
+      <div className="mt-auto flex items-center justify-between gap-3 pt-4">
         {product.sold_out ? (
           <span className="rounded-lg bg-matica-ink/10 px-3 py-2 text-sm font-black text-matica-ink/60">Agotado</span>
         ) : subsidy > 0 ? (
@@ -972,6 +1015,7 @@ function ProductCard({
           {section.configurable ? <SlidersHorizontal className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
           {section.configurable ? "Configurar" : "Añadir"}
         </button>
+      </div>
       </div>
     </article>
   );
@@ -1195,138 +1239,257 @@ function ConfigModal({
   );
 }
 
-function CartPanel({
+function CheckoutPanel({
+  branches,
   cart,
   cartCount,
+  customer,
   totals,
   notes,
   setNotes,
+  updateCustomer,
   submitState,
   canConfirmOrder,
   hasSubsidizedItem,
   subsidyAlreadyUsed,
   changeQuantity,
-  submitOrder
+  submitOrder,
+  onBack
 }: {
+  branches: CompanyBranch[];
   cart: CartItem[];
   cartCount: number;
+  customer: CustomerForm;
   totals: ReturnType<typeof calculateCartTotals>;
   notes: string;
   setNotes: (value: string) => void;
+  updateCustomer: (field: keyof CustomerForm, value: string) => void;
   submitState: SubmitState;
   canConfirmOrder: boolean;
   hasSubsidizedItem: boolean;
   subsidyAlreadyUsed: boolean;
   changeQuantity: (key: string, delta: number) => void;
   submitOrder: () => void;
+  onBack: () => void;
 }) {
   return (
-    <aside id="cart" className="h-fit rounded-lg border border-matica-line bg-white p-4 shadow-soft lg:sticky lg:top-5">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <h2 className="text-xl font-black">Carrito</h2>
-          <p className="text-sm font-semibold text-matica-ink/55">{cartCount} productos</p>
-        </div>
-        <div className="grid h-11 w-11 place-items-center rounded-lg bg-matica-mint text-matica-green">
-          <ShoppingBag className="h-5 w-5" />
-        </div>
-      </div>
+    <section id="checkout" className="mx-auto max-w-6xl px-4 py-5 sm:px-6 lg:px-8">
+      <button
+        type="button"
+        className="matica-focus inline-flex min-h-11 items-center gap-2 rounded-lg border border-matica-line bg-white px-4 font-black text-matica-ink"
+        onClick={onBack}
+      >
+        <ArrowLeft className="h-4 w-4" />
+        Volver al catalogo
+      </button>
 
-      <div className="mt-4 space-y-3">
-        {cart.length ? (
-          cart.map((item) => (
-            <div key={item.key} className="border-b border-matica-line pb-3 last:border-0">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="font-black">{item.name}</p>
-                  <p className="mt-1 text-xs font-semibold leading-5 text-matica-ink/55">{metadataLabel(item.metadata)}</p>
-                </div>
-                <p className="font-black">{formatCurrency(item.base_price * item.quantity)}</p>
+      <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
+        <div className="space-y-5">
+          <section className="rounded-lg border border-matica-line bg-white p-4 shadow-sm">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-2xl font-black">Carrito</h2>
+                <p className="text-sm font-semibold text-matica-ink/55">{cartCount} productos</p>
               </div>
-              <div className="mt-3 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <button
-                    className="matica-focus grid h-10 w-10 place-items-center rounded-lg border border-matica-line bg-white"
-                    onClick={() => changeQuantity(item.key, -1)}
-                    aria-label={`Quitar ${item.name}`}
-                  >
-                    <Minus className="h-4 w-4" />
-                  </button>
-                  <span className="w-8 text-center font-black">{item.quantity}</span>
-                  <button
-                    className="matica-focus grid h-10 w-10 place-items-center rounded-lg border border-matica-line bg-white"
-                    onClick={() => changeQuantity(item.key, 1)}
-                    aria-label={`Añadir ${item.name}`}
-                  >
-                    <Plus className="h-4 w-4" />
-                  </button>
-                </div>
-                {getSubsidyAmount(item.product_type) > 0 ? (
-                  <span className="rounded-lg bg-matica-mint px-2 py-1 text-xs font-black text-matica-green">
-                    Subvencionable
-                  </span>
-                ) : null}
+              <div className="grid h-11 w-11 place-items-center rounded-lg bg-matica-mint text-matica-green">
+                <ShoppingBag className="h-5 w-5" />
               </div>
             </div>
-          ))
-        ) : (
-          <div className="rounded-lg border border-dashed border-matica-line bg-matica-soft p-5 text-center">
-            <Utensils className="mx-auto h-6 w-6 text-matica-green" />
-            <p className="mt-2 text-sm font-bold text-matica-ink/60">Elige productos para preparar tu pedido.</p>
+
+            <div className="mt-4 space-y-3">
+              {cart.length ? (
+                cart.map((item) => (
+                  <div key={item.key} className="border-b border-matica-line pb-3 last:border-0">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="font-black">{item.name}</p>
+                        <p className="mt-1 text-xs font-semibold leading-5 text-matica-ink/55">{metadataLabel(item.metadata)}</p>
+                      </div>
+                      <p className="shrink-0 font-black">{formatCurrency(item.base_price * item.quantity)}</p>
+                    </div>
+                    <div className="mt-3 flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2">
+                        <button
+                          className="matica-focus grid h-10 w-10 place-items-center rounded-lg border border-matica-line bg-white"
+                          onClick={() => changeQuantity(item.key, -1)}
+                          aria-label={`Quitar ${item.name}`}
+                          type="button"
+                        >
+                          <Minus className="h-4 w-4" />
+                        </button>
+                        <span className="w-8 text-center font-black">{item.quantity}</span>
+                        <button
+                          className="matica-focus grid h-10 w-10 place-items-center rounded-lg border border-matica-line bg-white"
+                          onClick={() => changeQuantity(item.key, 1)}
+                          aria-label={`Añadir ${item.name}`}
+                          type="button"
+                        >
+                          <Plus className="h-4 w-4" />
+                        </button>
+                      </div>
+                      {getSubsidyAmount(item.product_type) > 0 ? (
+                        <span className="rounded-lg bg-matica-mint px-2 py-1 text-xs font-black text-matica-green">
+                          Subvencionable
+                        </span>
+                      ) : null}
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="rounded-lg border border-dashed border-matica-line bg-matica-soft p-5 text-center">
+                  <Utensils className="mx-auto h-6 w-6 text-matica-green" />
+                  <p className="mt-2 text-sm font-bold text-matica-ink/60">Elige productos para preparar tu pedido.</p>
+                </div>
+              )}
+            </div>
+
+            <label className="mt-4 block space-y-1">
+              <span className="text-sm font-bold text-matica-ink/70">Observaciones</span>
+              <textarea
+                className="matica-focus min-h-24 w-full rounded-lg border border-matica-line px-3 py-3"
+                value={notes}
+                onChange={(event) => setNotes(event.target.value)}
+                placeholder="Sin cebolla, alergias, detalles de entrega..."
+              />
+            </label>
+          </section>
+
+          <section className="rounded-lg border border-matica-line bg-white p-4 shadow-sm">
+            <div className="flex items-center gap-3">
+              <div className="grid h-11 w-11 place-items-center rounded-lg bg-matica-mint text-matica-green">
+                <Building2 className="h-5 w-5" />
+              </div>
+              <div>
+                <h2 className="text-2xl font-black">Datos del cliente</h2>
+                <p className="text-sm font-semibold text-matica-ink/55">Entrega Bureau Veritas, {DELIVERY_WINDOW}</p>
+              </div>
+            </div>
+
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              <InputField label="Nombre" value={customer.name} onChange={(value) => updateCustomer("name", value)} placeholder="Nombre y apellidos" />
+              <InputField
+                label="Email corporativo"
+                value={customer.email}
+                onChange={(value) => updateCustomer("email", value)}
+                placeholder="nombre@bureauveritas.com"
+                type="email"
+              />
+              <InputField label="Telefono" value={customer.phone} onChange={(value) => updateCustomer("phone", value)} placeholder="600 000 000" />
+              <label className="space-y-1">
+                <span className="text-sm font-bold text-matica-ink/70">Empresa</span>
+                <select
+                  className="matica-focus w-full rounded-lg border border-matica-line bg-white px-3 py-3"
+                  value={customer.company_branch_id}
+                  onChange={(event) => updateCustomer("company_branch_id", event.target.value)}
+                >
+                  <option value="">Selecciona empresa</option>
+                  {branches.map((branch) => (
+                    <option key={branch.id} value={branch.id}>
+                      {branch.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          </section>
+        </div>
+
+        <aside className="h-fit rounded-lg border border-matica-line bg-white p-4 shadow-soft lg:sticky lg:top-5">
+          <h2 className="text-xl font-black">Resumen</h2>
+          <div className="mt-4 space-y-2 rounded-lg bg-matica-soft p-3">
+            <div className="flex justify-between text-sm font-bold">
+              <span>Subtotal</span>
+              <span>{formatCurrency(totals.subtotal)}</span>
+            </div>
+            <div className="flex justify-between text-sm font-bold text-matica-green">
+              <span>Subvencion Bureau Veritas</span>
+              <span>-{formatCurrency(totals.subsidyTotal)}</span>
+            </div>
+            <div className="flex justify-between border-t border-matica-line pt-2 text-lg font-black">
+              <span>Total</span>
+              <span>{formatCurrency(totals.total)}</span>
+            </div>
           </div>
-        )}
+
+          <div className="mt-4 rounded-lg border border-matica-line bg-white p-3">
+            <div className="flex items-center gap-2 text-sm font-black text-matica-ink">
+              <CreditCard className="h-4 w-4 text-matica-green" />
+              Pago online
+            </div>
+            <p className="mt-1 text-sm font-semibold text-matica-ink/60">
+              Adyen queda preparado como siguiente paso. Hoy el pedido se confirma sin cobrar online.
+            </p>
+          </div>
+
+          {subsidyAlreadyUsed && hasSubsidizedItem ? (
+            <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm font-bold text-amber-900">
+              Este email ya ha usado la subvencion hoy. Los menus se cobraran a precio completo.
+            </div>
+          ) : null}
+
+          {submitState.status === "error" ? (
+            <div className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm font-bold text-red-700">
+              {submitState.message}
+            </div>
+          ) : null}
+
+          <button
+            className="matica-focus mt-4 flex min-h-14 w-full items-center justify-center gap-2 rounded-lg bg-matica-green px-4 py-3 text-base font-black text-white disabled:cursor-not-allowed disabled:bg-matica-ink/30"
+            disabled={submitState.status === "loading" || !canConfirmOrder}
+            onClick={submitOrder}
+            type="button"
+          >
+            {submitState.status === "loading" ? <Loader2 className="h-5 w-5 animate-spin" /> : <CheckCircle2 className="h-5 w-5" />}
+            Confirmar pedido
+          </button>
+        </aside>
       </div>
+    </section>
+  );
+}
 
-      <label className="mt-4 block space-y-1">
-        <span className="text-sm font-bold text-matica-ink/70">Observaciones</span>
-        <textarea
-          className="matica-focus min-h-24 w-full rounded-lg border border-matica-line px-3 py-3"
-          value={notes}
-          onChange={(event) => setNotes(event.target.value)}
-          placeholder="Sin cebolla, alergias, detalles de entrega..."
-        />
-      </label>
+function ConfirmationPanel({
+  order,
+  submitState,
+  onBackToCatalog
+}: {
+  order: { id: string; total: number } | null;
+  submitState: SubmitState;
+  onBackToCatalog: () => void;
+}) {
+  return (
+    <section className="mx-auto max-w-3xl px-4 py-10 sm:px-6 lg:px-8">
+      <div className="rounded-lg border border-matica-line bg-white p-6 text-center shadow-soft">
+        <div className="mx-auto grid h-14 w-14 place-items-center rounded-lg bg-matica-mint text-matica-green">
+          <CheckCircle2 className="h-8 w-8" />
+        </div>
+        <h2 className="mt-4 text-3xl font-black">Pedido confirmado</h2>
+        <p className="mx-auto mt-2 max-w-xl text-sm font-semibold leading-6 text-matica-ink/65">
+          {submitState.status === "success" ? submitState.message : "Hemos recibido tu pedido."}
+        </p>
+        {order?.id ? (
+          <p className="mt-3 text-xs font-black uppercase text-matica-ink/45">Referencia {order.id.slice(0, 8)}</p>
+        ) : null}
+        {order ? <p className="mt-2 text-2xl font-black text-matica-green">{formatCurrency(order.total)}</p> : null}
 
-      <div className="mt-4 space-y-2 rounded-lg bg-matica-soft p-3">
-        <div className="flex justify-between text-sm font-bold">
-          <span>Subtotal</span>
-          <span>{formatCurrency(totals.subtotal)}</span>
+        <div className="mt-5 rounded-lg border border-matica-line bg-matica-soft p-4 text-left">
+          <div className="flex items-center gap-2 font-black">
+            <CreditCard className="h-5 w-5 text-matica-green" />
+            Pago futuro con Adyen
+          </div>
+          <p className="mt-1 text-sm font-semibold text-matica-ink/60">
+            El flujo ya tiene una parada reservada para pago online. La integracion real se activara mas adelante.
+          </p>
         </div>
-        <div className="flex justify-between text-sm font-bold text-matica-green">
-          <span>Subvención Bureau Veritas</span>
-          <span>-{formatCurrency(totals.subsidyTotal)}</span>
-        </div>
-        <div className="flex justify-between border-t border-matica-line pt-2 text-lg font-black">
-          <span>Total</span>
-          <span>{formatCurrency(totals.total)}</span>
-        </div>
+
+        <button
+          type="button"
+          className="matica-focus mt-5 inline-flex min-h-12 items-center justify-center rounded-lg bg-matica-green px-5 font-black text-white"
+          onClick={onBackToCatalog}
+        >
+          Volver al catalogo
+        </button>
       </div>
-
-      {subsidyAlreadyUsed && hasSubsidizedItem ? (
-        <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm font-bold text-amber-900">
-          Este email ya ha usado la subvención hoy. Los menús se cobrarán a precio completo.
-        </div>
-      ) : null}
-
-      {submitState.status === "error" ? (
-        <div className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm font-bold text-red-700">
-          {submitState.message}
-        </div>
-      ) : null}
-      {submitState.status === "success" ? (
-        <div className="mt-3 rounded-lg border border-matica-green bg-matica-mint p-3 text-sm font-bold text-matica-green">
-          {submitState.message}
-        </div>
-      ) : null}
-
-      <button
-        className="matica-focus mt-4 flex min-h-14 w-full items-center justify-center gap-2 rounded-lg bg-matica-green px-4 py-3 text-base font-black text-white disabled:cursor-not-allowed disabled:bg-matica-ink/30"
-        disabled={submitState.status === "loading" || !canConfirmOrder}
-        onClick={submitOrder}
-      >
-        {submitState.status === "loading" ? <Loader2 className="h-5 w-5 animate-spin" /> : <CheckCircle2 className="h-5 w-5" />}
-        Confirmar pedido
-      </button>
-    </aside>
+    </section>
   );
 }

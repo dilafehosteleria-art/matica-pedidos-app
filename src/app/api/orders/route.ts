@@ -1,12 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { DELIVERY_WINDOW } from "@/lib/constants";
 import { toDateInputValue } from "@/lib/format";
+import { createPaymentPlaceholder, shouldRequireOnlinePayment } from "@/lib/payment";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import type { OrderStatus, ProductType } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
-
-const PAYMENT_REQUIRED = false;
 
 type IncomingOrder = {
   customer?: {
@@ -214,7 +213,7 @@ export async function POST(request: NextRequest) {
   });
 
   const total = Number((subtotal - subsidyTotal).toFixed(2));
-  const initialStatus: OrderStatus = PAYMENT_REQUIRED ? "pendiente_pago" : "nuevo";
+  const initialStatus: OrderStatus = shouldRequireOnlinePayment() ? "pendiente_pago" : "nuevo";
 
   const { data: order, error: orderError } = await supabase
     .from("orders")
@@ -266,6 +265,7 @@ export async function POST(request: NextRequest) {
       total,
       subsidy_applied: subsidyApplied,
       prior_subsidy_used: priorSubsidyUsed
-    }
+    },
+    payment: createPaymentPlaceholder(order.id, total)
   });
 }

@@ -126,5 +126,5 @@ export type AdminOrder = {
 
 export type ProductDraft = Pick<
   Product,
-  "id" | "active" | "sold_out" | "base_price" | "customer_price" | "description"
+  "id" | "active" | "sold_out" | "base_price" | "customer_price" | "description" | "image_url"
 >;
