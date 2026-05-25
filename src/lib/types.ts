@@ -18,9 +18,13 @@ export type Company = {
   id: string;
   name: string;
   slug: string;
+  order_window?: string | null;
+  delivery_window?: string | null;
   active: boolean;
   created_at?: string;
 };
+
+export type PublicCompany = Pick<Company, "id" | "name" | "slug" | "active" | "order_window" | "delivery_window">;
 
 export type CompanyBranch = {
   id: string;
@@ -122,6 +126,19 @@ export type AdminOrder = {
   order_items: OrderItem[];
   companies?: { name: string } | null;
   company_branches?: { name: string } | null;
+};
+
+export type AdminCompany = Company & {
+  subsidy_rules?: {
+    product_type: "daily_menu" | "half_menu";
+    subsidy_amount: number;
+    active: boolean;
+  }[];
+};
+
+export type CompanyDraft = Pick<Company, "id" | "name" | "slug" | "active" | "order_window" | "delivery_window"> & {
+  daily_menu_subsidy: number;
+  half_menu_subsidy: number;
 };
 
 export type ProductDraft = Pick<

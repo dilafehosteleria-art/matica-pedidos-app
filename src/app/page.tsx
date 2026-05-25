@@ -1,5 +1,8 @@
-import { redirect } from "next/navigation";
+import { CompanyLanding } from "@/components/public/CompanyLanding";
+import { getPublicCompanies } from "@/lib/public-data";
 
-export default function HomePage() {
-  redirect("/bureau-veritas");
+export default async function HomePage() {
+  const companies = await getPublicCompanies();
+
+  return <CompanyLanding companies={companies} />;
 }

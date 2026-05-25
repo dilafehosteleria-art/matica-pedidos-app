@@ -8,6 +8,7 @@ import type { OrderStatus, ProductType } from "@/lib/types";
 export const dynamic = "force-dynamic";
 
 type IncomingOrder = {
+  company_slug?: string;
   customer?: {
     name?: string;
     email?: string;
@@ -40,6 +41,11 @@ type ExistingSubsidyOrder = {
   order_items: { subsidy_amount: number | string }[] | null;
 };
 
+type SupabaseCompany = {
+  id: string;
+  delivery_window?: string | null;
+};
+
 function badRequest(message: string, status = 400) {
   return NextResponse.json({ error: message }, { status });
 }
@@ -67,24 +73,27 @@ export async function POST(request: NextRequest) {
   const customerEmail = customer.email.trim().toLowerCase();
   const customerPhone = customer.phone.trim();
   const companyBranchId = customer.company_branch_id;
+  const companySlug = body.company_slug?.trim() || "bureau-veritas";
   const notes = body.notes?.trim() ?? "";
 
   const { data: company, error: companyError } = await supabase
     .from("companies")
-    .select("id")
-    .eq("slug", "bureau-veritas")
+    .select("*")
+    .eq("slug", companySlug)
     .eq("active", true)
     .maybeSingle();
 
   if (companyError || !company) {
-    return badRequest("Empresa Bureau Veritas no encontrada.");
+    return badRequest("Empresa no encontrada.");
   }
+
+  const selectedCompany = company as SupabaseCompany;
 
   const { data: branch, error: branchError } = await supabase
     .from("company_branches")
     .select("id")
     .eq("id", companyBranchId)
-    .eq("company_id", company.id)
+    .eq("company_id", selectedCompany.id)
     .eq("active", true)
     .maybeSingle();
 
@@ -126,7 +135,7 @@ export async function POST(request: NextRequest) {
   const { data: subsidyRules, error: subsidyRulesError } = await supabase
     .from("subsidy_rules")
     .select("product_type,subsidy_amount")
-    .eq("company_id", company.id)
+    .eq("company_id", selectedCompany.id)
     .eq("active", true);
 
   if (subsidyRulesError) {
@@ -142,7 +151,7 @@ export async function POST(request: NextRequest) {
   const { data: existingOrders, error: subsidyUsageError } = await supabase
     .from("orders")
     .select("created_at,status,order_items(subsidy_amount)")
-    .eq("company_id", company.id)
+    .eq("company_id", selectedCompany.id)
     .eq("customer_email", customerEmail)
     .gte("created_at", recentLimit);
 
@@ -162,7 +171,7 @@ export async function POST(request: NextRequest) {
       name: customerName,
       email: customerEmail,
       phone: customerPhone,
-      company_id: company.id,
+      company_id: selectedCompany.id,
       company_branch_id: companyBranchId
     },
     { onConflict: "company_id,email" }
@@ -219,7 +228,7 @@ export async function POST(request: NextRequest) {
     .from("orders")
     .insert({
       customer_id: null,
-      company_id: company.id,
+      company_id: selectedCompany.id,
       company_branch_id: companyBranchId,
       customer_name: customerName,
       customer_email: customerEmail,
@@ -229,7 +238,7 @@ export async function POST(request: NextRequest) {
       subsidy_total: subsidyTotal,
       total,
       notes,
-      delivery_window: DELIVERY_WINDOW
+      delivery_window: selectedCompany.delivery_window || DELIVERY_WINDOW
     })
     .select("id")
     .single();

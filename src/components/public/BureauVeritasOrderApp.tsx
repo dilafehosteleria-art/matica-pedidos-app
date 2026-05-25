@@ -22,7 +22,7 @@ import { formatCurrency } from "@/lib/format";
 import { calculateCartTotals, getSubsidyAmount } from "@/lib/pricing";
 import type { CartItem, CompanyBranch, CustomerForm, DailyMenu, Product, PublicData } from "@/lib/types";
 
-const STORAGE_KEY = "matica:bureau-veritas:customer";
+const STORAGE_KEY_PREFIX = "matica:customer";
 
 const EMPTY_CUSTOMER: CustomerForm = {
   name: "",
@@ -41,6 +41,7 @@ type MenuChoiceState = Record<string, Record<string, string>>;
 type PublicStep = "catalog" | "checkout" | "confirmation";
 
 type SectionKind =
+  | "menus"
   | "daily_menu"
   | "half_menu"
   | "signature_bowls"
@@ -155,6 +156,51 @@ const SECTION_DEFINITIONS: Omit<PublicSection, "products">[] = [
     title: "Extras",
     description: "Cubiertos y pequeños añadidos.",
     kind: "extras"
+  }
+];
+
+const COMPANY_SECTION_DEFINITIONS: Omit<PublicSection, "products">[] = [
+  {
+    slug: "menus",
+    title: "MENÚS",
+    description: "Menú del día, medio menú y combinaciones rápidas.",
+    kind: "menus"
+  },
+  {
+    slug: "bowls-signature",
+    title: "MATICA SIGNATURE BOWLS Y ENSALADAS",
+    description: "Bowls de la casa y ensalada configurable.",
+    kind: "signature_bowls"
+  },
+  {
+    slug: "wraps-signature",
+    title: "WRAPS SIGNATURE",
+    description: "Wraps Matica y wrap configurable.",
+    kind: "wraps_signature"
+  },
+  {
+    slug: "matica-grill",
+    title: "MATICA GRILL",
+    description: "Plato combinado configurable con proteína, guarniciones y bebida o postre.",
+    kind: "grill"
+  },
+  {
+    slug: "bocadillos",
+    title: "BOCADILLOS",
+    description: "Elige entre los seis bocadillos disponibles.",
+    kind: "sandwiches"
+  },
+  {
+    slug: "bebidas",
+    title: "BEBIDAS",
+    description: "Bebidas frías para completar el pedido.",
+    kind: "drinks"
+  },
+  {
+    slug: "postres",
+    title: "POSTRES",
+    description: "Dulces y fruta para cerrar el menú.",
+    kind: "desserts"
   }
 ];
 
@@ -367,6 +413,85 @@ const CONFIG_SPECS: Partial<Record<SectionKind, ConfigSpec>> = {
   }
 };
 
+const SANDWICH_CONFIG_SPEC: ConfigSpec = {
+  title: "Configura tu bocadillo",
+  lead: "Elige uno de los seis bocadillos disponibles.",
+  included: ["Bocadillo", "Pan", "Preparación"],
+  notesPlaceholder: "Muy tostado, sin tomate...",
+  groups: [
+    {
+      key: "bocadillo",
+      label: "Bocadillo",
+      type: "single",
+      options: [
+        { label: "Jamón serrano" },
+        { label: "Tortilla francesa" },
+        { label: "Atún con tomate" },
+        { label: "Pollo braseado" },
+        { label: "Lomo con queso" },
+        { label: "Vegetal" }
+      ]
+    },
+    {
+      key: "pan",
+      label: "Pan",
+      type: "single",
+      options: [{ label: "Barra clásica" }, { label: "Integral" }, { label: "Cristal", price: 0.7 }]
+    },
+    {
+      key: "preparacion",
+      label: "Preparación",
+      type: "single",
+      options: [{ label: "Frío" }, { label: "Caliente" }]
+    }
+  ]
+};
+
+const GRILL_CONFIG_SPEC: ConfigSpec = {
+  title: "Configura tu plato combinado",
+  lead: "Elige 1 proteína, 2 guarniciones y bebida o postre.",
+  included: ["Proteína", "2 guarniciones", "Bebida o postre"],
+  notesPlaceholder: "Punto de la carne, sin salsa...",
+  groups: [
+    {
+      key: "proteina",
+      label: "Proteína",
+      type: "single",
+      options: [
+        { label: "Pollo plancha" },
+        { label: "Lomo de cerdo" },
+        { label: "Filete de ternera", price: 1.5 },
+        { label: "Opción editable" }
+      ]
+    },
+    {
+      key: "guarniciones",
+      label: "Guarniciones",
+      type: "multi",
+      max: 2,
+      options: [
+        { label: "Ensalada" },
+        { label: "Arroz" },
+        { label: "Patatas", price: 1 },
+        { label: "Verduras grill" },
+        { label: "Pasta fría" }
+      ]
+    },
+    {
+      key: "incluye",
+      label: "Bebida o postre",
+      type: "single",
+      options: [
+        { label: "Agua mineral" },
+        { label: "Coca Cola" },
+        { label: "Coca Cola Zero" },
+        { label: "Yogur" },
+        { label: "Fruta" }
+      ]
+    }
+  ]
+};
+
 function normalize(value: string) {
   return value
     .normalize("NFD")
@@ -437,11 +562,11 @@ function optionGroup(menu: DailyMenu | null) {
 }
 
 function getDisplayName(product: Product, kind: SectionKind) {
-  if (kind === "custom_salad") {
+  if (kind === "custom_salad" || isCustomSaladProduct(product)) {
     return "Ensalada a tu manera";
   }
 
-  if (kind === "custom_wrap") {
+  if (kind === "custom_wrap" || isCustomWrapProduct(product)) {
     return "Wrap a tu manera";
   }
 
@@ -480,7 +605,49 @@ function getProductImageUrl(product: Product) {
   return product.image_url ?? (product as Product & { imageUrl?: string }).imageUrl ?? "";
 }
 
-export function BureauVeritasOrderApp() {
+function isCustomSaladProduct(product: Product) {
+  const name = normalize(product.name);
+
+  return name.includes("disena tu ensalada") || name.includes("ensalada a tu manera");
+}
+
+function isCustomWrapProduct(product: Product) {
+  const name = normalize(product.name);
+
+  return name.includes("disena tu wrap") || name.includes("wrap a tu manera");
+}
+
+function isConfigurableProduct(product: Product, section: PublicSection) {
+  return (
+    isCustomSaladProduct(product) ||
+    isCustomWrapProduct(product) ||
+    section.kind === "grill" ||
+    section.kind === "sandwiches" ||
+    Boolean(section.configurable)
+  );
+}
+
+function getConfigSpec(product: Product, section: PublicSection) {
+  if (isCustomSaladProduct(product)) {
+    return CONFIG_SPECS.custom_salad!;
+  }
+
+  if (isCustomWrapProduct(product)) {
+    return CONFIG_SPECS.custom_wrap!;
+  }
+
+  if (section.kind === "grill") {
+    return GRILL_CONFIG_SPEC;
+  }
+
+  if (section.kind === "sandwiches") {
+    return SANDWICH_CONFIG_SPEC;
+  }
+
+  return (CONFIG_SPECS[section.kind] ?? CONFIG_SPECS.sandwiches)!;
+}
+
+export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { companySlug?: string }) {
   const [data, setData] = useState<PublicData | null>(null);
   const [step, setStep] = useState<PublicStep>("catalog");
   const [customer, setCustomer] = useState<CustomerForm>(EMPTY_CUSTOMER);
@@ -492,20 +659,27 @@ export function BureauVeritasOrderApp() {
   const [submitState, setSubmitState] = useState<SubmitState>({ status: "idle" });
   const [customerLoaded, setCustomerLoaded] = useState(false);
   const [lastOrder, setLastOrder] = useState<{ id: string; total: number } | null>(null);
+  const storageKey = `${STORAGE_KEY_PREFIX}:${companySlug}`;
 
   useEffect(() => {
-    const stored = window.localStorage.getItem(STORAGE_KEY);
+    const stored = window.localStorage.getItem(storageKey);
 
     if (stored) {
       setCustomer({ ...EMPTY_CUSTOMER, ...JSON.parse(stored) });
     }
 
     setCustomerLoaded(true);
-  }, []);
+  }, [storageKey]);
 
   useEffect(() => {
-    fetch("/api/public/bureau-veritas")
-      .then((response) => response.json())
+    fetch(`/api/public/companies/${companySlug}`)
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error("Empresa no encontrada.");
+        }
+
+        return response.json();
+      })
       .then((payload: PublicData) => setData(payload))
       .catch(() => {
         setSubmitState({
@@ -513,13 +687,13 @@ export function BureauVeritasOrderApp() {
           message: "No se pudo cargar la carta. Revisa la conexión e intenta de nuevo."
         });
       });
-  }, []);
+  }, [companySlug]);
 
   useEffect(() => {
     if (customerLoaded) {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(customer));
+      window.localStorage.setItem(storageKey, JSON.stringify(customer));
     }
-  }, [customer, customerLoaded]);
+  }, [customer, customerLoaded, storageKey]);
 
   useEffect(() => {
     const email = customer.email.trim().toLowerCase();
@@ -530,14 +704,14 @@ export function BureauVeritasOrderApp() {
     }
 
     const timer = window.setTimeout(() => {
-      fetch(`/api/subsidy-status?companySlug=bureau-veritas&email=${encodeURIComponent(email)}`)
+      fetch(`/api/subsidy-status?companySlug=${encodeURIComponent(companySlug)}&email=${encodeURIComponent(email)}`)
         .then((response) => response.json())
         .then((payload: { used?: boolean }) => setSubsidyAlreadyUsed(Boolean(payload.used)))
         .catch(() => setSubsidyAlreadyUsed(false));
     }, 350);
 
     return () => window.clearTimeout(timer);
-  }, [customer.email]);
+  }, [companySlug, customer.email]);
 
   const publicSections = useMemo<PublicSection[]>(() => {
     if (!data) {
@@ -553,16 +727,23 @@ export function BureauVeritasOrderApp() {
 
     function productsFor(kind: SectionKind) {
       switch (kind) {
+        case "menus":
+          return publicData.products.filter(
+            (product) =>
+              product.product_type === "daily_menu" ||
+              product.product_type === "half_menu" ||
+              ["menus", "menu-del-dia", "medio-menu"].includes(categorySlugById.get(product.category_id) ?? "")
+          );
         case "daily_menu":
           return publicData.products.filter((product) => product.product_type === "daily_menu");
         case "half_menu":
           return publicData.products.filter((product) => product.product_type === "half_menu");
         case "signature_bowls":
-          return bowlsAndSalads.filter((product) => !normalize(product.name).includes("ensalada"));
+          return bowlsAndSalads;
         case "custom_salad":
           return bowlsAndSalads.filter((product) => normalize(product.name).includes("ensalada"));
         case "wraps_signature":
-          return wraps.filter((product) => !normalize(product.name).includes("manera"));
+          return wraps;
         case "custom_wrap":
           return wraps.filter((product) => normalize(product.name).includes("manera"));
         case "grill":
@@ -578,15 +759,17 @@ export function BureauVeritasOrderApp() {
       }
     }
 
-    return SECTION_DEFINITIONS.map((section) => ({
+    return COMPANY_SECTION_DEFINITIONS.map((section) => ({
       ...section,
       products: productsFor(section.kind)
-    }));
+    })).filter((section) => section.products.length > 0);
   }, [data]);
 
   const totals = useMemo(() => calculateCartTotals(cart, subsidyAlreadyUsed), [cart, subsidyAlreadyUsed]);
   const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
   const hasSubsidizedItem = cart.some((item) => getSubsidyAmount(item.product_type) > 0);
+  const companyName = data?.company.name ?? "tu empresa";
+  const deliveryWindow = data?.company.delivery_window ?? DELIVERY_WINDOW;
   const canConfirmOrder =
     Boolean(customer.name.trim()) &&
     Boolean(customer.email.trim()) &&
@@ -664,6 +847,7 @@ export function BureauVeritasOrderApp() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
+        company_slug: companySlug,
         customer,
         items: cart.map((item) => ({
           product_id: item.product_id,
@@ -705,10 +889,10 @@ export function BureauVeritasOrderApp() {
               Matica Fresh Food
             </div>
             <h1 className="max-w-3xl text-2xl font-black tracking-normal sm:text-4xl">
-              Matica Fresh Food para Bureau Veritas
+              Matica Fresh Food para {companyName}
             </h1>
             <p className="mt-2 max-w-2xl text-base font-medium text-matica-ink/70">
-              Carta corporativa rápida. Entrega entre 13:00 y 13:30.
+              Carta corporativa para pedir comida fresca con entrega entre {deliveryWindow}.
             </p>
           </div>
           <div className="grid grid-cols-2 gap-2 sm:flex">
@@ -718,7 +902,7 @@ export function BureauVeritasOrderApp() {
             </div>
             <div className="rounded-lg border border-matica-line bg-matica-soft px-4 py-3">
               <p className="text-xs font-bold uppercase text-matica-ink/50">Entrega</p>
-              <p className="font-black text-matica-green">{DELIVERY_WINDOW}</p>
+              <p className="font-black text-matica-green">{deliveryWindow}</p>
             </div>
           </div>
         </div>
@@ -776,7 +960,7 @@ export function BureauVeritasOrderApp() {
                       <h2 className="text-xl font-black">{section.title}</h2>
                       <p className="mt-1 text-sm font-semibold text-matica-ink/60">{section.description}</p>
                     </div>
-                    {section.configurable ? (
+                    {section.products.some((product) => isConfigurableProduct(product, section)) ? (
                       <span className="hidden rounded-lg bg-matica-mint px-3 py-1 text-xs font-black text-matica-green sm:inline">
                         Configurable
                       </span>
@@ -792,7 +976,7 @@ export function BureauVeritasOrderApp() {
                         choices={choices[product.id] ?? getDefaultChoices(product, data.dailyMenu)}
                         onChoiceChange={(key, value) => setProductChoice(product, key, value)}
                         onAdd={() =>
-                          section.configurable
+                          isConfigurableProduct(product, section)
                             ? setConfiguring({ product, section })
                             : addProduct(product, section)
                         }
@@ -819,6 +1003,8 @@ export function BureauVeritasOrderApp() {
           cart={cart}
           cartCount={cartCount}
           customer={customer}
+          companyName={companyName}
+          deliveryWindow={deliveryWindow}
           totals={totals}
           notes={notes}
           setNotes={setNotes}
@@ -901,6 +1087,7 @@ function ProductCard({
   const canAdd = !product.sold_out && hasMenuChoices(product, menu);
   const subsidy = getSubsidyAmount(product.product_type);
   const displayName = getDisplayName(product, section.kind);
+  const configurable = isConfigurableProduct(product, section);
   const imageUrl = getProductImageUrl(product);
   const [imageFailed, setImageFailed] = useState(false);
 
@@ -994,9 +1181,9 @@ function ProductCard({
           <span className="rounded-lg bg-matica-ink/10 px-3 py-2 text-sm font-black text-matica-ink/60">Agotado</span>
         ) : subsidy > 0 ? (
           <span className="rounded-lg bg-matica-mint px-3 py-2 text-sm font-black text-matica-green">
-            Bureau Veritas -{formatCurrency(subsidy)}
+            Subvención -{formatCurrency(subsidy)}
           </span>
-        ) : section.configurable ? (
+        ) : configurable ? (
           <span className="flex items-center gap-1 text-sm font-bold text-matica-ink/50">
             <SlidersHorizontal className="h-4 w-4" />
             Personalizable
@@ -1012,8 +1199,8 @@ function ProductCard({
           onClick={onAdd}
           disabled={!canAdd}
         >
-          {section.configurable ? <SlidersHorizontal className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
-          {section.configurable ? "Configurar" : "Añadir"}
+          {configurable ? <SlidersHorizontal className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+          {configurable ? "Configurar" : "Añadir"}
         </button>
       </div>
       </div>
@@ -1062,7 +1249,7 @@ function ConfigModal({
   onClose: () => void;
   onAdd: (metadata: Record<string, string>, supplementTotal: number) => void;
 }) {
-  const spec = (CONFIG_SPECS[section.kind] ?? CONFIG_SPECS.sandwiches)!;
+  const spec = getConfigSpec(product, section);
   const [singleValues, setSingleValues] = useState<Record<string, string>>(() =>
     Object.fromEntries((spec?.groups ?? []).filter((group) => group.type === "single").map((group) => [group.key, group.options[0]?.label ?? ""]))
   );
@@ -1244,6 +1431,8 @@ function CheckoutPanel({
   cart,
   cartCount,
   customer,
+  companyName,
+  deliveryWindow,
   totals,
   notes,
   setNotes,
@@ -1260,6 +1449,8 @@ function CheckoutPanel({
   cart: CartItem[];
   cartCount: number;
   customer: CustomerForm;
+  companyName: string;
+  deliveryWindow: string;
   totals: ReturnType<typeof calculateCartTotals>;
   notes: string;
   setNotes: (value: string) => void;
@@ -1361,11 +1552,20 @@ function CheckoutPanel({
               </div>
               <div>
                 <h2 className="text-2xl font-black">Datos del cliente</h2>
-                <p className="text-sm font-semibold text-matica-ink/55">Entrega Bureau Veritas, {DELIVERY_WINDOW}</p>
+                <p className="text-sm font-semibold text-matica-ink/55">Entrega {companyName}, {deliveryWindow}</p>
               </div>
             </div>
 
             <div className="mt-4 grid gap-3 md:grid-cols-2">
+              <label className="space-y-1 md:col-span-2">
+                <span className="text-sm font-bold text-matica-ink/70">Empresa seleccionada</span>
+                <input
+                  className="w-full rounded-lg border border-matica-line bg-matica-soft px-3 py-3 font-bold text-matica-ink/70"
+                  value={companyName}
+                  disabled
+                  readOnly
+                />
+              </label>
               <InputField label="Nombre" value={customer.name} onChange={(value) => updateCustomer("name", value)} placeholder="Nombre y apellidos" />
               <InputField
                 label="Email corporativo"
@@ -1402,7 +1602,7 @@ function CheckoutPanel({
               <span>{formatCurrency(totals.subtotal)}</span>
             </div>
             <div className="flex justify-between text-sm font-bold text-matica-green">
-              <span>Subvencion Bureau Veritas</span>
+              <span>Subvencion {companyName}</span>
               <span>-{formatCurrency(totals.subsidyTotal)}</span>
             </div>
             <div className="flex justify-between border-t border-matica-line pt-2 text-lg font-black">

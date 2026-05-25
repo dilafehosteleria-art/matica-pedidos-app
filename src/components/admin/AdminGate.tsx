@@ -80,6 +80,7 @@ export function AdminGate({
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <AdminLink href="/admin">Pedidos</AdminLink>
+            <AdminLink href="/admin/companies">Empresas</AdminLink>
             <AdminLink href="/admin/menu">Menú del día</AdminLink>
             <AdminLink href="/admin/products">Productos</AdminLink>
             <button

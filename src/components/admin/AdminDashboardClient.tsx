@@ -26,7 +26,7 @@ const STATUS_OPTIONS: { status: OrderStatus; label: string }[] = [
 
 export function AdminDashboardClient() {
   return (
-    <AdminGate title="Panel de pedidos" subtitle="Pedidos Bureau Veritas ordenados por hora.">
+    <AdminGate title="Panel de pedidos" subtitle="Pedidos por empresa ordenados por hora.">
       {(pin, clearPin) => <OrdersBoard pin={pin} clearPin={clearPin} />}
     </AdminGate>
   );

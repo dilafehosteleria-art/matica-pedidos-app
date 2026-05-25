@@ -1,0 +1,137 @@
+import {
+  BUREAU_VERITAS_BRANCHES,
+  BUREAU_VERITAS_COMPANY,
+  CATEGORIES,
+  COMPANIES,
+  DEFAULT_DAILY_MENU,
+  PRODUCTS
+} from "@/lib/constants";
+import { toDateInputValue } from "@/lib/format";
+import { getSupabaseServerClient } from "@/lib/supabase/server";
+import type { DailyMenu, PublicCompany, PublicData } from "@/lib/types";
+
+function normalizeMenu(menu: DailyMenu | null): DailyMenu | null {
+  if (!menu) {
+    return null;
+  }
+
+  return {
+    ...menu,
+    first_courses: menu.first_courses ?? [],
+    second_courses: menu.second_courses ?? [],
+    drinks: menu.drinks ?? [],
+    desserts: menu.desserts ?? []
+  };
+}
+
+export function seedCompanyData(slug = "bureau-veritas"): PublicData | null {
+  if (slug !== BUREAU_VERITAS_COMPANY.slug) {
+    return null;
+  }
+
+  return {
+    company: BUREAU_VERITAS_COMPANY,
+    branches: BUREAU_VERITAS_BRANCHES,
+    categories: [...CATEGORIES].sort((a, b) => a.sort_order - b.sort_order),
+    products: [...PRODUCTS].sort((a, b) => a.sort_order - b.sort_order),
+    dailyMenu: {
+      ...DEFAULT_DAILY_MENU,
+      date: toDateInputValue()
+    },
+    source: "seed"
+  };
+}
+
+export async function getPublicCompanies(): Promise<PublicCompany[]> {
+  const supabase = getSupabaseServerClient();
+
+  if (!supabase) {
+    return COMPANIES.filter((company) => company.active);
+  }
+
+  const { data, error } = await supabase
+    .from("companies")
+    .select("*")
+    .eq("active", true)
+    .order("name", { ascending: true });
+
+  if (error || !data?.length) {
+    return COMPANIES.filter((company) => company.active);
+  }
+
+  return data as PublicCompany[];
+}
+
+export async function getPublicCompanyData(slug: string): Promise<PublicData | null> {
+  const fallback = seedCompanyData(slug);
+  const supabase = getSupabaseServerClient();
+
+  if (!supabase) {
+    return fallback;
+  }
+
+  const { data: company, error: companyError } = await supabase
+    .from("companies")
+    .select("*")
+    .eq("slug", slug)
+    .eq("active", true)
+    .maybeSingle();
+
+  if (companyError || !company) {
+    return fallback;
+  }
+
+  const today = toDateInputValue();
+
+  const [branches, categories, products, todaysMenu] = await Promise.all([
+    supabase
+      .from("company_branches")
+      .select("*")
+      .eq("company_id", company.id)
+      .eq("active", true)
+      .order("name", { ascending: true }),
+    supabase
+      .from("categories")
+      .select("*")
+      .eq("active", true)
+      .order("sort_order", { ascending: true }),
+    supabase
+      .from("products")
+      .select("*")
+      .eq("active", true)
+      .order("sort_order", { ascending: true }),
+    supabase
+      .from("daily_menus")
+      .select("*")
+      .eq("date", today)
+      .eq("active", true)
+      .maybeSingle()
+  ]);
+
+  let dailyMenu = todaysMenu.data as DailyMenu | null;
+
+  if (!dailyMenu) {
+    const { data } = await supabase
+      .from("daily_menus")
+      .select("*")
+      .eq("active", true)
+      .order("date", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    dailyMenu = data as DailyMenu | null;
+  }
+
+  if (branches.error || categories.error || products.error) {
+    return fallback;
+  }
+
+  return {
+    company,
+    branches: branches.data ?? [],
+    categories: categories.data ?? [],
+    products: products.data ?? [],
+    dailyMenu: normalizeMenu(dailyMenu),
+    source: "supabase"
+  } satisfies PublicData;
+}
