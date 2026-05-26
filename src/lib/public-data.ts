@@ -131,7 +131,7 @@ export async function getPublicCompanyData(slug: string): Promise<PublicData | n
     branches: branches.data ?? [],
     categories: categories.data ?? [],
     products: products.data ?? [],
-    dailyMenu: normalizeMenu(dailyMenu),
+    dailyMenu: normalizeMenu(dailyMenu) ?? fallback?.dailyMenu ?? null,
     source: "supabase"
   } satisfies PublicData;
 }

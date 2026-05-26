@@ -46,8 +46,75 @@ type SupabaseCompany = {
   delivery_window?: string | null;
 };
 
+const FIXED_CONFIGURED_PRICES: Record<string, number> = {
+  "Menú del día": 13,
+  "Medio menú": 10,
+  "Menú ensalada pequeña + bocadillo": 10,
+  "Caesar Crunch Chicken Bowl": 9.9,
+  "Mediterranean Fresh Bowl": 9.9,
+  "Tex-Mex Protein Bowl": 9.9,
+  "Green Fresh Bowl": 9.9,
+  "Diseña tu ensalada": 7.5,
+  "Wrap Caesar Crunch": 8.9,
+  "Wrap Tex-Mex Pork": 8.9,
+  "Wrap Fresh Chicken": 8.9,
+  "Wrap Mediterranean Tuna": 8.9,
+  "Diseña tu wrap": 7.5,
+  "Platos combinados Matica": 10,
+  "Escoge tu bocadillo": 6,
+  Cubiertos: 0.2
+};
+
+const DRINK_CONFIGURED_PRICES: Record<string, number> = {
+  "Coca Cola": 2,
+  "Coca Cola Zero": 2,
+  Lipton: 2,
+  "Fanta Naranja": 2,
+  "Agua mineral": 1.5,
+  "Agua con gas": 1.5
+};
+
+const DESSERT_CONFIGURED_PRICES: Record<string, number> = {
+  Flan: 1,
+  "Yogur de frutas": 1,
+  Natillas: 1,
+  Plátano: 1,
+  Manzana: 1,
+  "Flan de queso": 1.2,
+  Cookie: 2
+};
+
 function badRequest(message: string, status = 400) {
   return NextResponse.json({ error: message }, { status });
+}
+
+function expectedConfiguredUnitPrice(metadata: Record<string, string>) {
+  const displayName = metadata.display_name?.trim();
+
+  if (displayName === "Escoge tu bebida") {
+    return DRINK_CONFIGURED_PRICES[metadata.drink?.trim() ?? ""] ?? null;
+  }
+
+  if (displayName === "Escoge tu postre") {
+    return DESSERT_CONFIGURED_PRICES[metadata.dessert?.trim() ?? ""] ?? null;
+  }
+
+  return FIXED_CONFIGURED_PRICES[displayName ?? ""] ?? null;
+}
+
+function safeConfiguredUnitPrice(metadata: Record<string, string>) {
+  const incomingUnitPrice = Number(metadata._configured_unit_price);
+  const expectedUnitPrice = expectedConfiguredUnitPrice(metadata);
+
+  if (!Number.isFinite(incomingUnitPrice) || incomingUnitPrice <= 0) {
+    return { value: null, valid: true };
+  }
+
+  if (expectedUnitPrice === null || Math.abs(incomingUnitPrice - expectedUnitPrice) > 0.01) {
+    return { value: null, valid: false };
+  }
+
+  return { value: expectedUnitPrice, valid: true };
 }
 
 export async function POST(request: NextRequest) {
@@ -103,15 +170,26 @@ export async function POST(request: NextRequest) {
 
   const normalizedItems = items
     .filter((item) => item.product_id)
-    .map((item) => ({
-      product_id: item.product_id as string,
-      quantity: Math.min(Math.max(1, Number(item.quantity ?? 1)), 20),
-      metadata: item.metadata ?? {},
-      supplement_total: Math.min(Math.max(0, Number(item.metadata?._supplement_total ?? 0)), 20)
-    }));
+    .map((item) => {
+      const metadata = item.metadata ?? {};
+      const configuredUnitPrice = safeConfiguredUnitPrice(metadata);
+
+      return {
+        product_id: item.product_id as string,
+        quantity: Math.min(Math.max(1, Number(item.quantity ?? 1)), 20),
+        metadata,
+        configured_unit_price: configuredUnitPrice.value,
+        price_valid: configuredUnitPrice.valid,
+        supplement_total: Math.min(Math.max(0, Number(item.metadata?._supplement_total ?? 0)), 20)
+      };
+    });
 
   if (!normalizedItems.length) {
     return badRequest("El carrito está vacío.");
+  }
+
+  if (normalizedItems.some((item) => !item.price_valid)) {
+    return badRequest("Algún precio del carrito no es válido. Vuelve a añadir el producto.");
   }
 
   const productIds = Array.from(new Set(normalizedItems.map((item) => item.product_id)));
@@ -189,7 +267,7 @@ export async function POST(request: NextRequest) {
     }
 
     const basePrice = Number(product.base_price);
-    const unitPrice = Number((basePrice + item.supplement_total).toFixed(2));
+    const unitPrice = item.configured_unit_price ?? Number((basePrice + item.supplement_total).toFixed(2));
     const lineSubtotal = Number((unitPrice * item.quantity).toFixed(2));
     const possibleSubsidy = subsidyByType.get(product.product_type) ?? 0;
     const displayName =
