@@ -45,3 +45,12 @@ button {
 .matica-focus {
   @apply focus:outline-none focus:ring-2 focus:ring-matica-green focus:ring-offset-2;
 }
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}

@@ -20,35 +20,25 @@ export function CompanyLanding({ companies }: { companies: PublicCompany[] }) {
 
   return (
     <main className="min-h-screen bg-matica-soft text-matica-ink">
-      <section className="mx-auto grid min-h-screen max-w-6xl items-center gap-8 px-4 py-10 sm:px-6 lg:grid-cols-[minmax(0,1fr)_420px] lg:px-8">
+      <section className="mx-auto grid min-h-screen max-w-6xl content-start gap-6 px-4 py-6 sm:px-6 sm:py-10 lg:grid-cols-[minmax(0,1fr)_400px] lg:items-center lg:gap-10 lg:px-8">
         <div>
           <div className="inline-flex items-center gap-2 rounded-lg bg-white px-3 py-2 text-sm font-black text-matica-green shadow-sm">
             <Leaf className="h-5 w-5" />
             Matica Fresh Food
           </div>
-          <h1 className="mt-5 max-w-2xl text-4xl font-black tracking-normal sm:text-5xl">
+          <h1 className="mt-4 max-w-2xl text-3xl font-black leading-tight tracking-normal sm:text-5xl">
             Pedidos corporativos frescos, simples y listos a mediodía.
           </h1>
-          <p className="mt-4 max-w-xl text-lg font-semibold leading-7 text-matica-ink/68">
+          <p className="mt-3 max-w-xl text-base font-semibold leading-7 text-matica-ink/68 sm:text-lg">
             Pedidos de lunes a jueves de 09:30 a 12:30. Entregas entre 13:00 y 13:30.
           </p>
-          <div className="mt-6 grid gap-3 sm:grid-cols-2">
-            <div className="rounded-lg border border-matica-line bg-white p-4">
-              <p className="text-xs font-black uppercase text-matica-ink/45">Pedido</p>
-              <p className="mt-1 font-black text-matica-green">09:30 a 12:30</p>
-            </div>
-            <div className="rounded-lg border border-matica-line bg-white p-4">
-              <p className="text-xs font-black uppercase text-matica-ink/45">Entrega</p>
-              <p className="mt-1 font-black text-matica-green">13:00 a 13:30</p>
-            </div>
-          </div>
         </div>
 
-        <form className="rounded-lg border border-matica-line bg-white p-5 shadow-soft" onSubmit={submit}>
-          <div className="grid h-12 w-12 place-items-center rounded-lg bg-matica-mint text-matica-green">
-            <ShoppingBag className="h-6 w-6" />
+        <form className="rounded-lg border border-matica-line bg-white p-4 shadow-soft sm:p-5" onSubmit={submit}>
+          <div className="grid h-10 w-10 place-items-center rounded-lg bg-matica-mint text-matica-green sm:h-12 sm:w-12">
+            <ShoppingBag className="h-5 w-5 sm:h-6 sm:w-6" />
           </div>
-          <h2 className="mt-4 text-2xl font-black">Empieza tu pedido</h2>
+          <h2 className="mt-3 text-xl font-black sm:text-2xl">Empieza tu pedido</h2>
           <p className="mt-1 text-sm font-semibold text-matica-ink/60">
             Selecciona tu empresa para ver la carta disponible.
           </p>
@@ -79,7 +69,7 @@ export function CompanyLanding({ companies }: { companies: PublicCompany[] }) {
           </button>
 
           <a
-            className="matica-focus mt-3 flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-matica-line bg-white px-4 text-sm font-black text-matica-ink hover:border-matica-green hover:text-matica-green"
+            className="matica-focus mt-3 flex min-h-9 w-full items-center justify-center gap-2 rounded-lg px-4 text-sm font-bold text-matica-ink/60 hover:text-matica-green"
             href="mailto:hola@matica.es?subject=Alta%20empresa%20Matica%20B2B"
           >
             <Mail className="h-4 w-4" />

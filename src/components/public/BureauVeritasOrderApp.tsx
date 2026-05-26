@@ -57,6 +57,7 @@ type SectionKind =
 type PublicSection = {
   slug: string;
   title: string;
+  tabLabel?: string;
   description: string;
   kind: SectionKind;
   products: Product[];
@@ -72,6 +73,7 @@ type ConfigGroup = {
   key: string;
   label: string;
   type: "single" | "multi";
+  min?: number;
   max?: number;
   options: Option[];
 };
@@ -81,124 +83,56 @@ type ConfigSpec = {
   lead: string;
   included: string[];
   groups: ConfigGroup[];
-  notesPlaceholder: string;
+  notesPlaceholder?: string;
 };
-
-const SECTION_DEFINITIONS: Omit<PublicSection, "products">[] = [
-  {
-    slug: "menu-del-dia",
-    title: "Menú del día",
-    description: "Primer plato, segundo plato y bebida o postre.",
-    kind: "daily_menu"
-  },
-  {
-    slug: "medio-menu",
-    title: "Medio menú",
-    description: "Un plato a elegir con bebida o postre.",
-    kind: "half_menu"
-  },
-  {
-    slug: "bowls-signature",
-    title: "Bowls Signature",
-    description: "Recetas Matica ya equilibradas y listas para pedir.",
-    kind: "signature_bowls"
-  },
-  {
-    slug: "disena-tu-ensalada",
-    title: "Diseña tu ensalada",
-    description: "Elige base, proteína, toppings y salsa.",
-    kind: "custom_salad",
-    configurable: true
-  },
-  {
-    slug: "wraps-signature",
-    title: "Wraps Signature",
-    description: "Wraps de la casa con combinaciones cerradas.",
-    kind: "wraps_signature"
-  },
-  {
-    slug: "disena-tu-wrap",
-    title: "Diseña tu wrap",
-    description: "Monta tu wrap con proteína, relleno, toppings y salsa.",
-    kind: "custom_wrap",
-    configurable: true
-  },
-  {
-    slug: "matica-grill",
-    title: "Matica Grill",
-    description: "Platos calientes y opciones a la plancha.",
-    kind: "grill",
-    configurable: true
-  },
-  {
-    slug: "bocadillos",
-    title: "Bocadillos",
-    description: "Bocadillos rápidos con ajustes sencillos.",
-    kind: "sandwiches",
-    configurable: true
-  },
-  {
-    slug: "bebidas",
-    title: "Bebidas",
-    description: "Bebidas frías para completar el pedido.",
-    kind: "drinks",
-    configurable: true
-  },
-  {
-    slug: "postres",
-    title: "Postres",
-    description: "Dulces y fruta para cerrar el menú.",
-    kind: "desserts",
-    configurable: true
-  },
-  {
-    slug: "extras",
-    title: "Extras",
-    description: "Cubiertos y pequeños añadidos.",
-    kind: "extras"
-  }
-];
 
 const COMPANY_SECTION_DEFINITIONS: Omit<PublicSection, "products">[] = [
   {
     slug: "menus",
-    title: "MENÚS",
+    title: "Menús",
+    tabLabel: "Menús",
     description: "Menú del día, medio menú y combinaciones rápidas.",
     kind: "menus"
   },
   {
     slug: "bowls-signature",
-    title: "MATICA SIGNATURE BOWLS Y ENSALADAS",
-    description: "Bowls de la casa y ensalada configurable.",
+    title: "Matica Signature Bowls y Ensaladas",
+    tabLabel: "Bowls",
+    description: "Cuatro recetas signature y la ensalada a tu manera al final.",
     kind: "signature_bowls"
   },
   {
     slug: "wraps-signature",
-    title: "WRAPS SIGNATURE",
-    description: "Wraps Matica y wrap configurable.",
+    title: "Wraps Signature",
+    tabLabel: "Wraps",
+    description: "Cuatro wraps Matica y el wrap a tu manera al final.",
     kind: "wraps_signature"
   },
   {
     slug: "matica-grill",
-    title: "MATICA GRILL",
+    title: "Matica Grill",
+    tabLabel: "Grill",
     description: "Plato combinado configurable con proteína, guarniciones y bebida o postre.",
     kind: "grill"
   },
   {
     slug: "bocadillos",
-    title: "BOCADILLOS",
+    title: "Bocadillos",
+    tabLabel: "Bocadillos",
     description: "Elige entre los seis bocadillos disponibles.",
     kind: "sandwiches"
   },
   {
     slug: "bebidas",
-    title: "BEBIDAS",
-    description: "Bebidas frías para completar el pedido.",
+    title: "Bebidas",
+    tabLabel: "Bebidas",
+    description: "Aguas y refrescos.",
     kind: "drinks"
   },
   {
     slug: "postres",
-    title: "POSTRES",
+    title: "Postres",
+    tabLabel: "Postres",
     description: "Dulces y fruta para cerrar el menú.",
     kind: "desserts"
   }
@@ -317,29 +251,22 @@ const CONFIG_SPECS: Partial<Record<SectionKind, ConfigSpec>> = {
     ]
   },
   sandwiches: {
-    title: "Configura tu bocadillo",
-    lead: "Elige pan y pequeños extras.",
-    included: ["Pan", "Preparación"],
-    notesPlaceholder: "Muy tostado, sin tomate...",
+    title: "Elige tu bocadillo",
+    lead: "Selecciona uno de los seis bocadillos disponibles.",
+    included: ["Bocadillo"],
     groups: [
       {
-        key: "pan",
-        label: "Pan",
+        key: "bocadillo",
+        label: "Bocadillo",
         type: "single",
-        options: [{ label: "Barra clásica" }, { label: "Integral" }, { label: "Cristal", price: 0.7 }]
-      },
-      {
-        key: "preparacion",
-        label: "Preparación",
-        type: "single",
-        options: [{ label: "Frío" }, { label: "Caliente" }]
-      },
-      {
-        key: "extras",
-        label: "Extras",
-        type: "multi",
-        max: 3,
-        options: [{ label: "Tomate rallado" }, { label: "Queso", price: 0.8 }, { label: "Aguacate", price: 1.5 }]
+        options: [
+          { label: "Jamón serrano" },
+          { label: "Tortilla francesa" },
+          { label: "Atún con tomate" },
+          { label: "Pollo braseado" },
+          { label: "Lomo con queso" },
+          { label: "Vegetal" }
+        ]
       }
     ]
   },
@@ -414,10 +341,9 @@ const CONFIG_SPECS: Partial<Record<SectionKind, ConfigSpec>> = {
 };
 
 const SANDWICH_CONFIG_SPEC: ConfigSpec = {
-  title: "Configura tu bocadillo",
-  lead: "Elige uno de los seis bocadillos disponibles.",
-  included: ["Bocadillo", "Pan", "Preparación"],
-  notesPlaceholder: "Muy tostado, sin tomate...",
+  title: "Elige tu bocadillo",
+  lead: "Selecciona uno de los seis bocadillos disponibles.",
+  included: ["Bocadillo"],
   groups: [
     {
       key: "bocadillo",
@@ -431,18 +357,6 @@ const SANDWICH_CONFIG_SPEC: ConfigSpec = {
         { label: "Lomo con queso" },
         { label: "Vegetal" }
       ]
-    },
-    {
-      key: "pan",
-      label: "Pan",
-      type: "single",
-      options: [{ label: "Barra clásica" }, { label: "Integral" }, { label: "Cristal", price: 0.7 }]
-    },
-    {
-      key: "preparacion",
-      label: "Preparación",
-      type: "single",
-      options: [{ label: "Frío" }, { label: "Caliente" }]
     }
   ]
 };
@@ -461,13 +375,14 @@ const GRILL_CONFIG_SPEC: ConfigSpec = {
         { label: "Pollo plancha" },
         { label: "Lomo de cerdo" },
         { label: "Filete de ternera", price: 1.5 },
-        { label: "Opción editable" }
+        { label: "Hamburguesa" }
       ]
     },
     {
       key: "guarniciones",
       label: "Guarniciones",
       type: "multi",
+      min: 2,
       max: 2,
       options: [
         { label: "Ensalada" },
@@ -605,6 +520,16 @@ function getProductImageUrl(product: Product) {
   return product.image_url ?? (product as Product & { imageUrl?: string }).imageUrl ?? "";
 }
 
+function customLast(products: Product[], isCustomProduct: (product: Product) => boolean) {
+  return [...products.filter((product) => !isCustomProduct(product)), ...products.filter(isCustomProduct)];
+}
+
+function singleConfiguratorProduct(products: Product[], preferredName: string) {
+  const preferred = products.find((product) => normalize(product.name).includes(preferredName));
+
+  return preferred ? [preferred] : products.slice(0, 1);
+}
+
 function isCustomSaladProduct(product: Product) {
   const name = normalize(product.name);
 
@@ -739,17 +664,17 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
         case "half_menu":
           return publicData.products.filter((product) => product.product_type === "half_menu");
         case "signature_bowls":
-          return bowlsAndSalads;
+          return customLast(bowlsAndSalads, isCustomSaladProduct);
         case "custom_salad":
           return bowlsAndSalads.filter((product) => normalize(product.name).includes("ensalada"));
         case "wraps_signature":
-          return wraps;
+          return customLast(wraps, isCustomWrapProduct);
         case "custom_wrap":
           return wraps.filter((product) => normalize(product.name).includes("manera"));
         case "grill":
-          return categoryProducts("matica-grill");
+          return singleConfiguratorProduct(categoryProducts("matica-grill"), "plato combinado");
         case "sandwiches":
-          return categoryProducts("bocadillos");
+          return singleConfiguratorProduct(categoryProducts("bocadillos"), "bocadillo a elegir");
         case "drinks":
           return categoryProducts("bebidas").filter((product) => product.product_type !== "daily_menu");
         case "desserts":
@@ -880,71 +805,56 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
   }
 
   return (
-    <main className="min-h-screen pb-28 text-matica-ink">
+    <main className="min-h-screen bg-matica-soft pb-16 text-matica-ink">
       <header className="border-b border-matica-line bg-white">
-        <div className="mx-auto flex max-w-7xl flex-col gap-5 px-4 py-5 pr-36 sm:px-6 lg:flex-row lg:items-end lg:justify-between lg:px-8">
+        <div className="mx-auto max-w-7xl px-4 py-5 sm:px-6 lg:px-8">
           <div>
             <div className="mb-2 inline-flex items-center gap-2 rounded-lg bg-matica-mint px-3 py-1 text-sm font-semibold text-matica-green">
               <Leaf className="h-4 w-4" />
               Matica Fresh Food
             </div>
             <h1 className="max-w-3xl text-2xl font-black tracking-normal sm:text-4xl">
-              Matica Fresh Food para {companyName}
+              Carta Matica para {companyName}
             </h1>
-            <p className="mt-2 max-w-2xl text-base font-medium text-matica-ink/70">
-              Carta corporativa para pedir comida fresca con entrega entre {deliveryWindow}.
+            <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-matica-ink/65 sm:text-base">
+              Elige por categorías y confirma el pedido en el checkout.
             </p>
-          </div>
-          <div className="grid grid-cols-2 gap-2 sm:flex">
-            <div className="rounded-lg border border-matica-line bg-matica-soft px-4 py-3">
-              <p className="text-xs font-bold uppercase text-matica-ink/50">Pedido</p>
-              <p className="font-black text-matica-green">Piloto activo</p>
-            </div>
-            <div className="rounded-lg border border-matica-line bg-matica-soft px-4 py-3">
-              <p className="text-xs font-bold uppercase text-matica-ink/50">Entrega</p>
-              <p className="font-black text-matica-green">{deliveryWindow}</p>
-            </div>
           </div>
         </div>
       </header>
-
-      <button
-        type="button"
-        className="matica-focus fixed right-3 top-3 z-30 flex min-h-12 items-center gap-3 rounded-lg bg-matica-ink px-3 py-2 text-white shadow-soft sm:right-5 sm:top-5 sm:px-4"
-        onClick={() => goToStep("checkout")}
-      >
-        <span className="relative grid h-9 w-9 place-items-center rounded-lg bg-white/12">
-          <ShoppingBag className="h-5 w-5" />
-          {cartCount > 0 ? (
-            <span className="absolute -right-2 -top-2 grid h-5 min-w-5 place-items-center rounded-full bg-matica-lime px-1 text-xs font-black text-matica-ink">
-              {cartCount}
-            </span>
-          ) : null}
-        </span>
-        <span className="hidden text-left sm:block">
-          <span className="block text-xs font-bold text-white/65">Carrito</span>
-          <span className="block text-sm font-black">{formatCurrency(totals.total)}</span>
-        </span>
-        <span className="text-sm font-black sm:hidden">{formatCurrency(totals.total)}</span>
-      </button>
 
       {step === "catalog" ? (
         <div className="mx-auto max-w-7xl px-4 py-5 sm:px-6 lg:px-8">
           <section className="space-y-5">
           {data ? (
-            <nav className="sticky top-0 z-20 -mx-4 overflow-x-auto border-y border-matica-line bg-matica-soft/95 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6 lg:mx-0 lg:rounded-lg lg:border lg:bg-white lg:px-3">
-              <div className="flex min-w-max gap-2">
-                {publicSections.map((section) => (
-                  <a
-                    key={section.slug}
-                    className="matica-focus rounded-lg border border-matica-line bg-white px-4 py-2 text-sm font-black text-matica-ink transition hover:border-matica-green hover:text-matica-green"
-                    href={`#${section.slug}`}
-                  >
-                    {section.title}
-                  </a>
-                ))}
+            <div className="sticky top-0 z-20 -mx-4 border-y border-matica-line bg-matica-soft/95 px-4 py-2 backdrop-blur sm:-mx-6 sm:px-6 lg:mx-0 lg:rounded-lg lg:border lg:bg-white lg:px-3">
+              <div className="flex items-center gap-2">
+                <nav className="no-scrollbar min-w-0 flex-1 overflow-x-auto" aria-label="Categorías">
+                  <div className="flex w-max gap-1.5 pr-1">
+                    {publicSections.map((section) => (
+                      <a
+                        key={section.slug}
+                        className="matica-focus rounded-full border border-matica-line bg-white px-3 py-2 text-xs font-black text-matica-ink transition hover:border-matica-green hover:text-matica-green sm:px-4 sm:text-sm"
+                        href={`#${section.slug}`}
+                      >
+                        {section.tabLabel ?? section.title}
+                      </a>
+                    ))}
+                  </div>
+                </nav>
+                <button
+                  type="button"
+                  className="matica-focus flex h-10 shrink-0 items-center gap-1.5 rounded-full border border-matica-green bg-white px-2.5 text-xs font-black text-matica-green shadow-sm sm:px-3"
+                  onClick={() => goToStep("checkout")}
+                  aria-label={`Ver carrito, ${cartCount} productos, total ${formatCurrency(totals.total)}`}
+                >
+                  <ShoppingBag className="h-4 w-4" />
+                  <span>{cartCount}</span>
+                  <span className="h-4 w-px bg-matica-line" aria-hidden="true" />
+                  <span>{formatCurrency(totals.total)}</span>
+                </button>
               </div>
-            </nav>
+            </div>
           ) : null}
 
           {!data ? (
@@ -954,7 +864,7 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
           ) : (
             <div className="space-y-7">
               {publicSections.map((section) => (
-                <section key={section.slug} id={section.slug} className="scroll-mt-24 space-y-3">
+                <section key={section.slug} id={section.slug} className="scroll-mt-24 space-y-3 sm:scroll-mt-28">
                   <div className="flex items-end justify-between gap-3">
                     <div>
                       <h2 className="text-xl font-black">{section.title}</h2>
@@ -1093,7 +1003,7 @@ function ProductCard({
 
   return (
     <article className="overflow-hidden rounded-lg border border-matica-line bg-white shadow-sm">
-      <div className="relative aspect-[4/3] bg-matica-soft">
+      <div className="relative h-24 bg-matica-soft sm:h-32">
         {imageUrl && !imageFailed ? (
           <img
             className="h-full w-full object-cover"
@@ -1102,9 +1012,9 @@ function ProductCard({
             onError={() => setImageFailed(true)}
           />
         ) : (
-          <div className="grid h-full place-items-center bg-matica-mint text-matica-green">
-            <div className="grid h-16 w-16 place-items-center rounded-lg bg-white/80">
-              <ImageIcon className="h-7 w-7" />
+          <div className="grid h-full place-items-center bg-gradient-to-br from-matica-mint via-white to-matica-soft text-matica-green">
+            <div className="grid h-11 w-11 place-items-center rounded-full bg-white/80 shadow-sm">
+              <ImageIcon className="h-5 w-5" />
             </div>
           </div>
         )}
@@ -1115,16 +1025,16 @@ function ProductCard({
         ) : null}
       </div>
 
-      <div className="flex min-h-[260px] flex-col p-4">
+      <div className="flex flex-col gap-2.5 p-2.5 sm:gap-3 sm:p-3">
       <div className="flex items-start justify-between gap-3">
-        <div>
-          <h3 className="text-lg font-black">{displayName}</h3>
+        <div className="min-w-0">
+          <h3 className="text-base font-black leading-5">{displayName}</h3>
           {product.description ? (
-            <p className="mt-1 text-sm font-semibold leading-5 text-matica-ink/60">{product.description}</p>
+            <p className="mt-1 line-clamp-2 text-sm font-semibold leading-5 text-matica-ink/60">{product.description}</p>
           ) : null}
         </div>
-        <div className="text-right">
-          <p className="text-lg font-black">{formatCurrency(Number(product.customer_price))}</p>
+        <div className="shrink-0 text-right">
+          <p className="text-base font-black">{formatCurrency(Number(product.customer_price))}</p>
           {subsidy > 0 ? (
             <p className="text-xs font-bold text-matica-ink/45 line-through">
               {formatCurrency(Number(product.base_price))}
@@ -1134,7 +1044,7 @@ function ProductCard({
       </div>
 
       {product.product_type === "daily_menu" ? (
-        <div className="mt-4 grid gap-2">
+        <div className="grid gap-2">
           <ChoiceSelect
             label="Primer plato"
             value={choices.first_course ?? ""}
@@ -1157,7 +1067,7 @@ function ProductCard({
       ) : null}
 
       {product.product_type === "half_menu" ? (
-        <div className="mt-4 grid gap-2">
+        <div className="grid gap-2">
           <ChoiceSelect
             label="Plato"
             value={choices.plate ?? ""}
@@ -1176,28 +1086,29 @@ function ProductCard({
         </div>
       ) : null}
 
-      <div className="mt-auto flex items-center justify-between gap-3 pt-4">
+      <div className="mt-auto flex items-center justify-between gap-2 pt-1">
         {product.sold_out ? (
-          <span className="rounded-lg bg-matica-ink/10 px-3 py-2 text-sm font-black text-matica-ink/60">Agotado</span>
+          <span className="rounded-lg bg-matica-ink/10 px-2 py-1.5 text-xs font-black text-matica-ink/60">Agotado</span>
         ) : subsidy > 0 ? (
-          <span className="rounded-lg bg-matica-mint px-3 py-2 text-sm font-black text-matica-green">
+          <span className="rounded-lg bg-matica-mint px-2 py-1.5 text-xs font-black text-matica-green">
             Subvención -{formatCurrency(subsidy)}
           </span>
         ) : configurable ? (
-          <span className="flex items-center gap-1 text-sm font-bold text-matica-ink/50">
-            <SlidersHorizontal className="h-4 w-4" />
+          <span className="flex items-center gap-1 text-xs font-bold text-matica-ink/50">
+            <SlidersHorizontal className="h-3.5 w-3.5" />
             Personalizable
           </span>
         ) : (
-          <span className="flex items-center gap-1 text-sm font-bold text-matica-ink/50">
-            <Clock className="h-4 w-4" />
+          <span className="flex items-center gap-1 text-xs font-bold text-matica-ink/50">
+            <Clock className="h-3.5 w-3.5" />
             Hoy
           </span>
         )}
         <button
-          className="matica-focus flex min-h-11 items-center gap-2 rounded-lg bg-matica-green px-4 py-2 font-black text-white disabled:cursor-not-allowed disabled:bg-matica-ink/30"
+          className="matica-focus flex min-h-9 items-center gap-1.5 rounded-lg bg-matica-green px-3 py-1.5 text-sm font-black text-white disabled:cursor-not-allowed disabled:bg-matica-ink/30"
           onClick={onAdd}
           disabled={!canAdd}
+          type="button"
         >
           {configurable ? <SlidersHorizontal className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
           {configurable ? "Configurar" : "Añadir"}
@@ -1221,9 +1132,9 @@ function ChoiceSelect({
 }) {
   return (
     <label className="space-y-1">
-      <span className="text-xs font-black uppercase text-matica-ink/45">{label}</span>
+      <span className="text-[11px] font-black uppercase text-matica-ink/45">{label}</span>
       <select
-        className="matica-focus w-full rounded-lg border border-matica-line bg-white px-3 py-2 text-sm font-bold"
+        className="matica-focus w-full rounded-lg border border-matica-line bg-white px-2.5 py-1.5 text-sm font-bold leading-tight"
         value={value}
         onChange={(event) => onChange(event.target.value)}
       >
@@ -1266,6 +1177,9 @@ function ConfigModal({
       (multiValues[group.key] ?? []).reduce((groupSum, optionLabel) => groupSum + getOptionPrice(spec, group.key, optionLabel), 0)
     );
   }, 0);
+  const canSubmitConfig = spec.groups.every(
+    (group) => group.type !== "multi" || !group.min || (multiValues[group.key] ?? []).length >= group.min
+  );
 
   function toggleMulti(group: ConfigGroup, optionLabel: string) {
     setMultiValues((current) => {
@@ -1284,6 +1198,10 @@ function ConfigModal({
   }
 
   function submit() {
+    if (!canSubmitConfig) {
+      return;
+    }
+
     const metadata: Record<string, string> = {
       display_name: getDisplayName(product, section.kind),
       categoria: section.title,
@@ -1356,8 +1274,10 @@ function ConfigModal({
             <fieldset key={group.key} className="space-y-2">
               <legend className="flex items-center gap-2 text-sm font-black uppercase text-matica-ink/55">
                 {group.label}
-                {group.type === "multi" && group.max ? (
-                  <span className="text-xs font-bold normal-case text-matica-ink/45">máx. {group.max}</span>
+                {group.type === "multi" && (group.min || group.max) ? (
+                  <span className="text-xs font-bold normal-case text-matica-ink/45">
+                    {group.min && group.max === group.min ? `elige ${group.min}` : group.max ? `máx. ${group.max}` : `mín. ${group.min}`}
+                  </span>
                 ) : null}
               </legend>
               <div className="grid gap-2 sm:grid-cols-2">
@@ -1394,15 +1314,17 @@ function ConfigModal({
             </fieldset>
           ))}
 
-          <label className="block space-y-1">
-            <span className="text-sm font-bold text-matica-ink/70">Notas de preparación</span>
-            <textarea
-              className="matica-focus min-h-20 w-full rounded-lg border border-matica-line px-3 py-3"
-              value={configNotes}
-              onChange={(event) => setConfigNotes(event.target.value)}
-              placeholder={spec.notesPlaceholder}
-            />
-          </label>
+          {spec.notesPlaceholder ? (
+            <label className="block space-y-1">
+              <span className="text-sm font-bold text-matica-ink/70">Notas de preparación</span>
+              <textarea
+                className="matica-focus min-h-20 w-full rounded-lg border border-matica-line px-3 py-3"
+                value={configNotes}
+                onChange={(event) => setConfigNotes(event.target.value)}
+                placeholder={spec.notesPlaceholder}
+              />
+            </label>
+          ) : null}
         </div>
 
         <div className="sticky bottom-0 flex items-center justify-between gap-3 border-t border-matica-line bg-white p-4">
@@ -1414,8 +1336,10 @@ function ConfigModal({
             ) : null}
           </div>
           <button
-            className="matica-focus flex min-h-12 items-center gap-2 rounded-lg bg-matica-green px-5 font-black text-white"
+            className="matica-focus flex min-h-12 items-center gap-2 rounded-lg bg-matica-green px-5 font-black text-white disabled:cursor-not-allowed disabled:bg-matica-ink/30"
             onClick={submit}
+            disabled={!canSubmitConfig}
+            type="button"
           >
             <Plus className="h-5 w-5" />
             Añadir
@@ -1471,7 +1395,7 @@ function CheckoutPanel({
         onClick={onBack}
       >
         <ArrowLeft className="h-4 w-4" />
-        Volver al catalogo
+        Volver al catálogo
       </button>
 
       <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
@@ -1574,7 +1498,7 @@ function CheckoutPanel({
                 placeholder="nombre@bureauveritas.com"
                 type="email"
               />
-              <InputField label="Telefono" value={customer.phone} onChange={(value) => updateCustomer("phone", value)} placeholder="600 000 000" />
+              <InputField label="Teléfono" value={customer.phone} onChange={(value) => updateCustomer("phone", value)} placeholder="600 000 000" />
               <label className="space-y-1">
                 <span className="text-sm font-bold text-matica-ink/70">Empresa</span>
                 <select
@@ -1602,7 +1526,7 @@ function CheckoutPanel({
               <span>{formatCurrency(totals.subtotal)}</span>
             </div>
             <div className="flex justify-between text-sm font-bold text-matica-green">
-              <span>Subvencion {companyName}</span>
+              <span>Subvención {companyName}</span>
               <span>-{formatCurrency(totals.subsidyTotal)}</span>
             </div>
             <div className="flex justify-between border-t border-matica-line pt-2 text-lg font-black">
@@ -1617,13 +1541,13 @@ function CheckoutPanel({
               Pago online
             </div>
             <p className="mt-1 text-sm font-semibold text-matica-ink/60">
-              Adyen queda preparado como siguiente paso. Hoy el pedido se confirma sin cobrar online.
+              Pago online próximamente. Durante el piloto, el pedido se confirma sin cobro online.
             </p>
           </div>
 
           {subsidyAlreadyUsed && hasSubsidizedItem ? (
             <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm font-bold text-amber-900">
-              Este email ya ha usado la subvencion hoy. Los menus se cobraran a precio completo.
+              Este email ya ha usado la subvención hoy. Los menús se cobrarán a precio completo.
             </div>
           ) : null}
 
@@ -1678,7 +1602,7 @@ function ConfirmationPanel({
             Pago futuro con Adyen
           </div>
           <p className="mt-1 text-sm font-semibold text-matica-ink/60">
-            El flujo ya tiene una parada reservada para pago online. La integracion real se activara mas adelante.
+            Pago online próximamente. Durante el piloto, el pedido se confirma sin cobro online.
           </p>
         </div>
 
@@ -1687,7 +1611,7 @@ function ConfirmationPanel({
           className="matica-focus mt-5 inline-flex min-h-12 items-center justify-center rounded-lg bg-matica-green px-5 font-black text-white"
           onClick={onBackToCatalog}
         >
-          Volver al catalogo
+          Volver al catálogo
         </button>
       </div>
     </section>
