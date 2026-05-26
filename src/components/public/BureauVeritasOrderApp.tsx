@@ -12,7 +12,6 @@ import {
   Minus,
   Plus,
   ShoppingBag,
-  SlidersHorizontal,
   Utensils,
   X
 } from "lucide-react";
@@ -37,7 +36,6 @@ type SubmitState =
   | { status: "success"; message: string }
   | { status: "error"; message: string };
 
-type MenuChoiceState = Record<string, Record<string, string>>;
 type PublicStep = "catalog" | "checkout" | "confirmation";
 
 type SectionKind =
@@ -67,6 +65,7 @@ type PublicSection = {
 type Option = {
   label: string;
   price?: number;
+  unitPrice?: number;
 };
 
 type ConfigGroup = {
@@ -135,277 +134,118 @@ const COMPANY_SECTION_DEFINITIONS: Omit<PublicSection, "products">[] = [
     tabLabel: "Postres",
     description: "Dulces y fruta para cerrar el menú.",
     kind: "desserts"
+  },
+  {
+    slug: "otros",
+    title: "Otros",
+    tabLabel: "Otros",
+    description: "Pequeños extras para completar el pedido.",
+    kind: "extras"
   }
 ];
 
-const CONFIG_SPECS: Partial<Record<SectionKind, ConfigSpec>> = {
-  custom_salad: {
-    title: "Ensalada a tu manera",
-    lead: "Incluye 1 base, 1 proteína, hasta 4 toppings y 1 salsa.",
-    included: ["Base", "Proteína", "4 toppings", "Salsa"],
-    notesPlaceholder: "Sin cebolla, salsa aparte, alergias...",
-    groups: [
-      {
-        key: "base",
-        label: "Base",
-        type: "single",
-        options: [
-          { label: "Mezclum" },
-          { label: "Arroz integral" },
-          { label: "Pasta fría" },
-          { label: "Quinoa", price: 1 }
-        ]
-      },
-      {
-        key: "proteina",
-        label: "Proteína",
-        type: "single",
-        options: [
-          { label: "Pollo asado" },
-          { label: "Atún" },
-          { label: "Huevo cocido" },
-          { label: "Heura", price: 1.5 },
-          { label: "Salmón ahumado", price: 2.5 }
-        ]
-      },
-      {
-        key: "toppings",
-        label: "Toppings",
-        type: "multi",
-        max: 4,
-        options: [
-          { label: "Tomate cherry" },
-          { label: "Maíz" },
-          { label: "Zanahoria" },
-          { label: "Cebolla crujiente" },
-          { label: "Aguacate", price: 1.5 },
-          { label: "Queso feta", price: 1 }
-        ]
-      },
-      {
-        key: "salsa",
-        label: "Salsa",
-        type: "single",
-        options: [
-          { label: "Mostaza y miel" },
-          { label: "César" },
-          { label: "Yogur y lima" },
-          { label: "Aceite y vinagre" }
-        ]
-      }
-    ]
-  },
-  custom_wrap: {
-    title: "Wrap a tu manera",
-    lead: "Incluye 1 proteína, 1 base/relleno, hasta 3 toppings y 1 salsa.",
-    included: ["Proteína", "Base/relleno", "3 toppings", "Salsa"],
-    notesPlaceholder: "Tostado, sin picante, salsa aparte...",
-    groups: [
-      {
-        key: "proteina",
-        label: "Proteína",
-        type: "single",
-        options: [
-          { label: "Pollo asado" },
-          { label: "Atún" },
-          { label: "Falafel" },
-          { label: "Ternera grill", price: 2 },
-          { label: "Heura", price: 1.5 }
-        ]
-      },
-      {
-        key: "relleno",
-        label: "Base/relleno",
-        type: "single",
-        options: [
-          { label: "Mezclum" },
-          { label: "Arroz especiado" },
-          { label: "Verduras grill" },
-          { label: "Queso fundido", price: 0.8 }
-        ]
-      },
-      {
-        key: "toppings",
-        label: "Toppings",
-        type: "multi",
-        max: 3,
-        options: [
-          { label: "Tomate" },
-          { label: "Cebolla morada" },
-          { label: "Maíz" },
-          { label: "Jalapeños" },
-          { label: "Aguacate", price: 1.5 }
-        ]
-      },
-      {
-        key: "salsa",
-        label: "Salsa",
-        type: "single",
-        options: [
-          { label: "Chipotle suave" },
-          { label: "Yogur" },
-          { label: "Mostaza y miel" },
-          { label: "Sin salsa" }
-        ]
-      }
-    ]
-  },
-  sandwiches: {
-    title: "Elige tu bocadillo",
-    lead: "Selecciona uno de los seis bocadillos disponibles.",
-    included: ["Bocadillo"],
-    groups: [
-      {
-        key: "bocadillo",
-        label: "Bocadillo",
-        type: "single",
-        options: [
-          { label: "Jamón serrano" },
-          { label: "Tortilla francesa" },
-          { label: "Atún con tomate" },
-          { label: "Pollo braseado" },
-          { label: "Lomo con queso" },
-          { label: "Vegetal" }
-        ]
-      }
-    ]
-  },
-  grill: {
-    title: "Configura Matica Grill",
-    lead: "Ajusta punto, guarnición y salsa.",
-    included: ["Principal", "Guarnición básica", "Salsa"],
-    notesPlaceholder: "Punto de la carne, sin salsa...",
-    groups: [
-      {
-        key: "punto",
-        label: "Punto",
-        type: "single",
-        options: [{ label: "Al punto" }, { label: "Muy hecho" }, { label: "Poco hecho" }]
-      },
-      {
-        key: "guarnicion",
-        label: "Guarnición",
-        type: "single",
-        options: [{ label: "Ensalada" }, { label: "Arroz" }, { label: "Patatas", price: 1 }]
-      },
-      {
-        key: "salsa",
-        label: "Salsa",
-        type: "single",
-        options: [{ label: "Chimichurri" }, { label: "Mostaza" }, { label: "Sin salsa" }]
-      }
-    ]
-  },
-  drinks: {
-    title: "Bebida",
-    lead: "Elige cómo quieres recibirla.",
-    included: ["Bebida fría"],
-    notesPlaceholder: "Con vaso, sin hielo...",
-    groups: [
-      {
-        key: "temperatura",
-        label: "Temperatura",
-        type: "single",
-        options: [{ label: "Fría" }, { label: "Natural" }]
-      },
-      {
-        key: "extras",
-        label: "Extras",
-        type: "multi",
-        max: 2,
-        options: [{ label: "Vaso" }, { label: "Hielo" }, { label: "Limón" }]
-      }
-    ]
-  },
-  desserts: {
-    title: "Postre",
-    lead: "Ajustes rápidos para postres.",
-    included: ["Postre individual"],
-    notesPlaceholder: "Cuchara, para compartir...",
-    groups: [
-      {
-        key: "servicio",
-        label: "Servicio",
-        type: "single",
-        options: [{ label: "Con cuchara" }, { label: "Sin cubierto" }]
-      },
-      {
-        key: "extras",
-        label: "Extras",
-        type: "multi",
-        max: 2,
-        options: [{ label: "Canela" }, { label: "Chocolate extra", price: 0.5 }]
-      }
-    ]
-  }
-};
+const SALAD_BASE_OPTIONS: Option[] = [
+  { label: "Mezclum" },
+  { label: "Arroz integral" },
+  { label: "Pasta fría" },
+  { label: "Quinoa" }
+];
 
-const SANDWICH_CONFIG_SPEC: ConfigSpec = {
-  title: "Elige tu bocadillo",
-  lead: "Selecciona uno de los seis bocadillos disponibles.",
-  included: ["Bocadillo"],
-  groups: [
-    {
-      key: "bocadillo",
-      label: "Bocadillo",
-      type: "single",
-      options: [
-        { label: "Jamón serrano" },
-        { label: "Tortilla francesa" },
-        { label: "Atún con tomate" },
-        { label: "Pollo braseado" },
-        { label: "Lomo con queso" },
-        { label: "Vegetal" }
-      ]
-    }
-  ]
-};
+const SALAD_PROTEIN_OPTIONS: Option[] = [
+  { label: "Pollo asado" },
+  { label: "Atún" },
+  { label: "Huevo cocido" },
+  { label: "Heura" },
+  { label: "Salmón ahumado" }
+];
 
-const GRILL_CONFIG_SPEC: ConfigSpec = {
-  title: "Configura tu plato combinado",
-  lead: "Elige 1 proteína, 2 guarniciones y bebida o postre.",
-  included: ["Proteína", "2 guarniciones", "Bebida o postre"],
-  notesPlaceholder: "Punto de la carne, sin salsa...",
-  groups: [
-    {
-      key: "proteina",
-      label: "Proteína",
-      type: "single",
-      options: [
-        { label: "Pollo plancha" },
-        { label: "Lomo de cerdo" },
-        { label: "Filete de ternera", price: 1.5 },
-        { label: "Hamburguesa" }
-      ]
-    },
-    {
-      key: "guarniciones",
-      label: "Guarniciones",
-      type: "multi",
-      min: 2,
-      max: 2,
-      options: [
-        { label: "Ensalada" },
-        { label: "Arroz" },
-        { label: "Patatas", price: 1 },
-        { label: "Verduras grill" },
-        { label: "Pasta fría" }
-      ]
-    },
-    {
-      key: "incluye",
-      label: "Bebida o postre",
-      type: "single",
-      options: [
-        { label: "Agua mineral" },
-        { label: "Coca Cola" },
-        { label: "Coca Cola Zero" },
-        { label: "Yogur" },
-        { label: "Fruta" }
-      ]
-    }
-  ]
-};
+const SALAD_TOPPING_OPTIONS: Option[] = [
+  { label: "Tomate cherry" },
+  { label: "Maíz" },
+  { label: "Zanahoria" },
+  { label: "Cebolla crujiente" },
+  { label: "Aguacate" },
+  { label: "Queso feta" }
+];
+
+const DRESSING_OPTIONS: Option[] = [
+  { label: "Mostaza y miel" },
+  { label: "César" },
+  { label: "Yogur y lima" },
+  { label: "Aceite y vinagre" }
+];
+
+const WRAP_PROTEIN_OPTIONS: Option[] = [
+  { label: "Pollo asado" },
+  { label: "Atún" },
+  { label: "Falafel" },
+  { label: "Ternera grill" },
+  { label: "Heura" }
+];
+
+const WRAP_FILLING_OPTIONS: Option[] = [
+  { label: "Mezclum" },
+  { label: "Arroz especiado" },
+  { label: "Verduras grill" },
+  { label: "Queso fundido" }
+];
+
+const WRAP_TOPPING_OPTIONS: Option[] = [
+  { label: "Tomate" },
+  { label: "Cebolla morada" },
+  { label: "Maíz" },
+  { label: "Jalapeños" },
+  { label: "Aguacate" }
+];
+
+const WRAP_SAUCE_OPTIONS: Option[] = [
+  { label: "Chipotle suave" },
+  { label: "Yogur" },
+  { label: "Mostaza y miel" },
+  { label: "Sin salsa" }
+];
+
+const SANDWICH_OPTIONS: Option[] = [
+  { label: "Pollo con queso de cabra y cebolla caramelizada" },
+  { label: "Pollo con bacon, lechuga y cebolla plancha" },
+  { label: "Bocadillo de jamón serrano" },
+  { label: "Bocadillo de tortilla" },
+  { label: "Bocadillo de lomo con queso" },
+  { label: "Bocadillo de bacon con queso" },
+  { label: "Bocadillo de atún y pimientos asados" }
+];
+
+const GRILL_PROTEIN_OPTIONS: Option[] = [
+  { label: "Pollo a la plancha" },
+  { label: "Lomo de cerdo" },
+  { label: "Filete de ternera" }
+];
+
+const GRILL_SIDE_OPTIONS: Option[] = [
+  { label: "Arroz jazmín" },
+  { label: "Patata frita" },
+  { label: "Verdurita asada" },
+  { label: "Ensalada" }
+];
+
+const DRINK_OPTIONS: Option[] = [
+  { label: "Coca Cola", unitPrice: 2 },
+  { label: "Coca Cola Zero", unitPrice: 2 },
+  { label: "Lipton", unitPrice: 2 },
+  { label: "Fanta Naranja", unitPrice: 2 },
+  { label: "Agua mineral", unitPrice: 1.5 },
+  { label: "Agua con gas", unitPrice: 1.5 }
+];
+
+const DESSERT_OPTIONS: Option[] = [
+  { label: "Flan", unitPrice: 1 },
+  { label: "Yogur de frutas", unitPrice: 1 },
+  { label: "Natillas", unitPrice: 1 },
+  { label: "Plátano", unitPrice: 1 },
+  { label: "Manzana", unitPrice: 1 },
+  { label: "Flan de queso", unitPrice: 1.2 },
+  { label: "Cookie", unitPrice: 2 }
+];
 
 function normalize(value: string) {
   return value
@@ -418,9 +258,21 @@ function formatMetadataKey(key: string) {
   const labels: Record<string, string> = {
     first_course: "Primero",
     second_course: "Segundo",
-    drink_or_dessert: "Incluye",
-    plate: "Plato",
+    drink_or_dessert: "Bebida o postre",
+    plate: "Plato único",
+    salad_base: "Base ensalada",
+    protein: "Proteína",
+    toppings: "Toppings",
+    dressing: "Aliño",
+    sandwich: "Bocadillo",
+    filling: "Relleno/base",
+    sauce: "Salsa",
+    main_protein: "Proteína principal",
+    sides: "Guarnición",
+    drink: "Bebida",
+    dessert: "Postre",
     display_name: "",
+    _configured_unit_price: "",
     _supplement_total: ""
   };
 
@@ -438,25 +290,6 @@ function metadataLabel(metadata?: Record<string, string>) {
     .join(" · ");
 }
 
-function getDefaultChoices(product: Product, menu: DailyMenu | null): Record<string, string> {
-  if (product.product_type === "daily_menu") {
-    return {
-      first_course: menu?.first_courses[0] ?? "",
-      second_course: menu?.second_courses[0] ?? "",
-      drink_or_dessert: menu?.drinks[0] ?? menu?.desserts[0] ?? ""
-    };
-  }
-
-  if (product.product_type === "half_menu") {
-    return {
-      plate: menu?.first_courses[0] ?? menu?.second_courses[0] ?? "",
-      drink_or_dessert: menu?.drinks[0] ?? menu?.desserts[0] ?? ""
-    };
-  }
-
-  return {};
-}
-
 function hasMenuChoices(product: Product, menu: DailyMenu | null) {
   if (product.product_type === "daily_menu") {
     return Boolean(menu?.first_courses.length && menu.second_courses.length && (menu.drinks.length || menu.desserts.length));
@@ -469,20 +302,54 @@ function hasMenuChoices(product: Product, menu: DailyMenu | null) {
   return true;
 }
 
-function optionGroup(menu: DailyMenu | null) {
+function menuDrinkOrDessertOptions(menu: DailyMenu | null): Option[] {
   return [
-    ...(menu?.drinks ?? []).map((value) => ({ label: `Bebida: ${value}`, value })),
-    ...(menu?.desserts ?? []).map((value) => ({ label: `Postre: ${value}`, value }))
+    ...(menu?.drinks ?? []).map((value) => ({ label: `Bebida: ${value}` })),
+    ...(menu?.desserts ?? []).map((value) => ({ label: `Postre: ${value}` }))
   ];
+}
+
+function menuPlateOptions(menu: DailyMenu | null): Option[] {
+  return [
+    ...(menu?.first_courses ?? []).map((value) => ({ label: `Primero: ${value}` })),
+    ...(menu?.second_courses ?? []).map((value) => ({ label: `Segundo: ${value}` }))
+  ];
+}
+
+function exactMultiGroup(key: string, label: string, count: number, options: Option[]): ConfigGroup {
+  return {
+    key,
+    label,
+    type: "multi",
+    min: count,
+    max: count,
+    options
+  };
 }
 
 function getDisplayName(product: Product, kind: SectionKind) {
   if (kind === "custom_salad" || isCustomSaladProduct(product)) {
-    return "Ensalada a tu manera";
+    return "Diseña tu ensalada";
   }
 
   if (kind === "custom_wrap" || isCustomWrapProduct(product)) {
-    return "Wrap a tu manera";
+    return "Diseña tu wrap";
+  }
+
+  if (kind === "grill") {
+    return "Platos combinados Matica";
+  }
+
+  if (kind === "sandwiches") {
+    return "Escoge tu bocadillo";
+  }
+
+  if (kind === "drinks") {
+    return "Escoge tu bebida";
+  }
+
+  if (kind === "desserts") {
+    return "Escoge tu postre";
   }
 
   return product.name;
@@ -492,10 +359,8 @@ function buildCartItem(
   product: Product,
   choices: Record<string, string>,
   displayName: string,
-  supplementTotal = 0
+  unitPrice = Number(product.base_price)
 ): CartItem {
-  const unitPrice = Number(product.base_price) + supplementTotal;
-
   return {
     key: `${product.id}:${JSON.stringify(choices)}`,
     product_id: product.id,
@@ -508,12 +373,12 @@ function buildCartItem(
   };
 }
 
-function getSupplementLabel(option: Option) {
-  return option.price ? `${option.label} (+${formatCurrency(option.price)})` : option.label;
-}
-
 function getOptionPrice(spec: ConfigSpec, groupKey: string, optionLabel: string) {
   return spec.groups.find((group) => group.key === groupKey)?.options.find((option) => option.label === optionLabel)?.price ?? 0;
+}
+
+function getOptionUnitPrice(spec: ConfigSpec, groupKey: string, optionLabel: string) {
+  return spec.groups.find((group) => group.key === groupKey)?.options.find((option) => option.label === optionLabel)?.unitPrice;
 }
 
 function getProductImageUrl(product: Product) {
@@ -542,34 +407,243 @@ function isCustomWrapProduct(product: Product) {
   return name.includes("disena tu wrap") || name.includes("wrap a tu manera");
 }
 
-function isConfigurableProduct(product: Product, section: PublicSection) {
-  return (
-    isCustomSaladProduct(product) ||
-    isCustomWrapProduct(product) ||
-    section.kind === "grill" ||
-    section.kind === "sandwiches" ||
-    Boolean(section.configurable)
-  );
+function isMenuSaladSandwichProduct(product: Product) {
+  const name = normalize(product.name);
+
+  return name.includes("ensalada pequena") && name.includes("bocadillo");
 }
 
-function getConfigSpec(product: Product, section: PublicSection) {
-  if (isCustomSaladProduct(product)) {
-    return CONFIG_SPECS.custom_salad!;
+function cloneCatalogProduct(product: Product, overrides: Partial<Pick<Product, "name" | "description" | "base_price" | "customer_price">>) {
+  return {
+    ...product,
+    ...overrides
+  };
+}
+
+function overrideCatalogProduct(product: Product, section: Omit<PublicSection, "products">) {
+  const name = normalize(product.name);
+
+  if (product.product_type === "daily_menu") {
+    return cloneCatalogProduct(product, {
+      name: "Menú del día",
+      description: "Primer plato, segundo plato y bebida o postre. Pan incluido.",
+      base_price: 13,
+      customer_price: 9
+    });
   }
 
-  if (isCustomWrapProduct(product)) {
-    return CONFIG_SPECS.custom_wrap!;
+  if (product.product_type === "half_menu") {
+    return cloneCatalogProduct(product, {
+      name: "Medio menú",
+      description: "Plato único y bebida o postre. Pan incluido.",
+      base_price: 10,
+      customer_price: 6.5
+    });
+  }
+
+  if (isMenuSaladSandwichProduct(product)) {
+    return cloneCatalogProduct(product, {
+      name: "Menú ensalada pequeña + bocadillo",
+      description: "Ensalada configurable y bocadillo a elegir.",
+      base_price: 10,
+      customer_price: 10
+    });
+  }
+
+  if (section.kind === "signature_bowls") {
+    if (name.includes("caesar")) {
+      return cloneCatalogProduct(product, { name: "Caesar Crunch Chicken Bowl", base_price: 9.9, customer_price: 9.9 });
+    }
+
+    if (name.includes("mediterranean")) {
+      return cloneCatalogProduct(product, { name: "Mediterranean Fresh Bowl", base_price: 9.9, customer_price: 9.9 });
+    }
+
+    if (name.includes("tex-mex")) {
+      return cloneCatalogProduct(product, { name: "Tex-Mex Protein Bowl", base_price: 9.9, customer_price: 9.9 });
+    }
+
+    if (name.includes("green")) {
+      return cloneCatalogProduct(product, { name: "Green Fresh Bowl", base_price: 9.9, customer_price: 9.9 });
+    }
+
+    if (isCustomSaladProduct(product)) {
+      return cloneCatalogProduct(product, { name: "Diseña tu ensalada", base_price: 7.5, customer_price: 7.5 });
+    }
+  }
+
+  if (section.kind === "wraps_signature") {
+    if (isCustomWrapProduct(product)) {
+      return cloneCatalogProduct(product, { name: "Diseña tu wrap", base_price: 7.5, customer_price: 7.5 });
+    }
+
+    return cloneCatalogProduct(product, { base_price: 8.9, customer_price: 8.9 });
   }
 
   if (section.kind === "grill") {
-    return GRILL_CONFIG_SPEC;
+    return cloneCatalogProduct(product, {
+      name: "Platos combinados Matica",
+      description: "Proteína principal, dos guarniciones y bebida o postre. Pan incluido.",
+      base_price: 10,
+      customer_price: 10
+    });
   }
 
   if (section.kind === "sandwiches") {
-    return SANDWICH_CONFIG_SPEC;
+    const currentPrice = Number(product.customer_price || product.base_price || 6);
+
+    return cloneCatalogProduct(product, {
+      name: "Escoge tu bocadillo",
+      description: "Elige uno de los bocadillos disponibles.",
+      base_price: currentPrice,
+      customer_price: currentPrice
+    });
   }
 
-  return (CONFIG_SPECS[section.kind] ?? CONFIG_SPECS.sandwiches)!;
+  if (section.kind === "drinks") {
+    return cloneCatalogProduct(product, {
+      name: "Escoge tu bebida",
+      description: "Aguas y refrescos.",
+      base_price: 1.5,
+      customer_price: 1.5
+    });
+  }
+
+  if (section.kind === "desserts") {
+    return cloneCatalogProduct(product, {
+      name: "Escoge tu postre",
+      description: "Postres disponibles.",
+      base_price: 1,
+      customer_price: 1
+    });
+  }
+
+  if (section.kind === "extras") {
+    return cloneCatalogProduct(product, {
+      name: "Cubiertos",
+      description: "Set de cubiertos para tu pedido.",
+      base_price: 0.2,
+      customer_price: 0.2
+    });
+  }
+
+  return product;
+}
+
+function getSaladGroups(includeSandwich = false): ConfigGroup[] {
+  return [
+    exactMultiGroup("salad_base", "Base ensalada", 2, SALAD_BASE_OPTIONS),
+    { key: "protein", label: "Proteína", type: "single", options: SALAD_PROTEIN_OPTIONS },
+    exactMultiGroup("toppings", "Toppings", 3, SALAD_TOPPING_OPTIONS),
+    { key: "dressing", label: "Aliño", type: "single", options: DRESSING_OPTIONS },
+    ...(includeSandwich ? [{ key: "sandwich", label: "Bocadillo", type: "single" as const, options: SANDWICH_OPTIONS }] : [])
+  ];
+}
+
+function getConfigSpec(product: Product, section: PublicSection, menu: DailyMenu | null): ConfigSpec {
+  if (product.product_type === "daily_menu") {
+    return {
+      title: "Menú del día",
+      lead: "Primer plato, segundo plato y bebida o postre. Pan incluido.",
+      included: ["Pan incluido", "Subvención -4,00 €"],
+      groups: [
+        { key: "first_course", label: "Primer plato", type: "single", options: (menu?.first_courses ?? []).map((label) => ({ label })) },
+        { key: "second_course", label: "Segundo plato", type: "single", options: (menu?.second_courses ?? []).map((label) => ({ label })) },
+        { key: "drink_or_dessert", label: "Bebida o postre", type: "single", options: menuDrinkOrDessertOptions(menu) }
+      ]
+    };
+  }
+
+  if (product.product_type === "half_menu") {
+    return {
+      title: "Medio menú",
+      lead: "Plato único y bebida o postre. Pan incluido.",
+      included: ["Pan incluido", "Subvención -3,50 €"],
+      groups: [
+        { key: "plate", label: "Plato único", type: "single", options: menuPlateOptions(menu) },
+        { key: "drink_or_dessert", label: "Bebida o postre", type: "single", options: menuDrinkOrDessertOptions(menu) }
+      ]
+    };
+  }
+
+  if (isMenuSaladSandwichProduct(product)) {
+    return {
+      title: "Menú ensalada pequeña + bocadillo",
+      lead: "Configura la ensalada y elige un bocadillo.",
+      included: [],
+      groups: getSaladGroups(true)
+    };
+  }
+
+  if (isCustomSaladProduct(product)) {
+    return {
+      title: "Diseña tu ensalada",
+      lead: "Elige 2 bases, 1 proteína, 3 toppings y 1 aliño.",
+      included: [],
+      groups: getSaladGroups()
+    };
+  }
+
+  if (isCustomWrapProduct(product)) {
+    return {
+      title: "Diseña tu wrap",
+      lead: "Elige proteína, relleno/base, toppings y salsa.",
+      included: [],
+      groups: [
+        { key: "protein", label: "Proteína", type: "single", options: WRAP_PROTEIN_OPTIONS },
+        { key: "filling", label: "Relleno/base", type: "multi", min: 1, max: 2, options: WRAP_FILLING_OPTIONS },
+        exactMultiGroup("toppings", "Toppings", 3, WRAP_TOPPING_OPTIONS),
+        { key: "sauce", label: "Salsa", type: "single", options: WRAP_SAUCE_OPTIONS }
+      ]
+    };
+  }
+
+  if (section.kind === "grill") {
+    return {
+      title: "Platos combinados Matica",
+      lead: "Elige proteína principal, 2 guarniciones y bebida o postre. Pan incluido.",
+      included: ["Pan incluido"],
+      groups: [
+        { key: "main_protein", label: "Proteína principal", type: "single", options: GRILL_PROTEIN_OPTIONS },
+        exactMultiGroup("sides", "Guarnición", 2, GRILL_SIDE_OPTIONS),
+        { key: "drink_or_dessert", label: "Bebida o postre", type: "single", options: [...DRINK_OPTIONS, ...DESSERT_OPTIONS].map(({ label }) => ({ label })) }
+      ]
+    };
+  }
+
+  if (section.kind === "sandwiches") {
+    return {
+      title: "Escoge tu bocadillo",
+      lead: "Selecciona un bocadillo.",
+      included: [],
+      groups: [{ key: "sandwich", label: "Bocadillos", type: "single", options: SANDWICH_OPTIONS }]
+    };
+  }
+
+  if (section.kind === "drinks") {
+    return {
+      title: "Escoge tu bebida",
+      lead: "Selecciona una bebida.",
+      included: [],
+      groups: [{ key: "drink", label: "Bebidas", type: "single", options: DRINK_OPTIONS }]
+    };
+  }
+
+  if (section.kind === "desserts") {
+    return {
+      title: "Escoge tu postre",
+      lead: "Selecciona un postre.",
+      included: [],
+      groups: [{ key: "dessert", label: "Postres", type: "single", options: DESSERT_OPTIONS }]
+    };
+  }
+
+  return {
+    title: getDisplayName(product, section.kind),
+    lead: product.description ?? "Producto listo para añadir.",
+    included: [],
+    groups: []
+  };
 }
 
 export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { companySlug?: string }) {
@@ -578,7 +652,6 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
   const [customer, setCustomer] = useState<CustomerForm>(EMPTY_CUSTOMER);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [notes, setNotes] = useState("");
-  const [choices, setChoices] = useState<MenuChoiceState>({});
   const [configuring, setConfiguring] = useState<{ product: Product; section: PublicSection } | null>(null);
   const [subsidyAlreadyUsed, setSubsidyAlreadyUsed] = useState(false);
   const [submitState, setSubmitState] = useState<SubmitState>({ status: "idle" });
@@ -649,6 +722,8 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
       publicData.products.filter((product) => categorySlugById.get(product.category_id) === slug);
     const bowlsAndSalads = categoryProducts("bowls-ensaladas");
     const wraps = categoryProducts("wraps-signature");
+    const drinks = categoryProducts("bebidas").filter((product) => product.product_type !== "daily_menu");
+    const desserts = categoryProducts("postres");
 
     function productsFor(kind: SectionKind) {
       switch (kind) {
@@ -676,9 +751,9 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
         case "sandwiches":
           return singleConfiguratorProduct(categoryProducts("bocadillos"), "bocadillo a elegir");
         case "drinks":
-          return categoryProducts("bebidas").filter((product) => product.product_type !== "daily_menu");
+          return drinks.length ? [drinks[0]] : [];
         case "desserts":
-          return categoryProducts("postres");
+          return desserts.length ? [desserts[0]] : [];
         case "extras":
           return categoryProducts("otros");
       }
@@ -686,7 +761,7 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
 
     return COMPANY_SECTION_DEFINITIONS.map((section) => ({
       ...section,
-      products: productsFor(section.kind)
+      products: productsFor(section.kind).map((product) => overrideCatalogProduct(product, section))
     })).filter((section) => section.products.length > 0);
   }, [data]);
 
@@ -711,25 +786,8 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  function setProductChoice(product: Product, key: string, value: string) {
-    setChoices((current) => ({
-      ...current,
-      [product.id]: {
-        ...getDefaultChoices(product, data?.dailyMenu ?? null),
-        ...(current[product.id] ?? {}),
-        [key]: value
-      }
-    }));
-  }
-
-  function addProduct(product: Product, section: PublicSection, metadata?: Record<string, string>, supplementTotal = 0) {
-    const productChoices =
-      metadata ??
-      ({
-        ...getDefaultChoices(product, data?.dailyMenu ?? null),
-        ...(choices[product.id] ?? {})
-      } as Record<string, string>);
-    const item = buildCartItem(product, productChoices, getDisplayName(product, section.kind), supplementTotal);
+  function addProduct(product: Product, section: PublicSection, metadata: Record<string, string>, unitPrice: number) {
+    const item = buildCartItem(product, metadata, getDisplayName(product, section.kind), unitPrice);
 
     setCart((current) => {
       const existing = current.find((cartItem) => cartItem.key === item.key);
@@ -870,11 +928,6 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
                       <h2 className="text-xl font-black">{section.title}</h2>
                       <p className="mt-1 text-sm font-semibold text-matica-ink/60">{section.description}</p>
                     </div>
-                    {section.products.some((product) => isConfigurableProduct(product, section)) ? (
-                      <span className="hidden rounded-lg bg-matica-mint px-3 py-1 text-xs font-black text-matica-green sm:inline">
-                        Configurable
-                      </span>
-                    ) : null}
                   </div>
                   <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
                     {section.products.map((product) => (
@@ -883,13 +936,7 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
                         product={product}
                         section={section}
                         menu={data.dailyMenu}
-                        choices={choices[product.id] ?? getDefaultChoices(product, data.dailyMenu)}
-                        onChoiceChange={(key, value) => setProductChoice(product, key, value)}
-                        onAdd={() =>
-                          isConfigurableProduct(product, section)
-                            ? setConfiguring({ product, section })
-                            : addProduct(product, section)
-                        }
+                        onOpen={() => setConfiguring({ product, section })}
                       />
                     ))}
                     {!section.products.length ? (
@@ -942,8 +989,10 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
           product={configuring.product}
           section={configuring.section}
           onClose={() => setConfiguring(null)}
-          onAdd={(metadata, supplementTotal) => {
-            addProduct(configuring.product, configuring.section, metadata, supplementTotal);
+          menu={data?.dailyMenu ?? null}
+          subsidyAlreadyUsed={subsidyAlreadyUsed}
+          onAdd={(metadata, unitPrice) => {
+            addProduct(configuring.product, configuring.section, metadata, unitPrice);
             setConfiguring(null);
           }}
         />
@@ -983,23 +1032,19 @@ function ProductCard({
   product,
   section,
   menu,
-  choices,
-  onChoiceChange,
-  onAdd
+  onOpen
 }: {
   product: Product;
   section: PublicSection;
   menu: DailyMenu | null;
-  choices: Record<string, string>;
-  onChoiceChange: (key: string, value: string) => void;
-  onAdd: () => void;
+  onOpen: () => void;
 }) {
   const canAdd = !product.sold_out && hasMenuChoices(product, menu);
   const subsidy = getSubsidyAmount(product.product_type);
   const displayName = getDisplayName(product, section.kind);
-  const configurable = isConfigurableProduct(product, section);
   const imageUrl = getProductImageUrl(product);
   const [imageFailed, setImageFailed] = useState(false);
+  const pricePrefix = section.kind === "drinks" || section.kind === "desserts" ? "desde " : "";
 
   return (
     <article className="overflow-hidden rounded-lg border border-matica-line bg-white shadow-sm">
@@ -1026,160 +1071,100 @@ function ProductCard({
       </div>
 
       <div className="flex flex-col gap-2.5 p-2.5 sm:gap-3 sm:p-3">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h3 className="text-base font-black leading-5">{displayName}</h3>
-          {product.description ? (
-            <p className="mt-1 line-clamp-2 text-sm font-semibold leading-5 text-matica-ink/60">{product.description}</p>
-          ) : null}
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h3 className="text-base font-black leading-5">{displayName}</h3>
+            {product.description ? (
+              <p className="mt-1 line-clamp-2 text-sm font-semibold leading-5 text-matica-ink/60">{product.description}</p>
+            ) : null}
+          </div>
+          <div className="shrink-0 text-right">
+            <p className="text-base font-black">{pricePrefix}{formatCurrency(Number(product.customer_price))}</p>
+            {subsidy > 0 ? (
+              <p className="text-xs font-bold text-matica-ink/45 line-through">
+                {formatCurrency(Number(product.base_price))}
+              </p>
+            ) : null}
+          </div>
         </div>
-        <div className="shrink-0 text-right">
-          <p className="text-base font-black">{formatCurrency(Number(product.customer_price))}</p>
-          {subsidy > 0 ? (
-            <p className="text-xs font-bold text-matica-ink/45 line-through">
-              {formatCurrency(Number(product.base_price))}
-            </p>
-          ) : null}
-        </div>
-      </div>
 
-      {product.product_type === "daily_menu" ? (
-        <div className="grid gap-2">
-          <ChoiceSelect
-            label="Primer plato"
-            value={choices.first_course ?? ""}
-            options={menu?.first_courses.map((value) => ({ label: value, value })) ?? []}
-            onChange={(value) => onChoiceChange("first_course", value)}
-          />
-          <ChoiceSelect
-            label="Segundo plato"
-            value={choices.second_course ?? ""}
-            options={menu?.second_courses.map((value) => ({ label: value, value })) ?? []}
-            onChange={(value) => onChoiceChange("second_course", value)}
-          />
-          <ChoiceSelect
-            label="Bebida o postre"
-            value={choices.drink_or_dessert ?? ""}
-            options={optionGroup(menu)}
-            onChange={(value) => onChoiceChange("drink_or_dessert", value)}
-          />
+        <div className="mt-auto flex items-center justify-between gap-2 pt-1">
+          {product.sold_out ? (
+            <span className="rounded-lg bg-matica-ink/10 px-2 py-1.5 text-xs font-black text-matica-ink/60">Agotado</span>
+          ) : subsidy > 0 ? (
+            <span className="rounded-lg bg-matica-mint px-2 py-1.5 text-xs font-black text-matica-green">
+              Subvención -{formatCurrency(subsidy)}
+            </span>
+          ) : (
+            <span className="flex items-center gap-1 text-xs font-bold text-matica-ink/50">
+              <Clock className="h-3.5 w-3.5" />
+              Configurar al pulsar
+            </span>
+          )}
+          <button
+            className="matica-focus flex min-h-9 items-center gap-1.5 rounded-lg bg-matica-green px-3 py-1.5 text-sm font-black text-white disabled:cursor-not-allowed disabled:bg-matica-ink/30"
+            onClick={onOpen}
+            disabled={!canAdd}
+            type="button"
+          >
+            <Plus className="h-4 w-4" />
+            Elegir
+          </button>
         </div>
-      ) : null}
-
-      {product.product_type === "half_menu" ? (
-        <div className="grid gap-2">
-          <ChoiceSelect
-            label="Plato"
-            value={choices.plate ?? ""}
-            options={[
-              ...(menu?.first_courses ?? []).map((value) => ({ label: `Primero: ${value}`, value })),
-              ...(menu?.second_courses ?? []).map((value) => ({ label: `Segundo: ${value}`, value }))
-            ]}
-            onChange={(value) => onChoiceChange("plate", value)}
-          />
-          <ChoiceSelect
-            label="Bebida o postre"
-            value={choices.drink_or_dessert ?? ""}
-            options={optionGroup(menu)}
-            onChange={(value) => onChoiceChange("drink_or_dessert", value)}
-          />
-        </div>
-      ) : null}
-
-      <div className="mt-auto flex items-center justify-between gap-2 pt-1">
-        {product.sold_out ? (
-          <span className="rounded-lg bg-matica-ink/10 px-2 py-1.5 text-xs font-black text-matica-ink/60">Agotado</span>
-        ) : subsidy > 0 ? (
-          <span className="rounded-lg bg-matica-mint px-2 py-1.5 text-xs font-black text-matica-green">
-            Subvención -{formatCurrency(subsidy)}
-          </span>
-        ) : configurable ? (
-          <span className="flex items-center gap-1 text-xs font-bold text-matica-ink/50">
-            <SlidersHorizontal className="h-3.5 w-3.5" />
-            Personalizable
-          </span>
-        ) : (
-          <span className="flex items-center gap-1 text-xs font-bold text-matica-ink/50">
-            <Clock className="h-3.5 w-3.5" />
-            Hoy
-          </span>
-        )}
-        <button
-          className="matica-focus flex min-h-9 items-center gap-1.5 rounded-lg bg-matica-green px-3 py-1.5 text-sm font-black text-white disabled:cursor-not-allowed disabled:bg-matica-ink/30"
-          onClick={onAdd}
-          disabled={!canAdd}
-          type="button"
-        >
-          {configurable ? <SlidersHorizontal className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
-          {configurable ? "Configurar" : "Añadir"}
-        </button>
-      </div>
       </div>
     </article>
-  );
-}
-
-function ChoiceSelect({
-  label,
-  value,
-  options,
-  onChange
-}: {
-  label: string;
-  value: string;
-  options: { label: string; value: string }[];
-  onChange: (value: string) => void;
-}) {
-  return (
-    <label className="space-y-1">
-      <span className="text-[11px] font-black uppercase text-matica-ink/45">{label}</span>
-      <select
-        className="matica-focus w-full rounded-lg border border-matica-line bg-white px-2.5 py-1.5 text-sm font-bold leading-tight"
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-      >
-        {options.length ? null : <option value="">Menú pendiente</option>}
-        {options.map((option) => (
-          <option key={`${label}-${option.value}`} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
-    </label>
   );
 }
 
 function ConfigModal({
   product,
   section,
+  menu,
+  subsidyAlreadyUsed,
   onClose,
   onAdd
 }: {
   product: Product;
   section: PublicSection;
+  menu: DailyMenu | null;
+  subsidyAlreadyUsed: boolean;
   onClose: () => void;
-  onAdd: (metadata: Record<string, string>, supplementTotal: number) => void;
+  onAdd: (metadata: Record<string, string>, unitPrice: number) => void;
 }) {
-  const spec = getConfigSpec(product, section);
-  const [singleValues, setSingleValues] = useState<Record<string, string>>(() =>
-    Object.fromEntries((spec?.groups ?? []).filter((group) => group.type === "single").map((group) => [group.key, group.options[0]?.label ?? ""]))
-  );
+  const spec = getConfigSpec(product, section, menu);
+  const [stepIndex, setStepIndex] = useState(0);
+  const [singleValues, setSingleValues] = useState<Record<string, string>>({});
   const [multiValues, setMultiValues] = useState<Record<string, string[]>>({});
-  const [configNotes, setConfigNotes] = useState("");
+  const currentGroup = spec.groups[stepIndex];
 
-  const supplementTotal = spec.groups.reduce((sum, group) => {
-    if (group.type === "single") {
-      return sum + getOptionPrice(spec, group.key, singleValues[group.key] ?? "");
+  const configuredUnitPrice = spec.groups.reduce((price, group) => {
+    const selected =
+      group.type === "single" ? [singleValues[group.key]].filter(Boolean) : multiValues[group.key] ?? [];
+    const unitOverride = selected
+      .map((value) => getOptionUnitPrice(spec, group.key, value))
+      .find((value): value is number => typeof value === "number");
+
+    if (typeof unitOverride === "number") {
+      return unitOverride;
     }
 
-    return (
-      sum +
-      (multiValues[group.key] ?? []).reduce((groupSum, optionLabel) => groupSum + getOptionPrice(spec, group.key, optionLabel), 0)
-    );
-  }, 0);
-  const canSubmitConfig = spec.groups.every(
-    (group) => group.type !== "multi" || !group.min || (multiValues[group.key] ?? []).length >= group.min
-  );
+    return price + selected.reduce((sum, value) => sum + getOptionPrice(spec, group.key, value), 0);
+  }, Number(product.base_price));
+  const subsidy = getSubsidyAmount(product.product_type);
+  const customerUnitPrice = !subsidyAlreadyUsed && subsidy > 0 ? Math.max(configuredUnitPrice - subsidy, 0) : configuredUnitPrice;
+  const canSubmitConfig = spec.groups.every((group) => isGroupComplete(group));
+  const canGoNext = currentGroup ? isGroupComplete(currentGroup) && stepIndex < spec.groups.length - 1 : false;
+
+  function isGroupComplete(group: ConfigGroup) {
+    if (group.type === "single") {
+      return Boolean(singleValues[group.key]);
+    }
+
+    const selected = multiValues[group.key] ?? [];
+    const min = group.min ?? 0;
+
+    return selected.length >= min && (!group.max || selected.length <= group.max);
+  }
 
   function toggleMulti(group: ConfigGroup, optionLabel: string) {
     setMultiValues((current) => {
@@ -1193,8 +1178,22 @@ function ConfigModal({
         return current;
       }
 
-      return { ...current, [group.key]: [...selected, optionLabel] };
+      const nextSelected = [...selected, optionLabel];
+
+      if (group.max && nextSelected.length === group.max && stepIndex < spec.groups.length - 1) {
+        window.setTimeout(() => setStepIndex((currentStep) => Math.min(currentStep + 1, spec.groups.length - 1)), 120);
+      }
+
+      return { ...current, [group.key]: nextSelected };
     });
+  }
+
+  function selectSingle(group: ConfigGroup, optionLabel: string) {
+    setSingleValues((current) => ({ ...current, [group.key]: optionLabel }));
+
+    if (stepIndex < spec.groups.length - 1) {
+      window.setTimeout(() => setStepIndex((currentStep) => Math.min(currentStep + 1, spec.groups.length - 1)), 120);
+    }
   }
 
   function submit() {
@@ -1205,7 +1204,8 @@ function ConfigModal({
     const metadata: Record<string, string> = {
       display_name: getDisplayName(product, section.kind),
       categoria: section.title,
-      _supplement_total: supplementTotal.toFixed(2)
+      _configured_unit_price: configuredUnitPrice.toFixed(2),
+      _supplement_total: Math.max(0, configuredUnitPrice - Number(product.base_price)).toFixed(2)
     };
 
     for (const [key, value] of Object.entries(singleValues)) {
@@ -1233,16 +1233,12 @@ function ConfigModal({
       metadata.suplementos = supplements.join(", ");
     }
 
-    if (configNotes.trim()) {
-      metadata.notas_configuracion = configNotes.trim();
-    }
-
-    onAdd(metadata, supplementTotal);
+    onAdd(metadata, configuredUnitPrice);
   }
 
   return (
     <div className="fixed inset-0 z-40 grid place-items-end bg-matica-ink/45 p-0 sm:place-items-center sm:p-4">
-      <div className="max-h-[92vh] w-full overflow-y-auto rounded-t-lg bg-white shadow-soft sm:max-w-2xl sm:rounded-lg">
+      <div className="flex max-h-[92vh] w-full flex-col overflow-hidden rounded-t-lg bg-white shadow-soft sm:max-w-2xl sm:rounded-lg">
         <div className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b border-matica-line bg-white p-4">
           <div>
             <p className="text-sm font-black uppercase text-matica-green">{section.title}</p>
@@ -1258,81 +1254,124 @@ function ConfigModal({
           </button>
         </div>
 
-        <div className="space-y-5 p-4">
-          <div className="rounded-lg bg-matica-soft p-3">
-            <p className="text-xs font-black uppercase text-matica-ink/45">Incluye</p>
-            <div className="mt-2 flex flex-wrap gap-2">
-              {spec.included.map((item) => (
-                <span key={item} className="rounded-lg bg-white px-3 py-1 text-sm font-bold text-matica-ink/70">
-                  {item}
-                </span>
-              ))}
-            </div>
-          </div>
-
-          {spec.groups.map((group) => (
-            <fieldset key={group.key} className="space-y-2">
-              <legend className="flex items-center gap-2 text-sm font-black uppercase text-matica-ink/55">
-                {group.label}
-                {group.type === "multi" && (group.min || group.max) ? (
-                  <span className="text-xs font-bold normal-case text-matica-ink/45">
-                    {group.min && group.max === group.min ? `elige ${group.min}` : group.max ? `máx. ${group.max}` : `mín. ${group.min}`}
+        <div className="min-h-0 flex-1 overflow-y-auto p-4 pb-5">
+          {spec.included.length ? (
+            <div className="mb-4 rounded-lg bg-matica-soft p-3">
+              <p className="text-xs font-black uppercase text-matica-ink/45">Incluye</p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {spec.included.map((item) => (
+                  <span key={item} className="rounded-lg bg-white px-3 py-1 text-sm font-bold text-matica-ink/70">
+                    {item}
                   </span>
-                ) : null}
-              </legend>
-              <div className="grid gap-2 sm:grid-cols-2">
-                {group.options.map((option) => {
-                  const checked =
-                    group.type === "single"
-                      ? singleValues[group.key] === option.label
-                      : (multiValues[group.key] ?? []).includes(option.label);
-
-                  return (
-                    <label
-                      key={`${group.key}-${option.label}`}
-                      className={`flex min-h-12 cursor-pointer items-center justify-between gap-3 rounded-lg border px-3 py-2 text-sm font-bold ${
-                        checked ? "border-matica-green bg-matica-mint text-matica-green" : "border-matica-line bg-white text-matica-ink"
-                      }`}
-                    >
-                      <span>{option.label}</span>
-                      <span className="text-xs font-black">{option.price ? `+${formatCurrency(option.price)}` : "incluido"}</span>
-                      <input
-                        className="sr-only"
-                        type={group.type === "single" ? "radio" : "checkbox"}
-                        name={group.key}
-                        checked={checked}
-                        onChange={() =>
-                          group.type === "single"
-                            ? setSingleValues((current) => ({ ...current, [group.key]: option.label }))
-                            : toggleMulti(group, option.label)
-                        }
-                      />
-                    </label>
-                  );
-                })}
+                ))}
               </div>
-            </fieldset>
-          ))}
-
-          {spec.notesPlaceholder ? (
-            <label className="block space-y-1">
-              <span className="text-sm font-bold text-matica-ink/70">Notas de preparación</span>
-              <textarea
-                className="matica-focus min-h-20 w-full rounded-lg border border-matica-line px-3 py-3"
-                value={configNotes}
-                onChange={(event) => setConfigNotes(event.target.value)}
-                placeholder={spec.notesPlaceholder}
-              />
-            </label>
+            </div>
           ) : null}
+
+          {spec.groups.length ? (
+            <div className="space-y-4">
+              <div className="flex gap-1.5">
+                {spec.groups.map((group, index) => (
+                  <button
+                    key={group.key}
+                    type="button"
+                    className={`h-1.5 flex-1 rounded-full ${index <= stepIndex ? "bg-matica-green" : "bg-matica-line"}`}
+                    onClick={() => setStepIndex(index)}
+                    aria-label={`Ir a ${group.label}`}
+                  />
+                ))}
+              </div>
+
+              {currentGroup ? (
+                <fieldset className="space-y-3">
+                  <legend>
+                    <span className="block text-xs font-black uppercase text-matica-green">
+                      Paso {stepIndex + 1} de {spec.groups.length}
+                    </span>
+                    <span className="mt-1 block text-2xl font-black">{currentGroup.label}</span>
+                    {currentGroup.type === "multi" && (currentGroup.min || currentGroup.max) ? (
+                      <span className="mt-1 block text-sm font-semibold text-matica-ink/55">
+                        {currentGroup.min && currentGroup.max === currentGroup.min
+                          ? `Escoge ${currentGroup.min}`
+                          : currentGroup.max
+                            ? `Escoge hasta ${currentGroup.max}`
+                            : `Escoge al menos ${currentGroup.min}`}
+                      </span>
+                    ) : null}
+                  </legend>
+
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {currentGroup.options.map((option) => {
+                      const checked =
+                        currentGroup.type === "single"
+                          ? singleValues[currentGroup.key] === option.label
+                          : (multiValues[currentGroup.key] ?? []).includes(option.label);
+
+                      return (
+                        <label
+                          key={`${currentGroup.key}-${option.label}`}
+                          className={`flex min-h-12 cursor-pointer items-center justify-between gap-3 rounded-lg border px-3 py-3 text-sm font-bold ${
+                            checked ? "border-matica-green bg-matica-mint text-matica-green" : "border-matica-line bg-white text-matica-ink"
+                          }`}
+                        >
+                          <span>{option.label}</span>
+                          <span className="text-xs font-black">
+                            {option.unitPrice ? formatCurrency(option.unitPrice) : option.price ? `+${formatCurrency(option.price)}` : "incluido"}
+                          </span>
+                          <input
+                            className="sr-only"
+                            type={currentGroup.type === "single" ? "radio" : "checkbox"}
+                            name={currentGroup.key}
+                            checked={checked}
+                            onChange={() =>
+                              currentGroup.type === "single"
+                                ? selectSingle(currentGroup, option.label)
+                                : toggleMulti(currentGroup, option.label)
+                            }
+                          />
+                        </label>
+                      );
+                    })}
+                  </div>
+                </fieldset>
+              ) : (
+                <div className="rounded-lg border border-matica-line bg-matica-soft p-4">
+                  <p className="text-sm font-semibold text-matica-ink/65">{product.description ?? "Listo para añadir al carrito."}</p>
+                </div>
+              )}
+
+              <div className="flex items-center justify-between gap-3 pt-2">
+                <button
+                  type="button"
+                  className="matica-focus rounded-lg border border-matica-line bg-white px-4 py-2 text-sm font-black disabled:opacity-40"
+                  disabled={stepIndex === 0}
+                  onClick={() => setStepIndex((current) => Math.max(0, current - 1))}
+                >
+                  Atrás
+                </button>
+                <button
+                  type="button"
+                  className="matica-focus rounded-lg border border-matica-line bg-white px-4 py-2 text-sm font-black disabled:opacity-40"
+                  disabled={!canGoNext}
+                  onClick={() => setStepIndex((current) => Math.min(spec.groups.length - 1, current + 1))}
+                >
+                  Siguiente
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="rounded-lg border border-matica-line bg-matica-soft p-4">
+              <p className="text-sm font-semibold text-matica-ink/65">{product.description ?? "Listo para añadir al carrito."}</p>
+            </div>
+          )}
         </div>
 
         <div className="sticky bottom-0 flex items-center justify-between gap-3 border-t border-matica-line bg-white p-4">
           <div>
             <p className="text-xs font-black uppercase text-matica-ink/45">Total producto</p>
-            <p className="text-xl font-black">{formatCurrency(Number(product.base_price) + supplementTotal)}</p>
-            {supplementTotal > 0 ? (
-              <p className="text-xs font-bold text-matica-green">Suplementos: {formatCurrency(supplementTotal)}</p>
+            <p className="text-xl font-black">{formatCurrency(customerUnitPrice)}</p>
+            {!subsidyAlreadyUsed && subsidy > 0 ? (
+              <p className="text-xs font-bold text-matica-green">Subvención -{formatCurrency(subsidy)}</p>
             ) : null}
           </div>
           <button
