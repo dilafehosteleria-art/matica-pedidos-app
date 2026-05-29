@@ -56,11 +56,19 @@ export type Product = {
   created_at?: string;
 };
 
+export type DailyMenuCourse =
+  | string
+  | {
+      name: string;
+      category?: string | null;
+      excluded_from_half_menu?: boolean | null;
+    };
+
 export type DailyMenu = {
-  id: string;
+  id: string | null;
   date: string;
   first_courses: string[];
-  second_courses: string[];
+  second_courses: DailyMenuCourse[];
   drinks: string[];
   desserts: string[];
   active: boolean;

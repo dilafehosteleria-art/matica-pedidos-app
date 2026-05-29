@@ -8,7 +8,27 @@ import {
 } from "@/lib/constants";
 import { toDateInputValue } from "@/lib/format";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
-import type { DailyMenu, PublicCompany, PublicData } from "@/lib/types";
+import type { DailyMenu, DailyMenuCourse, PublicCompany, PublicData } from "@/lib/types";
+
+function normalizeCourse(course: DailyMenuCourse): DailyMenuCourse | null {
+  if (typeof course === "string") {
+    const name = course.trim();
+
+    return name ? name : null;
+  }
+
+  const name = course.name?.trim();
+
+  if (!name) {
+    return null;
+  }
+
+  return {
+    name,
+    category: course.category?.trim() || null,
+    excluded_from_half_menu: Boolean(course.excluded_from_half_menu)
+  };
+}
 
 function normalizeMenu(menu: DailyMenu | null): DailyMenu | null {
   if (!menu) {
@@ -18,7 +38,7 @@ function normalizeMenu(menu: DailyMenu | null): DailyMenu | null {
   return {
     ...menu,
     first_courses: menu.first_courses ?? [],
-    second_courses: menu.second_courses ?? [],
+    second_courses: (menu.second_courses ?? []).map(normalizeCourse).filter((course): course is DailyMenuCourse => Boolean(course)),
     drinks: menu.drinks ?? [],
     desserts: menu.desserts ?? []
   };

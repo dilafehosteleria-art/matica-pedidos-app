@@ -19,7 +19,7 @@ import { useEffect, useMemo, useState } from "react";
 import { DELIVERY_WINDOW } from "@/lib/constants";
 import { formatCurrency } from "@/lib/format";
 import { calculateCartTotals, getSubsidyAmount } from "@/lib/pricing";
-import type { CartItem, CompanyBranch, CustomerForm, DailyMenu, Product, PublicData } from "@/lib/types";
+import type { CartItem, CompanyBranch, CustomerForm, DailyMenu, DailyMenuCourse, Product, PublicData } from "@/lib/types";
 
 const STORAGE_KEY_PREFIX = "matica:customer";
 
@@ -75,6 +75,10 @@ type ConfigGroup = {
   min?: number;
   max?: number;
   options: Option[];
+  dependsOn?: {
+    key: string;
+    values: string[];
+  };
 };
 
 type ConfigSpec = {
@@ -250,23 +254,24 @@ const DESSERT_OPTIONS: Option[] = [
 
 type MenuDishOption = Option & {
   category?: "vacuno";
+  excludedFromHalfMenu?: boolean;
 };
 
-const MENU_FIRST_COURSE_OPTIONS: MenuDishOption[] = [
+const FALLBACK_MENU_FIRST_COURSE_OPTIONS: MenuDishOption[] = [
   { label: "Ensalada arroz con queso fresco" },
   { label: "Lasaña de espinacas con champiñones y pimientos asados" },
   { label: "Pasta con gambas y tomate cherry" },
   { label: "Salmorejo cordobés" }
 ];
 
-const MENU_SECOND_COURSE_OPTIONS: MenuDishOption[] = [
+const FALLBACK_MENU_SECOND_COURSE_OPTIONS: MenuDishOption[] = [
   { label: "Filete de pescado en salsa de soja y jengibre" },
-  { label: "Hamburguesa clásica con bacon y queso", category: "vacuno" },
+  { label: "Hamburguesa clásica con bacon y queso", category: "vacuno", excludedFromHalfMenu: true },
   { label: "Lomo asado a la brasa con mojo picón" },
   { label: "Pollo asado" }
 ];
 
-const MENU_DRINK_OR_DESSERT_OPTIONS: Option[] = [
+const FALLBACK_MENU_DRINK_OR_DESSERT_OPTIONS: Option[] = [
   { label: "Agua" },
   { label: "Agua con gas" },
   { label: "Coca Cola" },
@@ -281,11 +286,14 @@ const MENU_DRINK_OR_DESSERT_OPTIONS: Option[] = [
   { label: "Flan" }
 ];
 
-const GRILL_DRINK_OR_DESSERT_OPTIONS = MENU_DRINK_OR_DESSERT_OPTIONS.filter(
-  (option) => option.label !== "Coca Cola" && option.label !== "Coca Cola Zero"
-);
+const MENU_SIDE_OPTIONS: Option[] = [
+  { label: "Arroz jazmín" },
+  { label: "Ensalada" },
+  { label: "Patatas fritas" },
+  { label: "Verduritas asadas" }
+];
 
-const BREAD_OPTION: Option = { label: "Sí, incluir pan" };
+const BREAD_OPTION: Option = { label: "Enviar pan" };
 
 function normalize(value: string) {
   return value
@@ -308,6 +316,7 @@ function formatMetadataKey(key: string) {
     filling: "Relleno/base",
     sauce: "Salsa",
     main_protein: "Proteína principal",
+    side: "Guarnición",
     sides: "Guarnición",
     drink: "Bebida",
     dessert: "Postre",
@@ -331,20 +340,83 @@ function metadataLabel(metadata?: Record<string, string>) {
     .join(" · ");
 }
 
+function courseName(course: DailyMenuCourse) {
+  return typeof course === "string" ? course.trim() : course.name.trim();
+}
+
+function courseCategory(course: DailyMenuCourse) {
+  return typeof course === "string" ? "" : course.category?.trim() ?? "";
+}
+
+function isCourseExcludedFromHalfMenu(course: DailyMenuCourse) {
+  return typeof course === "string" ? false : Boolean(course.excluded_from_half_menu);
+}
+
+function uniqueOptions(options: Option[]) {
+  const seen = new Set<string>();
+
+  return options.filter((option) => {
+    const key = normalize(option.label);
+
+    if (seen.has(key)) {
+      return false;
+    }
+
+    seen.add(key);
+    return true;
+  });
+}
+
+function menuFirstCourseOptions(menu: DailyMenu | null): MenuDishOption[] {
+  const options = (menu?.first_courses ?? [])
+    .map((label) => label.trim())
+    .filter(Boolean)
+    .map((label) => ({ label }));
+
+  return options.length === 4 ? options : FALLBACK_MENU_FIRST_COURSE_OPTIONS;
+}
+
+function menuSecondCourseOptions(menu: DailyMenu | null): MenuDishOption[] {
+  const options = (menu?.second_courses ?? [])
+    .map((course): MenuDishOption | null => {
+      const label = courseName(course);
+
+      return label
+        ? {
+            label,
+            category: normalize(courseCategory(course)) === "vacuno" ? ("vacuno" as const) : undefined,
+            excludedFromHalfMenu: isCourseExcludedFromHalfMenu(course)
+          }
+        : null;
+    })
+    .filter((option): option is MenuDishOption => Boolean(option));
+
+  return options.length === 4 ? options : FALLBACK_MENU_SECOND_COURSE_OPTIONS;
+}
+
 function hasMenuChoices(product: Product, menu: DailyMenu | null) {
   if (product.product_type === "daily_menu") {
-    return Boolean(MENU_FIRST_COURSE_OPTIONS.length && MENU_SECOND_COURSE_OPTIONS.length && MENU_DRINK_OR_DESSERT_OPTIONS.length);
+    return Boolean(menuFirstCourseOptions(menu).length && menuSecondCourseOptions(menu).length && menuDrinkOrDessertOptions(menu).length);
   }
 
   if (product.product_type === "half_menu") {
-    return Boolean(menuPlateOptions(menu).length && MENU_DRINK_OR_DESSERT_OPTIONS.length);
+    return Boolean(menuPlateOptions(menu).length && menuDrinkOrDessertOptions(menu).length);
   }
 
   return true;
 }
 
 function menuDrinkOrDessertOptions(menu: DailyMenu | null): Option[] {
-  return MENU_DRINK_OR_DESSERT_OPTIONS;
+  const options = [
+    ...(menu?.drinks ?? []).map((label) => ({ label: label.trim() })).filter((option) => Boolean(option.label)),
+    ...(menu?.desserts ?? []).map((label) => ({ label: label.trim() })).filter((option) => Boolean(option.label))
+  ];
+
+  return options.length ? uniqueOptions(options) : FALLBACK_MENU_DRINK_OR_DESSERT_OPTIONS;
+}
+
+function grillDrinkOrDessertOptions(menu: DailyMenu | null) {
+  return menuDrinkOrDessertOptions(menu).filter((option) => option.label !== "Coca Cola" && option.label !== "Coca Cola Zero");
 }
 
 function isVacunoDish(option: MenuDishOption) {
@@ -352,6 +424,7 @@ function isVacunoDish(option: MenuDishOption) {
 
   return (
     option.category === "vacuno" ||
+    option.excludedFromHalfMenu ||
     label.includes("[vacuno]") ||
     label.includes("(vacuno)") ||
     label.includes("tipo: vacuno") ||
@@ -360,7 +433,13 @@ function isVacunoDish(option: MenuDishOption) {
 }
 
 function menuPlateOptions(menu: DailyMenu | null): Option[] {
-  return [...MENU_FIRST_COURSE_OPTIONS, ...MENU_SECOND_COURSE_OPTIONS].filter((option) => !isVacunoDish(option));
+  return [...menuFirstCourseOptions(menu), ...menuSecondCourseOptions(menu).filter((option) => !isVacunoDish(option))];
+}
+
+function halfMenuSecondCourseLabels(menu: DailyMenu | null) {
+  return menuSecondCourseOptions(menu)
+    .filter((option) => !isVacunoDish(option))
+    .map((option) => option.label);
 }
 
 function exactMultiGroup(key: string, label: string, count: number, options: Option[]): ConfigGroup {
@@ -500,26 +579,36 @@ function getConfigSpec(product: Product, section: PublicSection, menu: DailyMenu
   if (product.product_type === "daily_menu") {
     return {
       title: "Menú del día",
-      lead: "Primer plato, segundo plato y bebida o postre. Pan opcional.",
+      lead: "Primer plato, segundo plato, guarnición, bebida o postre y pan opcional.",
       included: ["Subvención -4,00 €"],
       groups: [
-        { key: "first_course", label: "Primer plato", type: "single", options: MENU_FIRST_COURSE_OPTIONS },
-        { key: "second_course", label: "Segundo plato", type: "single", options: MENU_SECOND_COURSE_OPTIONS },
+        { key: "first_course", label: "Primer plato", type: "single", options: menuFirstCourseOptions(menu) },
+        { key: "second_course", label: "Segundo plato", type: "single", options: menuSecondCourseOptions(menu) },
+        { key: "side", label: "Guarnición del segundo", type: "single", options: MENU_SIDE_OPTIONS },
         { key: "drink_or_dessert", label: "Bebida o postre", type: "single", options: menuDrinkOrDessertOptions(menu) },
-        { key: "bread", label: "¿Quieres que enviemos pan?", type: "checkbox", options: [BREAD_OPTION] }
+        { key: "bread", label: "Pan", type: "checkbox", options: [BREAD_OPTION] }
       ]
     };
   }
 
   if (product.product_type === "half_menu") {
+    const secondCourseLabels = halfMenuSecondCourseLabels(menu);
+
     return {
       title: "Medio menú",
       lead: "Plato único y bebida o postre. Pan opcional.",
       included: ["Subvención -3,50 €"],
       groups: [
         { key: "plate", label: "Plato único", type: "single", options: menuPlateOptions(menu) },
+        {
+          key: "side",
+          label: "Guarnición",
+          type: "single",
+          options: MENU_SIDE_OPTIONS,
+          dependsOn: { key: "plate", values: secondCourseLabels }
+        },
         { key: "drink_or_dessert", label: "Bebida o postre", type: "single", options: menuDrinkOrDessertOptions(menu) },
-        { key: "bread", label: "¿Quieres que enviemos pan?", type: "checkbox", options: [BREAD_OPTION] }
+        { key: "bread", label: "Pan", type: "checkbox", options: [BREAD_OPTION] }
       ]
     };
   }
@@ -564,7 +653,7 @@ function getConfigSpec(product: Product, section: PublicSection, menu: DailyMenu
       groups: [
         { key: "main_protein", label: "Proteína principal", type: "single", options: GRILL_PROTEIN_OPTIONS },
         exactMultiGroup("sides", "Guarnición", 2, GRILL_SIDE_OPTIONS),
-        { key: "drink_or_dessert", label: "Bebida o postre", type: "single", options: GRILL_DRINK_OR_DESSERT_OPTIONS }
+        { key: "drink_or_dessert", label: "Bebida o postre", type: "single", options: grillDrinkOrDessertOptions(menu) }
       ]
     };
   }
@@ -694,14 +783,14 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
           return compactProducts([
             cloneCatalogProduct(pick(allProducts, (product) => product.product_type === "daily_menu"), {
               name: "Menú del día",
-              description: "Primer plato, segundo plato y bebida o postre. Pan opcional.",
+              description: "Primer plato, segundo plato, guarnición, bebida o postre y pan opcional.",
               base_price: 13,
               customer_price: 9,
               product_type: "daily_menu"
             }),
             cloneCatalogProduct(pick(allProducts, (product) => product.product_type === "half_menu"), {
               name: "Medio menú",
-              description: "Plato único y bebida o postre. Pan opcional.",
+              description: "Plato único, guarnición si eliges segundo, bebida o postre y pan opcional.",
               base_price: 10,
               customer_price: 6.5,
               product_type: "half_menu"
@@ -1240,9 +1329,16 @@ function ConfigModal({
   const [stepIndex, setStepIndex] = useState(0);
   const [singleValues, setSingleValues] = useState<Record<string, string>>({});
   const [multiValues, setMultiValues] = useState<Record<string, string[]>>({});
-  const currentGroup = spec.groups[stepIndex];
+  const activeGroups = spec.groups.filter((group) => isGroupActive(group));
+  const currentGroup = activeGroups[stepIndex];
 
-  const configuredUnitPrice = spec.groups.reduce((price, group) => {
+  useEffect(() => {
+    if (stepIndex >= activeGroups.length) {
+      setStepIndex(Math.max(activeGroups.length - 1, 0));
+    }
+  }, [activeGroups.length, stepIndex]);
+
+  const configuredUnitPrice = activeGroups.reduce((price, group) => {
     const selected =
       group.type === "multi" ? multiValues[group.key] ?? [] : [singleValues[group.key]].filter(Boolean);
     const unitOverride = selected
@@ -1257,8 +1353,16 @@ function ConfigModal({
   }, Number(product.base_price));
   const subsidy = getSubsidyAmount(product.product_type);
   const customerUnitPrice = !subsidyAlreadyUsed && subsidy > 0 ? Math.max(configuredUnitPrice - subsidy, 0) : configuredUnitPrice;
-  const canSubmitConfig = spec.groups.every((group) => isGroupComplete(group));
-  const canGoNext = currentGroup ? isGroupComplete(currentGroup) && stepIndex < spec.groups.length - 1 : false;
+  const canSubmitConfig = activeGroups.every((group) => isGroupComplete(group));
+  const canGoNext = currentGroup ? isGroupComplete(currentGroup) && stepIndex < activeGroups.length - 1 : false;
+
+  function isGroupActive(group: ConfigGroup) {
+    if (!group.dependsOn) {
+      return true;
+    }
+
+    return group.dependsOn.values.includes(singleValues[group.dependsOn.key]);
+  }
 
   function isGroupComplete(group: ConfigGroup) {
     if (group.type === "checkbox") {
@@ -1289,8 +1393,8 @@ function ConfigModal({
 
       const nextSelected = [...selected, optionLabel];
 
-      if (group.max && nextSelected.length === group.max && stepIndex < spec.groups.length - 1) {
-        window.setTimeout(() => setStepIndex((currentStep) => Math.min(currentStep + 1, spec.groups.length - 1)), 120);
+      if (group.max && nextSelected.length === group.max && stepIndex < activeGroups.length - 1) {
+        window.setTimeout(() => setStepIndex((currentStep) => Math.min(currentStep + 1, activeGroups.length - 1)), 120);
       }
 
       return { ...current, [group.key]: nextSelected };
@@ -1300,8 +1404,8 @@ function ConfigModal({
   function selectSingle(group: ConfigGroup, optionLabel: string) {
     setSingleValues((current) => ({ ...current, [group.key]: optionLabel }));
 
-    if (stepIndex < spec.groups.length - 1) {
-      window.setTimeout(() => setStepIndex((currentStep) => Math.min(currentStep + 1, spec.groups.length - 1)), 120);
+    if (stepIndex < activeGroups.length - 1) {
+      window.setTimeout(() => setStepIndex((currentStep) => Math.min(currentStep + 1, activeGroups.length - 1)), 120);
     }
   }
 
@@ -1324,23 +1428,27 @@ function ConfigModal({
       _supplement_total: Math.max(0, configuredUnitPrice - Number(product.base_price)).toFixed(2)
     };
 
-    for (const [key, value] of Object.entries(singleValues)) {
+    for (const group of activeGroups.filter((activeGroup) => activeGroup.type !== "multi")) {
+      const value = singleValues[group.key];
+
+      if (group.type === "checkbox" && group.key === "bread") {
+        metadata[group.key] = value ? "Sí" : "No";
+        continue;
+      }
+
       if (!value) {
         continue;
       }
 
-      if (key === "bread") {
-        metadata[key] = "Con pan";
-      } else {
-        metadata[key] = value;
-      }
+      metadata[group.key] = value;
     }
 
-    for (const [key, value] of Object.entries(multiValues)) {
-      metadata[key] = value.join(", ");
+    for (const group of activeGroups.filter((activeGroup) => activeGroup.type === "multi")) {
+      const value = multiValues[group.key] ?? [];
+      metadata[group.key] = value.join(", ");
     }
 
-    const supplements = spec.groups.flatMap((group) => {
+    const supplements = activeGroups.flatMap((group) => {
       if (group.type !== "multi") {
         const value = singleValues[group.key];
         const price = getOptionPrice(spec, group.key, value);
@@ -1395,7 +1503,7 @@ function ConfigModal({
           {spec.groups.length ? (
             <div className="space-y-4">
               <div className="flex gap-1.5">
-                {spec.groups.map((group, index) => (
+                {activeGroups.map((group, index) => (
                   <button
                     key={group.key}
                     type="button"
@@ -1410,7 +1518,7 @@ function ConfigModal({
                 <fieldset className="space-y-3">
                   <legend>
                     <span className="block text-xs font-black uppercase text-matica-green">
-                      Paso {stepIndex + 1} de {spec.groups.length}
+                      Paso {stepIndex + 1} de {activeGroups.length}
                     </span>
                     <span className="mt-1 block text-2xl font-black">{currentGroup.label}</span>
                     {currentGroup.type === "multi" && (currentGroup.min || currentGroup.max) ? (
@@ -1481,7 +1589,7 @@ function ConfigModal({
                   type="button"
                   className="matica-focus rounded-lg border border-matica-line bg-white px-4 py-2 text-sm font-black disabled:opacity-40"
                   disabled={!canGoNext}
-                  onClick={() => setStepIndex((current) => Math.min(spec.groups.length - 1, current + 1))}
+                  onClick={() => setStepIndex((current) => Math.min(activeGroups.length - 1, current + 1))}
                 >
                   Siguiente
                 </button>

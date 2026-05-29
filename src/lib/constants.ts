@@ -449,10 +449,10 @@ export const DEFAULT_DAILY_MENU: DailyMenu = {
     "Salmorejo cordobés"
   ],
   second_courses: [
-    "Filete de pescado en salsa de soja y jengibre",
-    "Hamburguesa clásica con bacon y queso",
-    "Lomo asado a la brasa con mojo picón",
-    "Pollo asado"
+    { name: "Filete de pescado en salsa de soja y jengibre" },
+    { name: "Hamburguesa clásica con bacon y queso", category: "vacuno", excluded_from_half_menu: true },
+    { name: "Lomo asado a la brasa con mojo picón" },
+    { name: "Pollo asado" }
   ],
   drinks: ["Agua", "Agua con gas", "Coca Cola", "Coca Cola Zero", "Fanta Naranja", "Lipton Limón"],
   desserts: ["Gelatina", "Manzana", "Natillas", "Plátano", "Yogur de frutas", "Flan"],
