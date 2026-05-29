@@ -441,10 +441,20 @@ export const PRODUCTS: Product[] = [
 export const DEFAULT_DAILY_MENU: DailyMenu = {
   id: "d8489fda-d5e3-41f0-9cd1-4d21119a0a69",
   date: "2026-05-20",
-  first_courses: ["Crema de calabacín", "Ensalada campera", "Pasta fresca con pesto"],
-  second_courses: ["Pollo al limón con arroz", "Merluza al horno", "Lentejas vegetales"],
-  drinks: ["Agua mineral", "Coca Cola", "Nestea"],
-  desserts: ["Yogur natural", "Fruta de temporada", "Brownie Matica"],
+  first_courses: [
+    "Ensalada arroz con queso fresco",
+    "Lasaña de espinacas con champiñones y pimientos asados",
+    "Pasta con gambas y tomate cherry",
+    "Salmorejo cordobés"
+  ],
+  second_courses: [
+    "Filete de pescado en salsa de soja y jengibre",
+    "Hamburguesa clásica con bacon y queso",
+    "Lomo asado a la brasa con mojo picón",
+    "Pollo asado"
+  ],
+  drinks: ["Agua", "Coca Cola", "Coca Cola Zero", "Fanta Naranja", "Lipton Limón"],
+  desserts: ["Gelatina", "Manzana", "Natillas", "Plátano", "Yogur de frutas", "Flan"],
   active: true
 };
 
