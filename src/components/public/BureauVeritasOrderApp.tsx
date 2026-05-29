@@ -216,16 +216,17 @@ const SANDWICH_OPTIONS: Option[] = [
 ];
 
 const GRILL_PROTEIN_OPTIONS: Option[] = [
-  { label: "Pollo a la plancha" },
-  { label: "Lomo de cerdo" },
-  { label: "Filete de ternera" }
+  { label: "Filete de ternera a la parrilla", price: 1.5 },
+  { label: "Lomo de cerdo a la parrilla" },
+  { label: "Pechuga de pollo marinada a la parrilla" },
+  { label: "Salmón a la plancha", price: 2 }
 ];
 
 const GRILL_SIDE_OPTIONS: Option[] = [
   { label: "Arroz jazmín" },
+  { label: "Ensalada de tomate natural, cebolla y aceitunas negras" },
   { label: "Patata frita" },
-  { label: "Verdurita asada" },
-  { label: "Ensalada" }
+  { label: "Verduras a la plancha" }
 ];
 
 const DRINK_OPTIONS: Option[] = [
@@ -279,6 +280,10 @@ const MENU_DRINK_OR_DESSERT_OPTIONS: Option[] = [
   { label: "Yogur de frutas" },
   { label: "Flan" }
 ];
+
+const GRILL_DRINK_OR_DESSERT_OPTIONS = MENU_DRINK_OR_DESSERT_OPTIONS.filter(
+  (option) => option.label !== "Coca Cola" && option.label !== "Coca Cola Zero"
+);
 
 const BREAD_OPTION: Option = { label: "Sí, incluir pan" };
 
@@ -554,12 +559,12 @@ function getConfigSpec(product: Product, section: PublicSection, menu: DailyMenu
   if (section.kind === "grill") {
     return {
       title: "Platos combinados Matica",
-      lead: "Elige proteína principal, 2 guarniciones y bebida o postre. Pan incluido.",
-      included: ["Pan incluido"],
+      lead: "Escoge proteína, 1 huevo frito, 2 guarniciones, bebida o postre y pan.",
+      included: ["1 huevo frito", "Pan incluido"],
       groups: [
         { key: "main_protein", label: "Proteína principal", type: "single", options: GRILL_PROTEIN_OPTIONS },
         exactMultiGroup("sides", "Guarnición", 2, GRILL_SIDE_OPTIONS),
-        { key: "drink_or_dessert", label: "Bebida o postre", type: "single", options: [...DRINK_OPTIONS, ...DESSERT_OPTIONS].map(({ label }) => ({ label })) }
+        { key: "drink_or_dessert", label: "Bebida o postre", type: "single", options: GRILL_DRINK_OR_DESSERT_OPTIONS }
       ]
     };
   }
@@ -809,7 +814,8 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
           return compactProducts([
             cloneCatalogProduct(pick(grill, (product) => normalize(product.name).includes("plato")), {
               name: "Platos combinados Matica",
-              description: "Proteína a la plancha, dos guarniciones y bebida o postre.",
+              description:
+                "Escoge entre pollo a la plancha, lomo de cerdo o filete de ternera + 1 huevo frito + 2 guarniciones + postre o bebida + pan.",
               base_price: 10,
               customer_price: 10,
               product_type: "standard"

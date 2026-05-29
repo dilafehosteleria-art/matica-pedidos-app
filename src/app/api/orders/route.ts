@@ -84,6 +84,15 @@ const DESSERT_CONFIGURED_PRICES: Record<string, number> = {
   Cookie: 2
 };
 
+const GRILL_BASE_PRICE = 10;
+
+const GRILL_PROTEIN_SUPPLEMENTS: Record<string, number> = {
+  "Filete de ternera a la parrilla": 1.5,
+  "Lomo de cerdo a la parrilla": 0,
+  "Pechuga de pollo marinada a la parrilla": 0,
+  "Salmón a la plancha": 2
+};
+
 function badRequest(message: string, status = 400) {
   return NextResponse.json({ error: message }, { status });
 }
@@ -97,6 +106,12 @@ function expectedConfiguredUnitPrice(metadata: Record<string, string>) {
 
   if (displayName === "Escoge tu postre") {
     return DESSERT_CONFIGURED_PRICES[metadata.dessert?.trim() ?? ""] ?? null;
+  }
+
+  if (displayName === "Platos combinados Matica") {
+    const proteinSupplement = GRILL_PROTEIN_SUPPLEMENTS[metadata.main_protein?.trim() ?? ""];
+
+    return typeof proteinSupplement === "number" ? Number((GRILL_BASE_PRICE + proteinSupplement).toFixed(2)) : null;
   }
 
   return FIXED_CONFIGURED_PRICES[displayName ?? ""] ?? null;

@@ -232,7 +232,8 @@ export const PRODUCTS: Product[] = [
     id: "fa921f79-4917-48b6-a25f-20cf7f3a55ca",
     category_id: "bd72f8b2-686b-453c-bd47-bac02d43a42b",
     name: "Platos combinados Matica",
-    description: "Proteína a la plancha, dos guarniciones y bebida o postre.",
+    description:
+      "Escoge entre pollo a la plancha, lomo de cerdo o filete de ternera + 1 huevo frito + 2 guarniciones + postre o bebida + pan.",
     base_price: 10,
     customer_price: 10,
     image_url: null,
