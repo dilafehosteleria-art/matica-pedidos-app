@@ -267,6 +267,7 @@ const MENU_SECOND_COURSE_OPTIONS: MenuDishOption[] = [
 
 const MENU_DRINK_OR_DESSERT_OPTIONS: Option[] = [
   { label: "Agua" },
+  { label: "Agua con gas" },
   { label: "Coca Cola" },
   { label: "Coca Cola Zero" },
   { label: "Fanta Naranja" },

@@ -453,7 +453,7 @@ export const DEFAULT_DAILY_MENU: DailyMenu = {
     "Lomo asado a la brasa con mojo picón",
     "Pollo asado"
   ],
-  drinks: ["Agua", "Coca Cola", "Coca Cola Zero", "Fanta Naranja", "Lipton Limón"],
+  drinks: ["Agua", "Agua con gas", "Coca Cola", "Coca Cola Zero", "Fanta Naranja", "Lipton Limón"],
   desserts: ["Gelatina", "Manzana", "Natillas", "Plátano", "Yogur de frutas", "Flan"],
   active: true
 };
