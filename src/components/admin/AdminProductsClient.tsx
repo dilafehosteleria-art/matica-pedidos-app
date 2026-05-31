@@ -89,6 +89,36 @@ function ProductsEditor({ pin, clearPin }: { pin: string; clearPin: () => void }
     }));
   }
 
+  function mergeSavedProduct(productId: string, savedProduct: Product) {
+    setProducts((current) =>
+      current.map((product) =>
+        product.id === productId
+          ? {
+              ...product,
+              active: savedProduct.active,
+              sold_out: savedProduct.sold_out,
+              base_price: Number(savedProduct.base_price),
+              customer_price: Number(savedProduct.customer_price),
+              description: savedProduct.description,
+              image_url: savedProduct.image_url
+            }
+          : product
+      )
+    );
+    setDrafts((current) => ({
+      ...current,
+      [productId]: {
+        ...current[productId],
+        active: savedProduct.active,
+        sold_out: savedProduct.sold_out,
+        base_price: Number(savedProduct.base_price),
+        customer_price: Number(savedProduct.customer_price),
+        description: savedProduct.description,
+        image_url: savedProduct.image_url
+      }
+    }));
+  }
+
   async function saveProduct(productId: string) {
     const draft = drafts[productId];
     setSavingId(productId);
@@ -110,7 +140,7 @@ function ProductsEditor({ pin, clearPin }: { pin: string; clearPin: () => void }
       return;
     }
 
-    setProducts((current) => current.map((product) => (product.id === productId ? payload.product : product)));
+    mergeSavedProduct(productId, payload.product as Product);
   }
 
   async function uploadProductImage(productId: string, file: File) {
@@ -143,14 +173,7 @@ function ProductsEditor({ pin, clearPin }: { pin: string; clearPin: () => void }
       return;
     }
 
-    setProducts((current) => current.map((product) => (product.id === productId ? payload.product : product)));
-    setDrafts((current) => ({
-      ...current,
-      [productId]: {
-        ...current[productId],
-        image_url: payload.image_url
-      }
-    }));
+    mergeSavedProduct(productId, payload.product as Product);
   }
 
   return (

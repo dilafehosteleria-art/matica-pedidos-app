@@ -1,9 +1,76 @@
 import { NextRequest, NextResponse } from "next/server";
 import { assertAdmin } from "@/lib/admin";
-import { getSupabaseServerClient } from "@/lib/supabase/server";
-import type { ProductDraft } from "@/lib/types";
+import {
+  CATALOG_SECTION_DEFINITIONS,
+  buildPublicCatalogSections,
+  getVisibleCatalogCategories,
+  mergeCatalogDefaults
+} from "@/lib/catalog";
+import { CATEGORIES, PRODUCTS } from "@/lib/constants";
+import { getSupabaseAdminClient, getSupabaseServerClient } from "@/lib/supabase/server";
+import type { Category, Product, ProductDraft } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
+
+type SupabaseAdminClient = NonNullable<ReturnType<typeof getSupabaseAdminClient>>;
+
+async function ensureDefaultCatalogRows(supabase: SupabaseAdminClient) {
+  const [categories, products] = await Promise.all([
+    supabase.from("categories").select("id"),
+    supabase.from("products").select("id")
+  ]);
+
+  if (categories.error || products.error) {
+    return categories.error?.message ?? products.error?.message ?? "No se pudo revisar el catalogo.";
+  }
+
+  const categoryIds = new Set((categories.data ?? []).map((category) => String(category.id)));
+  const productIds = new Set((products.data ?? []).map((product) => String(product.id)));
+  const missingCategories = CATEGORIES.filter((category) => !categoryIds.has(category.id));
+  const missingProducts = PRODUCTS.filter((product) => !productIds.has(product.id));
+
+  if (missingCategories.length) {
+    const { error } = await supabase.from("categories").insert(missingCategories);
+
+    if (error) {
+      return error.message;
+    }
+  }
+
+  if (missingProducts.length) {
+    const { error } = await supabase.from("products").insert(missingProducts);
+
+    if (error) {
+      return error.message;
+    }
+  }
+
+  return null;
+}
+
+function buildAdminCatalogPayload(categories: Category[], products: Product[]) {
+  const mergedCatalog = mergeCatalogDefaults(categories, products);
+  const visibleSections = buildPublicCatalogSections(mergedCatalog.categories, mergedCatalog.products);
+  const categoriesBySlug = new Map(mergedCatalog.categories.map((category) => [category.slug, category]));
+  const categoryIdBySectionSlug = new Map(
+    CATALOG_SECTION_DEFINITIONS.map((section) => [
+      section.slug,
+      categoriesBySlug.get(section.categorySlug)?.id
+    ])
+  );
+
+  return {
+    categories: getVisibleCatalogCategories(mergedCatalog.categories),
+    products: visibleSections.flatMap((section) => {
+      const categoryId = categoryIdBySectionSlug.get(section.slug);
+
+      return section.products.map((product) => ({
+        ...product,
+        category_id: categoryId ?? product.category_id
+      }));
+    })
+  };
+}
 
 export async function GET(request: NextRequest) {
   const adminError = assertAdmin(request);
@@ -12,10 +79,19 @@ export async function GET(request: NextRequest) {
     return adminError;
   }
 
-  const supabase = getSupabaseServerClient();
+  const adminSupabase = getSupabaseAdminClient();
+  const supabase = adminSupabase ?? getSupabaseServerClient();
 
   if (!supabase) {
     return NextResponse.json({ error: "Configura Supabase para usar el panel." }, { status: 503 });
+  }
+
+  if (adminSupabase) {
+    const catalogError = await ensureDefaultCatalogRows(adminSupabase);
+
+    if (catalogError) {
+      return NextResponse.json({ error: catalogError }, { status: 400 });
+    }
   }
 
   const [categories, products] = await Promise.all([
@@ -30,7 +106,7 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  return NextResponse.json({ categories: categories.data ?? [], products: products.data ?? [] });
+  return NextResponse.json(buildAdminCatalogPayload(categories.data ?? [], products.data ?? []));
 }
 
 export async function PATCH(request: NextRequest) {

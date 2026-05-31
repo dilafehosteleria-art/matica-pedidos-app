@@ -16,6 +16,16 @@ import {
   X
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import {
+  buildPublicCatalogSections,
+  getCatalogDisplayName as getDisplayName,
+  getProductImageUrl,
+  isCustomSaladProduct,
+  isCustomWrapProduct,
+  isMenuSaladSandwichProduct,
+  normalizeCatalogText as normalize,
+  type PublicSection
+} from "@/lib/catalog";
 import { DELIVERY_WINDOW } from "@/lib/constants";
 import { formatCurrency } from "@/lib/format";
 import { calculateCartTotals, getSubsidyAmount } from "@/lib/pricing";
@@ -37,30 +47,6 @@ type SubmitState =
   | { status: "error"; message: string };
 
 type PublicStep = "catalog" | "checkout" | "confirmation";
-
-type SectionKind =
-  | "menus"
-  | "daily_menu"
-  | "half_menu"
-  | "signature_bowls"
-  | "custom_salad"
-  | "wraps_signature"
-  | "custom_wrap"
-  | "grill"
-  | "sandwiches"
-  | "drinks"
-  | "desserts"
-  | "extras";
-
-type PublicSection = {
-  slug: string;
-  title: string;
-  tabLabel?: string;
-  description: string;
-  kind: SectionKind;
-  products: Product[];
-  configurable?: boolean;
-};
 
 type Option = {
   label: string;
@@ -89,65 +75,6 @@ type ConfigSpec = {
   defaultMetadata?: Record<string, string>;
   notesPlaceholder?: string;
 };
-
-const COMPANY_SECTION_DEFINITIONS: Omit<PublicSection, "products">[] = [
-  {
-    slug: "menus",
-    title: "Menús",
-    tabLabel: "Menús",
-    description: "Menú del día, medio menú y combinaciones rápidas.",
-    kind: "menus"
-  },
-  {
-    slug: "bowls-signature",
-    title: "Matica Signature Bowls y Ensaladas",
-    tabLabel: "Bowls",
-    description: "Cuatro recetas signature y la ensalada a tu manera al final.",
-    kind: "signature_bowls"
-  },
-  {
-    slug: "wraps-signature",
-    title: "Wraps Signature",
-    tabLabel: "Wraps",
-    description: "Cuatro wraps Matica y el wrap a tu manera al final.",
-    kind: "wraps_signature"
-  },
-  {
-    slug: "matica-grill",
-    title: "Matica Grill",
-    tabLabel: "Grill",
-    description: "Plato combinado configurable con proteína, guarniciones y bebida o postre.",
-    kind: "grill"
-  },
-  {
-    slug: "bocadillos",
-    title: "Bocadillos",
-    tabLabel: "Bocadillos",
-    description: "Elige entre los bocadillos disponibles.",
-    kind: "sandwiches"
-  },
-  {
-    slug: "bebidas",
-    title: "Bebidas",
-    tabLabel: "Bebidas",
-    description: "Aguas y refrescos.",
-    kind: "drinks"
-  },
-  {
-    slug: "postres",
-    title: "Postres",
-    tabLabel: "Postres",
-    description: "Dulces y fruta para cerrar el menú.",
-    kind: "desserts"
-  },
-  {
-    slug: "otros",
-    title: "Otros",
-    tabLabel: "Otros",
-    description: "Pequeños extras para completar el pedido.",
-    kind: "extras"
-  }
-];
 
 const SALAD_SIZE_OPTIONS: Option[] = [
   { label: "Tamaño Mediano 1000ML" },
@@ -321,13 +248,6 @@ const MENU_SIDE_OPTIONS: Option[] = [
 
 const BREAD_OPTION: Option = { label: "Enviar pan" };
 
-function normalize(value: string) {
-  return value
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase();
-}
-
 function formatMetadataKey(key: string) {
   const labels: Record<string, string> = {
     first_course: "Primero",
@@ -460,34 +380,6 @@ function exactMultiGroup(key: string, label: string, count: number, options: Opt
   };
 }
 
-function getDisplayName(product: Product, kind: SectionKind) {
-  if (kind === "custom_salad" || isCustomSaladProduct(product)) {
-    return "Diseña tu ensalada";
-  }
-
-  if (kind === "custom_wrap" || isCustomWrapProduct(product)) {
-    return "Diseña tu wrap";
-  }
-
-  if (kind === "grill") {
-    return "Platos combinados Matica";
-  }
-
-  if (kind === "sandwiches") {
-    return "Escoge tu bocadillo";
-  }
-
-  if (kind === "drinks") {
-    return "Escoge tu bebida";
-  }
-
-  if (kind === "desserts") {
-    return "Escoge tu postre";
-  }
-
-  return product.name;
-}
-
 function buildCartItem(
   product: Product,
   choices: Record<string, string>,
@@ -512,64 +404,6 @@ function getOptionPrice(spec: ConfigSpec, groupKey: string, optionLabel: string)
 
 function getOptionUnitPrice(spec: ConfigSpec, groupKey: string, optionLabel: string) {
   return spec.groups.find((group) => group.key === groupKey)?.options.find((option) => option.label === optionLabel)?.unitPrice;
-}
-
-function getProductImageUrl(product: Product) {
-  return product.image_url ?? (product as Product & { imageUrl?: string }).imageUrl ?? "";
-}
-
-function customLast(products: Product[], isCustomProduct: (product: Product) => boolean) {
-  return [...products.filter((product) => !isCustomProduct(product)), ...products.filter(isCustomProduct)];
-}
-
-function singleConfiguratorProduct(products: Product[], preferredName: string) {
-  const preferred = products.find((product) => normalize(product.name).includes(preferredName));
-
-  return preferred ? [preferred] : products.slice(0, 1);
-}
-
-function isCustomSaladProduct(product: Product) {
-  const name = normalize(product.name);
-
-  return name.includes("disena tu ensalada") || name.includes("ensalada a tu manera");
-}
-
-function isCustomWrapProduct(product: Product) {
-  const name = normalize(product.name);
-
-  return name.includes("disena tu wrap") || name.includes("wrap a tu manera");
-}
-
-function isMenuSaladSandwichProduct(product: Product) {
-  const name = normalize(product.name);
-
-  return name.includes("ensalada pequena") && name.includes("bocadillo");
-}
-
-function cloneCatalogProduct(
-  product: Product | undefined,
-  overrides: Partial<Pick<Product, "name" | "description" | "base_price" | "customer_price" | "product_type">>
-) {
-  if (!product) {
-    return undefined;
-  }
-
-  return {
-    ...product,
-    ...overrides
-  };
-}
-
-function pickCatalogProduct(products: Product[], matcher: (product: Product) => boolean, fallbackProducts: Product[]): Product | undefined {
-  return products.find(matcher) ?? fallbackProducts.find((product) => product.product_type === "standard") ?? fallbackProducts[0];
-}
-
-function compactProducts(products: Array<Product | undefined>) {
-  return products.filter((product): product is Product => Boolean(product));
-}
-
-function nameIncludes(value: string) {
-  return (product: Product) => normalize(product.name).includes(value);
 }
 
 function getSaladGroups({
@@ -775,206 +609,10 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
     return () => window.clearTimeout(timer);
   }, [companySlug, customer.email]);
 
-  const publicSections = useMemo<PublicSection[]>(() => {
-    if (!data) {
-      return [];
-    }
-
-    const publicData = data;
-    const allProducts = publicData.products;
-    const categorySlugById = new Map(publicData.categories.map((category) => [category.id, category.slug]));
-    const categoryProducts = (slug: string) => allProducts.filter((product) => categorySlugById.get(product.category_id) === slug);
-    const menus = categoryProducts("menus");
-    const bowlsAndSalads = categoryProducts("bowls-ensaladas");
-    const wraps = categoryProducts("wraps-signature");
-    const grill = categoryProducts("matica-grill");
-    const sandwiches = categoryProducts("bocadillos");
-    const drinks = categoryProducts("bebidas").filter((product) => product.product_type !== "daily_menu");
-    const desserts = categoryProducts("postres");
-    const extras = categoryProducts("otros");
-    const pick = (products: Product[], matcher: (product: Product) => boolean) => pickCatalogProduct(products, matcher, allProducts);
-
-    function productsFor(kind: SectionKind): Product[] {
-      switch (kind) {
-        case "menus":
-          return compactProducts([
-            cloneCatalogProduct(pick(allProducts, (product) => product.product_type === "daily_menu"), {
-              name: "Menú del día",
-              description: "Primer plato, segundo plato, guarnición, bebida o postre y pan opcional.",
-              base_price: 13,
-              customer_price: 9,
-              product_type: "daily_menu"
-            }),
-            cloneCatalogProduct(pick(allProducts, (product) => product.product_type === "half_menu"), {
-              name: "Medio menú",
-              description: "Plato único, guarnición si eliges segundo, bebida o postre y pan opcional.",
-              base_price: 10,
-              customer_price: 6.5,
-              product_type: "half_menu"
-            }),
-            cloneCatalogProduct(pick(menus, isMenuSaladSandwichProduct), {
-              name: "Menú ensalada pequeña + bocadillo",
-              description: "Ensalada pequeña 750ML configurable y bocadillo a elegir.",
-              base_price: 10,
-              customer_price: 10,
-              product_type: "standard"
-            })
-          ]);
-        case "daily_menu":
-          return allProducts.filter((product) => product.product_type === "daily_menu");
-        case "half_menu":
-          return allProducts.filter((product) => product.product_type === "half_menu");
-        case "signature_bowls":
-          return compactProducts([
-            cloneCatalogProduct(pick(bowlsAndSalads, nameIncludes("caesar")), {
-              name: "Caesar Crunch Chicken Bowl",
-              description: "Pollo, mezclum, croutons, parmesano y salsa Caesar.",
-              base_price: 9.9,
-              customer_price: 9.9,
-              product_type: "standard"
-            }),
-            cloneCatalogProduct(pick(bowlsAndSalads, nameIncludes("mediterranean")), {
-              name: "Mediterranean Fresh Bowl",
-              description: "Quinoa, atún, huevo, tomate, aceitunas y vinagreta.",
-              base_price: 9.9,
-              customer_price: 9.9,
-              product_type: "standard"
-            }),
-            cloneCatalogProduct(pick(bowlsAndSalads, nameIncludes("tex-mex")), {
-              name: "Tex-Mex Protein Bowl",
-              description: "Arroz, proteína especiada, maíz, pico de gallo y salsa suave.",
-              base_price: 9.9,
-              customer_price: 9.9,
-              product_type: "standard"
-            }),
-            cloneCatalogProduct(pick(bowlsAndSalads, nameIncludes("green")), {
-              name: "Green Fresh Bowl",
-              description: "Base verde, verduras frescas, aguacate y salsa de yogur.",
-              base_price: 9.9,
-              customer_price: 9.9,
-              product_type: "standard"
-            }),
-            cloneCatalogProduct(
-              pick(
-                bowlsAndSalads,
-                (product) =>
-                  isCustomSaladProduct(product) ||
-                  normalize(product.name).includes("ensalada mediana") ||
-                  normalize(product.name).includes("a tu manera")
-              ),
-              {
-                name: "Diseña tu ensalada",
-                description: "Elige tamaño, base, proteína, toppings y aliño.",
-                base_price: 7.5,
-                customer_price: 7.5,
-                product_type: "standard"
-              }
-            )
-          ]);
-        case "custom_salad":
-          return bowlsAndSalads.filter((product) => normalize(product.name).includes("ensalada"));
-        case "wraps_signature":
-          return compactProducts([
-            cloneCatalogProduct(pick(wraps, nameIncludes("caesar")), {
-              name: "Wrap Caesar Crunch",
-              description: "Pollo, lechuga, parmesano y salsa Caesar.",
-              base_price: 8.9,
-              customer_price: 8.9,
-              product_type: "standard"
-            }),
-            cloneCatalogProduct(pick(wraps, nameIncludes("tex-mex")), {
-              name: "Wrap Tex-Mex Pork",
-              description: "Cerdo especiado, arroz, maíz y salsa chipotle suave.",
-              base_price: 8.9,
-              customer_price: 8.9,
-              product_type: "standard"
-            }),
-            cloneCatalogProduct(pick(wraps, nameIncludes("fresh")), {
-              name: "Wrap Fresh Chicken",
-              description: "Pollo, mezclum, tomate, zanahoria y salsa de yogur.",
-              base_price: 8.9,
-              customer_price: 8.9,
-              product_type: "standard"
-            }),
-            cloneCatalogProduct(pick(wraps, nameIncludes("mediterranean")), {
-              name: "Wrap Mediterranean Tuna",
-              description: "Atún, huevo, tomate, aceitunas y vinagreta.",
-              base_price: 8.9,
-              customer_price: 8.9,
-              product_type: "standard"
-            }),
-            cloneCatalogProduct(
-              pick(wraps, (product) => isCustomWrapProduct(product) || normalize(product.name).includes("a tu manera")),
-              {
-                name: "Diseña tu wrap",
-                description: "Monta tu wrap con proteína, relleno, toppings y salsa.",
-                base_price: 7.5,
-                customer_price: 7.5,
-                product_type: "standard"
-              }
-            )
-          ]);
-        case "custom_wrap":
-          return wraps.filter((product) => normalize(product.name).includes("manera"));
-        case "grill":
-          return compactProducts([
-            cloneCatalogProduct(pick(grill, (product) => normalize(product.name).includes("plato")), {
-              name: "Platos combinados Matica",
-              description:
-                "Escoge entre pollo a la plancha, lomo de cerdo o filete de ternera + 1 huevo frito + 2 guarniciones + postre o bebida + pan.",
-              base_price: 10,
-              customer_price: 10,
-              product_type: "standard"
-            })
-          ]);
-        case "sandwiches":
-          return compactProducts([
-            cloneCatalogProduct(pick(sandwiches, nameIncludes("bocadillo")), {
-              name: "Escoge tu bocadillo",
-              description: "Elige entre los bocadillos disponibles.",
-              base_price: 6,
-              customer_price: 6,
-              product_type: "standard"
-            })
-          ]);
-        case "drinks":
-          return compactProducts([
-            cloneCatalogProduct(pick(drinks, (product) => product.product_type === "drink" || normalize(product.name).includes("agua")), {
-              name: "Escoge tu bebida",
-              description: "Coca Cola, Coca Cola Zero, Lipton, Fanta, agua mineral o agua con gas.",
-              base_price: 1.5,
-              customer_price: 1.5,
-              product_type: "drink"
-            })
-          ]);
-        case "desserts":
-          return compactProducts([
-            cloneCatalogProduct(pick(desserts, (product) => product.product_type === "dessert" || normalize(product.name).includes("flan")), {
-              name: "Escoge tu postre",
-              description: "Flan, yogur, natillas, fruta, flan de queso o cookie.",
-              base_price: 1,
-              customer_price: 1,
-              product_type: "dessert"
-            })
-          ]);
-        case "extras":
-          return compactProducts([
-            cloneCatalogProduct(pick(extras, nameIncludes("cubiertos")), {
-              name: "Cubiertos",
-              description: "Set de cubiertos para tu pedido.",
-              base_price: 0.2,
-              customer_price: 0.2,
-              product_type: "other"
-            })
-          ]);
-      }
-    }
-
-    return COMPANY_SECTION_DEFINITIONS.map((section) => ({
-      ...section,
-      products: productsFor(section.kind)
-    })).filter((section) => section.products.length > 0);
-  }, [data]);
+  const publicSections = useMemo<PublicSection[]>(
+    () => (data ? buildPublicCatalogSections(data.categories, data.products) : []),
+    [data]
+  );
 
   const totals = useMemo(() => calculateCartTotals(cart, subsidyAlreadyUsed), [cart, subsidyAlreadyUsed]);
   const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
