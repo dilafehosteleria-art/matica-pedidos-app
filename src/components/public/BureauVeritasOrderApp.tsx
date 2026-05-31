@@ -160,6 +160,7 @@ const SALAD_BASE_OPTIONS: Option[] = [
   { label: "Arroz blanco" },
   { label: "Arroz integral" },
   { label: "Mézclum" },
+  { label: "Espinaca" },
   { label: "Pasta" },
   { label: "Quinoa" }
 ];
@@ -582,7 +583,7 @@ function getSaladGroups({
 } = {}): ConfigGroup[] {
   return [
     ...(includeSize ? [{ key: "salad_size", label: "Tamaño", type: "single" as const, options: SALAD_SIZE_OPTIONS }] : []),
-    { key: "salad_base", label: "Base", type: "multi", min: exactCounts ? 2 : 1, max: 2, options: SALAD_BASE_OPTIONS },
+    { key: "salad_base", label: "Base", type: "multi", min: 1, max: 2, options: SALAD_BASE_OPTIONS },
     { key: "protein", label: "Proteína", type: "single", options: SALAD_PROTEIN_OPTIONS },
     { key: "toppings", label: "Toppings", type: "multi", min: exactCounts ? 3 : 1, max: 3, options: SALAD_TOPPING_OPTIONS },
     { key: "dressing", label: "Aliño", type: "single", options: DRESSING_OPTIONS },
