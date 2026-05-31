@@ -896,6 +896,12 @@ function ProductCard({
   const [imageFailed, setImageFailed] = useState(false);
   const pricePrefix = section.kind === "drinks" || section.kind === "desserts" ? "desde " : "";
 
+  console.log("[Matica public product card]", "product.name", product.name, "product.image_url", product.image_url);
+
+  useEffect(() => {
+    setImageFailed(false);
+  }, [imageUrl]);
+
   return (
     <article className="overflow-hidden rounded-lg border border-matica-line bg-white shadow-sm">
       <div className="relative aspect-[16/10] bg-matica-soft">

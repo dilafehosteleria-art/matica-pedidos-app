@@ -6,6 +6,7 @@ import {
   DEFAULT_DAILY_MENU,
   PRODUCTS
 } from "@/lib/constants";
+import { mergeCatalogDefaults } from "@/lib/catalog";
 import { toDateInputValue } from "@/lib/format";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import type { DailyMenu, DailyMenuCourse, PublicCompany, PublicData } from "@/lib/types";
@@ -113,12 +114,10 @@ export async function getPublicCompanyData(slug: string): Promise<PublicData | n
     supabase
       .from("categories")
       .select("*")
-      .eq("active", true)
       .order("sort_order", { ascending: true }),
     supabase
       .from("products")
       .select("*")
-      .eq("active", true)
       .order("sort_order", { ascending: true }),
     supabase
       .from("daily_menus")
@@ -146,11 +145,13 @@ export async function getPublicCompanyData(slug: string): Promise<PublicData | n
     return fallback;
   }
 
+  const catalog = mergeCatalogDefaults(categories.data ?? [], products.data ?? []);
+
   return {
     company,
     branches: branches.data ?? [],
-    categories: categories.data ?? [],
-    products: products.data ?? [],
+    categories: catalog.categories.filter((category) => category.active),
+    products: catalog.products.filter((product) => product.active),
     dailyMenu: normalizeMenu(dailyMenu) ?? fallback?.dailyMenu ?? null,
     source: "supabase"
   } satisfies PublicData;

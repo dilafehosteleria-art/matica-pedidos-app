@@ -104,7 +104,7 @@ export function normalizeCatalogText(value: string) {
 }
 
 export function getProductImageUrl(product: Product) {
-  return product.image_url ?? (product as Product & { imageUrl?: string }).imageUrl ?? "";
+  return product.image_url ?? "";
 }
 
 export function isCustomSaladProduct(product: Product) {
@@ -164,7 +164,18 @@ export function mergeCatalogDefaults(categories: Category[], products: Product[]
   }
 
   for (const product of products) {
-    productsById.set(product.id, product);
+    const defaultProduct = productsById.get(product.id);
+
+    productsById.set(
+      product.id,
+      defaultProduct
+        ? {
+            ...product,
+            category_id: defaultProduct.category_id,
+            sort_order: defaultProduct.sort_order
+          }
+        : product
+    );
   }
 
   return {
@@ -205,8 +216,8 @@ function cloneCatalogProduct(
   };
 }
 
-function pickCatalogProduct(products: Product[], matcher: (product: Product) => boolean, fallbackProducts: Product[]): Product | undefined {
-  return products.find(matcher) ?? fallbackProducts.find((product) => product.product_type === "standard") ?? fallbackProducts[0];
+function pickCatalogProduct(products: Product[], matcher: (product: Product) => boolean): Product | undefined {
+  return products.find(matcher);
 }
 
 function compactProducts(products: Array<Product | undefined>) {
@@ -229,8 +240,7 @@ export function buildPublicCatalogSections(categories: Category[], products: Pro
   const drinks = categoryProducts("bebidas").filter((product) => product.product_type !== "daily_menu");
   const desserts = categoryProducts("postres");
   const extras = categoryProducts("otros");
-  const pick = (catalogProducts: Product[], matcher: (product: Product) => boolean) =>
-    pickCatalogProduct(catalogProducts, matcher, allProducts);
+  const pick = (catalogProducts: Product[], matcher: (product: Product) => boolean) => pickCatalogProduct(catalogProducts, matcher);
 
   function productsFor(kind: SectionKind): Product[] {
     switch (kind) {
