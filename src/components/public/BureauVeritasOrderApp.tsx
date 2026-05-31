@@ -896,7 +896,11 @@ function ProductCard({
   const [imageFailed, setImageFailed] = useState(false);
   const pricePrefix = section.kind === "drinks" || section.kind === "desserts" ? "desde " : "";
 
-  console.log("[Matica public product card]", "product.name", product.name, "product.image_url", product.image_url);
+  console.log({
+    id: product.id,
+    name: product.name,
+    image_url: product.image_url
+  });
 
   useEffect(() => {
     setImageFailed(false);
@@ -910,7 +914,24 @@ function ProductCard({
             className="block h-full w-full object-cover object-center"
             src={imageUrl}
             alt={displayName}
-            onError={() => setImageFailed(true)}
+            onLoad={(event) => {
+              console.log({
+                id: product.id,
+                name: product.name,
+                image_url: product.image_url,
+                img_src: event.currentTarget.currentSrc || event.currentTarget.src
+              });
+            }}
+            onError={(event) => {
+              console.log({
+                id: product.id,
+                name: product.name,
+                image_url: product.image_url,
+                img_src: event.currentTarget.currentSrc || event.currentTarget.src,
+                image_error: true
+              });
+              setImageFailed(true);
+            }}
           />
         ) : (
           <div className="grid h-full place-items-center bg-gradient-to-br from-matica-mint via-white to-matica-soft text-matica-green">
