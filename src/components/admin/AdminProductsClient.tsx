@@ -298,9 +298,9 @@ function ProductEditorCard({
         <span className="text-sm font-bold text-matica-ink/70">Imagen</span>
       </div>
       <div className="mt-2 grid gap-3 lg:grid-cols-[180px_1fr] lg:items-start">
-        <div className="aspect-[4/3] overflow-hidden rounded-lg border border-matica-line bg-matica-soft">
+        <div className="aspect-[4/3] overflow-hidden rounded-lg border border-matica-line bg-white">
           {previewUrl ? (
-            <img className="h-full w-full object-cover" src={previewUrl} alt={product.name} />
+            <img className="block h-full w-full object-contain p-2" src={previewUrl} alt={product.name} />
           ) : (
             <div className="grid h-full place-items-center text-matica-green">
               <div className="grid h-11 w-11 place-items-center rounded-full bg-white/80 shadow-sm">

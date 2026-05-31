@@ -1260,10 +1260,10 @@ function ProductCard({
 
   return (
     <article className="overflow-hidden rounded-lg border border-matica-line bg-white shadow-sm">
-      <div className="relative h-24 bg-matica-soft sm:h-32">
+      <div className="relative h-24 bg-white sm:h-32">
         {imageUrl && !imageFailed ? (
           <img
-            className="h-full w-full object-cover"
+            className="block h-full w-full object-contain p-2"
             src={imageUrl}
             alt={displayName}
             onError={() => setImageFailed(true)}
