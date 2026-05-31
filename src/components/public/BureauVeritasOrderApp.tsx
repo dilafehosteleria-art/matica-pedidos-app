@@ -271,20 +271,29 @@ const FALLBACK_MENU_SECOND_COURSE_OPTIONS: MenuDishOption[] = [
   { label: "Pollo asado" }
 ];
 
-const FALLBACK_MENU_DRINK_OR_DESSERT_OPTIONS: Option[] = [
-  { label: "Agua" },
+const MENU_DRINK_OPTIONS: Option[] = [
+  { label: "Agua mineral" },
   { label: "Agua con gas" },
   { label: "Coca Cola" },
   { label: "Coca Cola Zero" },
   { label: "Fanta Naranja" },
+  { label: "Lipton Limón" }
+];
+
+const MENU_DESSERT_OPTIONS: Option[] = [
+  { label: "Flan" },
   { label: "Gelatina" },
-  { label: "Lipton Limón" },
-  { label: "Manzana" },
   { label: "Natillas" },
   { label: "Plátano" },
-  { label: "Yogur de frutas" },
-  { label: "Flan" }
+  { label: "Manzana" },
+  { label: "Yogur de frutas" }
 ];
+
+const MENU_DRINK_OR_DESSERT_OPTIONS: Option[] = [...MENU_DRINK_OPTIONS, ...MENU_DESSERT_OPTIONS];
+
+const GRILL_DRINK_OR_DESSERT_OPTIONS = MENU_DRINK_OR_DESSERT_OPTIONS.filter(
+  (option) => option.label !== "Coca Cola" && option.label !== "Coca Cola Zero"
+);
 
 const MENU_SIDE_OPTIONS: Option[] = [
   { label: "Arroz jazmín" },
@@ -352,21 +361,6 @@ function isCourseExcludedFromHalfMenu(course: DailyMenuCourse) {
   return typeof course === "string" ? false : Boolean(course.excluded_from_half_menu);
 }
 
-function uniqueOptions(options: Option[]) {
-  const seen = new Set<string>();
-
-  return options.filter((option) => {
-    const key = normalize(option.label);
-
-    if (seen.has(key)) {
-      return false;
-    }
-
-    seen.add(key);
-    return true;
-  });
-}
-
 function menuFirstCourseOptions(menu: DailyMenu | null): MenuDishOption[] {
   const options = (menu?.first_courses ?? [])
     .map((label) => label.trim())
@@ -406,17 +400,12 @@ function hasMenuChoices(product: Product, menu: DailyMenu | null) {
   return true;
 }
 
-function menuDrinkOrDessertOptions(menu: DailyMenu | null): Option[] {
-  const options = [
-    ...(menu?.drinks ?? []).map((label) => ({ label: label.trim() })).filter((option) => Boolean(option.label)),
-    ...(menu?.desserts ?? []).map((label) => ({ label: label.trim() })).filter((option) => Boolean(option.label))
-  ];
-
-  return options.length ? uniqueOptions(options) : FALLBACK_MENU_DRINK_OR_DESSERT_OPTIONS;
+function menuDrinkOrDessertOptions(_menu: DailyMenu | null): Option[] {
+  return MENU_DRINK_OR_DESSERT_OPTIONS;
 }
 
-function grillDrinkOrDessertOptions(menu: DailyMenu | null) {
-  return menuDrinkOrDessertOptions(menu).filter((option) => option.label !== "Coca Cola" && option.label !== "Coca Cola Zero");
+function grillDrinkOrDessertOptions(_menu: DailyMenu | null) {
+  return GRILL_DRINK_OR_DESSERT_OPTIONS;
 }
 
 function isVacunoDish(option: MenuDishOption) {
