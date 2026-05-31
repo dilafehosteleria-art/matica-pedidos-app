@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertCircle, Loader2, Save } from "lucide-react";
+import { AlertCircle, ImageIcon, Loader2, Save, Upload } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AdminGate } from "./AdminGate";
 import { formatCurrency } from "@/lib/format";
@@ -20,6 +20,7 @@ function ProductsEditor({ pin, clearPin }: { pin: string; clearPin: () => void }
   const [drafts, setDrafts] = useState<Record<string, ProductDraft>>({});
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState("");
+  const [uploadingId, setUploadingId] = useState("");
   const [error, setError] = useState("");
 
   const loadProducts = useCallback(async () => {
@@ -112,6 +113,46 @@ function ProductsEditor({ pin, clearPin }: { pin: string; clearPin: () => void }
     setProducts((current) => current.map((product) => (product.id === productId ? payload.product : product)));
   }
 
+  async function uploadProductImage(productId: string, file: File) {
+    if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+      setError("Formato no valido. Sube una imagen JPG, PNG o WebP.");
+      return;
+    }
+
+    if (file.size > 2 * 1024 * 1024) {
+      setError("La imagen no puede superar 2 MB.");
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append("product_id", productId);
+    formData.append("file", file);
+    setUploadingId(productId);
+    setError("");
+
+    const response = await fetch("/api/admin/products/images", {
+      method: "POST",
+      headers: { "x-admin-pin": pin },
+      body: formData
+    });
+    const payload = await response.json();
+    setUploadingId("");
+
+    if (!response.ok) {
+      setError(payload.error ?? "No se pudo subir la imagen.");
+      return;
+    }
+
+    setProducts((current) => current.map((product) => (product.id === productId ? payload.product : product)));
+    setDrafts((current) => ({
+      ...current,
+      [productId]: {
+        ...current[productId],
+        image_url: payload.image_url
+      }
+    }));
+  }
+
   return (
     <div className="mx-auto max-w-6xl px-4 py-5 sm:px-6 lg:px-8">
       {error ? (
@@ -145,8 +186,10 @@ function ProductsEditor({ pin, clearPin }: { pin: string; clearPin: () => void }
                       product={product}
                       draft={drafts[product.id]}
                       saving={savingId === product.id}
+                      uploading={uploadingId === product.id}
                       onChange={(field, value) => updateDraft(product.id, field, value)}
                       onSave={() => saveProduct(product.id)}
+                      onUpload={(file) => uploadProductImage(product.id, file)}
                     />
                   ))}
                 </div>
@@ -163,18 +206,24 @@ function ProductEditorCard({
   product,
   draft,
   saving,
+  uploading,
   onChange,
-  onSave
+  onSave,
+  onUpload
 }: {
   product: Product;
   draft: ProductDraft | undefined;
   saving: boolean;
+  uploading: boolean;
   onChange: (field: keyof ProductDraft, value: string | number | boolean | null) => void;
   onSave: () => void;
+  onUpload: (file: File) => void;
 }) {
   if (!draft) {
     return null;
   }
+
+  const previewUrl = draft.image_url?.trim() ?? "";
 
   return (
     <article className="rounded-lg border border-matica-line bg-white p-4 shadow-sm">
@@ -245,15 +294,54 @@ function ProductEditorCard({
           Guardar
         </button>
       </div>
-      <label className="mt-3 block space-y-1">
-        <span className="text-sm font-bold text-matica-ink/70">URL imagen</span>
-        <input
-          className="matica-focus w-full rounded-lg border border-matica-line px-3 py-3"
-          value={draft.image_url ?? ""}
-          onChange={(event) => onChange("image_url", event.target.value || null)}
-          placeholder="https://..."
-        />
-      </label>
+      <div className="mt-3">
+        <span className="text-sm font-bold text-matica-ink/70">Imagen</span>
+      </div>
+      <div className="mt-2 grid gap-3 lg:grid-cols-[180px_1fr] lg:items-start">
+        <div className="aspect-[4/3] overflow-hidden rounded-lg border border-matica-line bg-matica-soft">
+          {previewUrl ? (
+            <img className="h-full w-full object-cover" src={previewUrl} alt={product.name} />
+          ) : (
+            <div className="grid h-full place-items-center text-matica-green">
+              <div className="grid h-11 w-11 place-items-center rounded-full bg-white/80 shadow-sm">
+                <ImageIcon className="h-5 w-5" />
+              </div>
+            </div>
+          )}
+        </div>
+        <div className="space-y-2">
+          <input
+            className="matica-focus w-full rounded-lg border border-matica-line px-3 py-3"
+            aria-label="URL imagen"
+            value={draft.image_url ?? ""}
+            onChange={(event) => onChange("image_url", event.target.value || null)}
+            placeholder="https://..."
+          />
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <label className="matica-focus flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-lg border border-matica-line bg-white px-4 text-sm font-black text-matica-green">
+              {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+              {uploading ? "Subiendo..." : "Subir imagen"}
+              <input
+                className="sr-only"
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                disabled={uploading}
+                onChange={(event) => {
+                  const file = event.currentTarget.files?.[0];
+                  event.currentTarget.value = "";
+
+                  if (file) {
+                    onUpload(file);
+                  }
+                }}
+              />
+            </label>
+            <p className="text-xs font-semibold leading-5 text-matica-ink/50">
+              JPG, PNG o WebP. Max. 2 MB. Mejor cuadrada o 4:3.
+            </p>
+          </div>
+        </div>
+      </div>
     </article>
   );
 }

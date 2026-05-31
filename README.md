@@ -23,17 +23,18 @@ Copia `.env.example` a `.env.local`:
 ```bash
 NEXT_PUBLIC_SUPABASE_URL=https://tu-proyecto.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=tu_anon_key
+SUPABASE_SERVICE_ROLE_KEY=tu_service_role_key
 ADMIN_PIN=un-pin-interno
 ```
 
-No uses la service role key en el frontend ni en Railway para esta V1.
+No uses la service role key en el frontend. Esta clave solo se usa en rutas API del backend para operaciones de administracion como la subida de imagenes.
 
 ## Supabase
 
 1. Crea un proyecto en Supabase.
 2. Ve a `SQL Editor`.
 3. Ejecuta el contenido de `supabase/migrations/001_initial_schema.sql`.
-4. Copia `Project URL` y `anon public key` desde `Project Settings > API`.
+4. Copia `Project URL`, `anon public key` y `service_role key` desde `Project Settings > API`.
 5. Configura esas claves en `.env.local` y en Railway.
 
 La migracion crea:
@@ -42,6 +43,15 @@ La migracion crea:
 - Datos iniciales de Bureau Veritas, sociedades, categorias, productos de prueba y reglas de subvencion.
 - Funcion `submit_b2b_order(jsonb)` para confirmar pedidos y calcular precios/subvencion desde base de datos.
 - RLS basico para esta V1. El admin se protege en las rutas API de Next mediante `ADMIN_PIN`.
+
+### Storage de imagenes
+
+El admin de productos sube imagenes a Supabase Storage en el bucket `product-images`.
+
+- La ruta backend intenta crear el bucket automaticamente con lectura publica, limite de 2 MB y formatos `jpg`, `png` y `webp`.
+- Si Supabase no permite crearlo automaticamente, crealo manualmente en `Storage > New bucket` con nombre `product-images` y opcion `Public bucket` activada.
+- Las subidas se hacen desde `/api/admin/products/images`, protegidas por `ADMIN_PIN` y usando `SUPABASE_SERVICE_ROLE_KEY` solo en servidor.
+- El panel guarda la URL publica resultante en `products.image_url`, que es la imagen usada por la carta publica.
 
 ## Desarrollo local
 
@@ -77,6 +87,7 @@ npm run start
 3. Configura las variables:
    - `NEXT_PUBLIC_SUPABASE_URL`
    - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+   - `SUPABASE_SERVICE_ROLE_KEY`
    - `ADMIN_PIN`
 4. Railway usara Nixpacks. El `startCommand` esta en `railway.json`.
 5. Despliega y abre `/bureau-veritas`.
