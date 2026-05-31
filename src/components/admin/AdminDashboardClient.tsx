@@ -24,6 +24,44 @@ const STATUS_OPTIONS: { status: OrderStatus; label: string }[] = [
   { status: "cancelado", label: "Cancelado" }
 ];
 
+function formatMetadataKey(key: string) {
+  const labels: Record<string, string> = {
+    categoria: "Categoría",
+    first_course: "Primero",
+    second_course: "Segundo",
+    drink_or_dessert: "Bebida o postre",
+    plate: "Plato único",
+    salad_size: "Tamaño ensalada",
+    salad_base: "Base ensalada",
+    protein: "Proteína",
+    toppings: "Toppings",
+    dressing: "Aliño",
+    sandwich: "Bocadillo",
+    filling: "Relleno/base",
+    sauce: "Salsa",
+    main_protein: "Proteína principal",
+    side: "Guarnición",
+    sides: "Guarnición",
+    drink: "Bebida",
+    dessert: "Postre",
+    bread: "Pan",
+    suplementos: "Suplementos"
+  };
+
+  return labels[key] ?? key.replaceAll("_", " ").replace(/^\w/, (letter) => letter.toUpperCase());
+}
+
+function formatMetadata(metadata?: Record<string, string>) {
+  if (!metadata) {
+    return "";
+  }
+
+  return Object.entries(metadata)
+    .filter(([key, value]) => Boolean(value) && !key.startsWith("_") && key !== "display_name")
+    .map(([key, value]) => `${formatMetadataKey(key)}: ${value}`)
+    .join(" · ");
+}
+
 export function AdminDashboardClient() {
   return (
     <AdminGate title="Panel de pedidos" subtitle="Pedidos por empresa ordenados por hora.">
@@ -204,7 +242,7 @@ function OrderCard({
             </div>
             {item.metadata ? (
               <p className="mt-1 text-xs font-semibold leading-5 text-matica-ink/55">
-                {Object.values(item.metadata).filter(Boolean).join(" · ")}
+                {formatMetadata(item.metadata)}
               </p>
             ) : null}
           </div>

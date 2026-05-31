@@ -86,6 +86,7 @@ type ConfigSpec = {
   lead: string;
   included: string[];
   groups: ConfigGroup[];
+  defaultMetadata?: Record<string, string>;
   notesPlaceholder?: string;
 };
 
@@ -148,35 +149,50 @@ const COMPANY_SECTION_DEFINITIONS: Omit<PublicSection, "products">[] = [
   }
 ];
 
+const SALAD_SIZE_OPTIONS: Option[] = [
+  { label: "Tamaño Mediano 1000ML" },
+  { label: "Tamaño Grande 1500ML", price: 2 }
+];
+
+const SMALL_SALAD_SIZE_LABEL = "Tamaño Pequeño 750ML";
+
 const SALAD_BASE_OPTIONS: Option[] = [
-  { label: "Mezclum" },
+  { label: "Arroz blanco" },
   { label: "Arroz integral" },
-  { label: "Pasta fría" },
+  { label: "Mézclum" },
+  { label: "Pasta" },
   { label: "Quinoa" }
 ];
 
 const SALAD_PROTEIN_OPTIONS: Option[] = [
-  { label: "Pollo asado" },
   { label: "Atún" },
-  { label: "Huevo cocido" },
-  { label: "Heura" },
-  { label: "Salmón ahumado" }
+  { label: "Falafel vegetal de garbanzo y quinoa" },
+  { label: "Lomo Asado" },
+  { label: "Pollo" },
+  { label: "Salmón ahumado", price: 2.5 }
 ];
 
 const SALAD_TOPPING_OPTIONS: Option[] = [
-  { label: "Tomate cherry" },
+  { label: "Aceituna negra" },
+  { label: "Cebolla andaluza" },
+  { label: "Garbanzos" },
+  { label: "Huevo" },
+  { label: "Jamón York" },
   { label: "Maíz" },
-  { label: "Zanahoria" },
-  { label: "Cebolla crujiente" },
-  { label: "Aguacate" },
-  { label: "Queso feta" }
+  { label: "Mix Frutos Secos" },
+  { label: "Pepino" },
+  { label: "Pimiento" },
+  { label: "Queso fresco" },
+  { label: "Tomate" },
+  { label: "Zanahoria" }
 ];
 
 const DRESSING_OPTIONS: Option[] = [
-  { label: "Mostaza y miel" },
-  { label: "César" },
-  { label: "Yogur y lima" },
-  { label: "Aceite y vinagre" }
+  { label: "Mahonesa de soja" },
+  { label: "Sal y Vinagre (sobres individuales)" },
+  { label: "Salsa Matica con mostaza y miel" },
+  { label: "Vinagreta balsámica" },
+  { label: "Vinagreta de queso Parmesano" }
 ];
 
 const WRAP_PROTEIN_OPTIONS: Option[] = [
@@ -317,6 +333,7 @@ function formatMetadataKey(key: string) {
     second_course: "Segundo",
     drink_or_dessert: "Bebida o postre",
     plate: "Plato único",
+    salad_size: "Tamaño ensalada",
     salad_base: "Base ensalada",
     protein: "Proteína",
     toppings: "Toppings",
@@ -554,11 +571,20 @@ function nameIncludes(value: string) {
   return (product: Product) => normalize(product.name).includes(value);
 }
 
-function getSaladGroups(includeSandwich = false): ConfigGroup[] {
+function getSaladGroups({
+  includeSize = false,
+  exactCounts = false,
+  includeSandwich = false
+}: {
+  includeSize?: boolean;
+  exactCounts?: boolean;
+  includeSandwich?: boolean;
+} = {}): ConfigGroup[] {
   return [
-    exactMultiGroup("salad_base", "Base ensalada", 2, SALAD_BASE_OPTIONS),
+    ...(includeSize ? [{ key: "salad_size", label: "Tamaño", type: "single" as const, options: SALAD_SIZE_OPTIONS }] : []),
+    { key: "salad_base", label: "Base", type: "multi", min: exactCounts ? 2 : 1, max: 2, options: SALAD_BASE_OPTIONS },
     { key: "protein", label: "Proteína", type: "single", options: SALAD_PROTEIN_OPTIONS },
-    exactMultiGroup("toppings", "Toppings", 3, SALAD_TOPPING_OPTIONS),
+    { key: "toppings", label: "Toppings", type: "multi", min: exactCounts ? 3 : 1, max: 3, options: SALAD_TOPPING_OPTIONS },
     { key: "dressing", label: "Aliño", type: "single", options: DRESSING_OPTIONS },
     ...(includeSandwich ? [{ key: "sandwich", label: "Bocadillo", type: "single" as const, options: SANDWICH_OPTIONS }] : [])
   ];
@@ -606,17 +632,18 @@ function getConfigSpec(product: Product, section: PublicSection, menu: DailyMenu
     return {
       title: "Menú ensalada pequeña + bocadillo",
       lead: "Configura la ensalada y elige un bocadillo.",
-      included: [],
-      groups: getSaladGroups(true)
+      included: [SMALL_SALAD_SIZE_LABEL],
+      defaultMetadata: { salad_size: SMALL_SALAD_SIZE_LABEL },
+      groups: getSaladGroups({ exactCounts: true, includeSandwich: true })
     };
   }
 
   if (isCustomSaladProduct(product)) {
     return {
       title: "Diseña tu ensalada",
-      lead: "Elige 2 bases, 1 proteína, 3 toppings y 1 aliño.",
+      lead: "Elige tamaño, base, proteína, toppings y aliño.",
       included: [],
-      groups: getSaladGroups()
+      groups: getSaladGroups({ includeSize: true })
     };
   }
 
@@ -786,7 +813,7 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
             }),
             cloneCatalogProduct(pick(menus, isMenuSaladSandwichProduct), {
               name: "Menú ensalada pequeña + bocadillo",
-              description: "Ensalada pequeña configurable y bocadillo a elegir.",
+              description: "Ensalada pequeña 750ML configurable y bocadillo a elegir.",
               base_price: 10,
               customer_price: 10,
               product_type: "standard"
@@ -836,7 +863,7 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
               ),
               {
                 name: "Diseña tu ensalada",
-                description: "Elige base, proteína, toppings y aliño.",
+                description: "Elige tamaño, base, proteína, toppings y aliño.",
                 base_price: 7.5,
                 customer_price: 7.5,
                 product_type: "standard"
@@ -1169,6 +1196,7 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
 
       {configuring ? (
         <ConfigModal
+          key={`${configuring.product.id}:${getDisplayName(configuring.product, configuring.section.kind)}`}
           product={configuring.product}
           section={configuring.section}
           onClose={() => setConfiguring(null)}
@@ -1413,6 +1441,7 @@ function ConfigModal({
     const metadata: Record<string, string> = {
       display_name: getDisplayName(product, section.kind),
       categoria: section.title,
+      ...(spec.defaultMetadata ?? {}),
       _configured_unit_price: configuredUnitPrice.toFixed(2),
       _supplement_total: Math.max(0, configuredUnitPrice - Number(product.base_price)).toFixed(2)
     };
@@ -1514,7 +1543,9 @@ function ConfigModal({
                       <span className="mt-1 block text-sm font-semibold text-matica-ink/55">
                         {currentGroup.min && currentGroup.max === currentGroup.min
                           ? `Escoge ${currentGroup.min}`
-                          : currentGroup.max
+                          : currentGroup.min && currentGroup.max
+                            ? `Escoge de ${currentGroup.min} a ${currentGroup.max}`
+                            : currentGroup.max
                             ? `Escoge hasta ${currentGroup.max}`
                             : `Escoge al menos ${currentGroup.min}`}
                       </span>

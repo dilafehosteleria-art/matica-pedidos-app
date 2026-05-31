@@ -93,8 +93,32 @@ const GRILL_PROTEIN_SUPPLEMENTS: Record<string, number> = {
   "Salmón a la plancha": 2
 };
 
+const SALAD_SIZE_SUPPLEMENTS: Record<string, number> = {
+  "Tamaño Mediano 1000ML": 0,
+  "Tamaño Grande 1500ML": 2
+};
+
+const SALAD_PROTEIN_SUPPLEMENTS: Record<string, number> = {
+  Atún: 0,
+  "Falafel vegetal de garbanzo y quinoa": 0,
+  "Lomo Asado": 0,
+  Pollo: 0,
+  "Salmón ahumado": 2.5
+};
+
 function badRequest(message: string, status = 400) {
   return NextResponse.json({ error: message }, { status });
+}
+
+function expectedSaladConfiguredUnitPrice(basePrice: number, metadata: Record<string, string>, includeSize: boolean) {
+  const sizeSupplement = includeSize ? SALAD_SIZE_SUPPLEMENTS[metadata.salad_size?.trim() ?? ""] : 0;
+  const proteinSupplement = SALAD_PROTEIN_SUPPLEMENTS[metadata.protein?.trim() ?? ""];
+
+  if (typeof sizeSupplement !== "number" || typeof proteinSupplement !== "number") {
+    return null;
+  }
+
+  return Number((basePrice + sizeSupplement + proteinSupplement).toFixed(2));
 }
 
 function expectedConfiguredUnitPrice(metadata: Record<string, string>) {
@@ -106,6 +130,14 @@ function expectedConfiguredUnitPrice(metadata: Record<string, string>) {
 
   if (displayName === "Escoge tu postre") {
     return DESSERT_CONFIGURED_PRICES[metadata.dessert?.trim() ?? ""] ?? null;
+  }
+
+  if (displayName === "Diseña tu ensalada") {
+    return expectedSaladConfiguredUnitPrice(7.5, metadata, true);
+  }
+
+  if (displayName === "Menú ensalada pequeña + bocadillo") {
+    return expectedSaladConfiguredUnitPrice(10, metadata, false);
   }
 
   if (displayName === "Platos combinados Matica") {
