@@ -13,6 +13,13 @@ const ALLOWED_TYPES = new Map([
   ["image/webp", "webp"]
 ]);
 
+type UploadedImage = {
+  name: string;
+  type: string;
+  size: number;
+  arrayBuffer: () => Promise<ArrayBuffer>;
+};
+
 function storageSetupMessage(message?: string) {
   return [
     message,
@@ -46,6 +53,25 @@ async function ensureProductImagesBucket(supabase: ReturnType<typeof getSupabase
   return null;
 }
 
+function getUploadedImage(value: FormDataEntryValue | null): UploadedImage | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const candidate = value as unknown as Record<string, unknown>;
+
+  if (typeof candidate.arrayBuffer !== "function") {
+    return null;
+  }
+
+  return {
+    name: typeof candidate.name === "string" ? candidate.name.trim() : "",
+    type: typeof candidate.type === "string" ? candidate.type.trim() : "",
+    size: typeof candidate.size === "number" ? candidate.size : 0,
+    arrayBuffer: candidate.arrayBuffer.bind(value) as () => Promise<ArrayBuffer>
+  };
+}
+
 function safePathSegment(value: string) {
   return value
     .normalize("NFD")
@@ -74,23 +100,31 @@ export async function POST(request: NextRequest) {
 
   const formData = await request.formData();
   const productId = String(formData.get("product_id") ?? "").trim();
-  const file = formData.get("file");
+  const uploadedImage = getUploadedImage(formData.get("file"));
 
   if (!productId) {
     return NextResponse.json({ error: "Producto requerido." }, { status: 400 });
   }
 
-  if (!(file instanceof File)) {
+  if (!uploadedImage) {
     return NextResponse.json({ error: "Archivo de imagen requerido." }, { status: 400 });
   }
 
-  const extension = ALLOWED_TYPES.get(file.type);
+  if (!uploadedImage.name) {
+    return NextResponse.json({ error: "El archivo de imagen debe tener nombre." }, { status: 400 });
+  }
+
+  if (!Number.isFinite(uploadedImage.size) || uploadedImage.size <= 0) {
+    return NextResponse.json({ error: "El archivo de imagen esta vacio." }, { status: 400 });
+  }
+
+  const extension = ALLOWED_TYPES.get(uploadedImage.type);
 
   if (!extension) {
     return NextResponse.json({ error: "Formato no valido. Sube una imagen JPG, PNG o WebP." }, { status: 400 });
   }
 
-  if (file.size > MAX_FILE_SIZE) {
+  if (uploadedImage.size > MAX_FILE_SIZE) {
     return NextResponse.json({ error: "La imagen no puede superar 2 MB." }, { status: 400 });
   }
 
@@ -112,11 +146,11 @@ export async function POST(request: NextRequest) {
 
   const safeProductName = safePathSegment(String(existingProduct.name ?? "producto")) || "producto";
   const path = `products/${productId}/${Date.now()}-${safeProductName}-${randomUUID()}.${extension}`;
-  const bytes = Buffer.from(await file.arrayBuffer());
+  const bytes = Buffer.from(await uploadedImage.arrayBuffer());
 
   const { error: uploadError } = await supabase.storage.from(BUCKET_NAME).upload(path, bytes, {
     cacheControl: "31536000",
-    contentType: file.type,
+    contentType: uploadedImage.type,
     upsert: false
   });
 
