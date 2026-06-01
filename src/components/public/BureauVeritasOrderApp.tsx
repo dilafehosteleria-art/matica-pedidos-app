@@ -32,6 +32,7 @@ import { calculateCartTotals, getSubsidyAmount } from "@/lib/pricing";
 import type { CartItem, CompanyBranch, CustomerForm, DailyMenu, DailyMenuCourse, Product, PublicData } from "@/lib/types";
 
 const STORAGE_KEY_PREFIX = "matica:customer";
+const CUSTOMER_STORAGE_MAX_AGE_SECONDS = 60 * 60 * 24 * 180;
 
 const EMPTY_CUSTOMER: CustomerForm = {
   name: "",
@@ -75,6 +76,79 @@ type ConfigSpec = {
   defaultMetadata?: Record<string, string>;
   notesPlaceholder?: string;
 };
+
+function customerCookieName(storageKey: string) {
+  return storageKey.replace(/[^a-zA-Z0-9]/g, "_");
+}
+
+function normalizeStoredCustomer(value: unknown): CustomerForm {
+  if (!value || typeof value !== "object") {
+    return EMPTY_CUSTOMER;
+  }
+
+  const customer = value as Partial<CustomerForm>;
+
+  return {
+    name: typeof customer.name === "string" ? customer.name : "",
+    email: typeof customer.email === "string" ? customer.email : "",
+    phone: typeof customer.phone === "string" ? customer.phone : "",
+    company_branch_id: typeof customer.company_branch_id === "string" ? customer.company_branch_id : ""
+  };
+}
+
+function parseStoredCustomer(value: string | null) {
+  if (!value) {
+    return EMPTY_CUSTOMER;
+  }
+
+  try {
+    return normalizeStoredCustomer(JSON.parse(value));
+  } catch {
+    return EMPTY_CUSTOMER;
+  }
+}
+
+function readCustomerCookie(storageKey: string) {
+  const cookieName = `${customerCookieName(storageKey)}=`;
+  const cookie = document.cookie
+    .split("; ")
+    .find((entry) => entry.startsWith(cookieName));
+
+  return cookie ? decodeURIComponent(cookie.slice(cookieName.length)) : null;
+}
+
+function writeCustomerCookie(storageKey: string, value: string) {
+  document.cookie = `${customerCookieName(storageKey)}=${encodeURIComponent(value)}; max-age=${CUSTOMER_STORAGE_MAX_AGE_SECONDS}; path=/; samesite=lax`;
+}
+
+function readStoredCustomer(storageKey: string) {
+  try {
+    const stored = window.localStorage?.getItem(storageKey);
+
+    if (stored) {
+      return parseStoredCustomer(stored);
+    }
+  } catch {
+    // Ignore storage failures and use the app cookie fallback below.
+  }
+
+  return parseStoredCustomer(readCustomerCookie(storageKey));
+}
+
+function writeStoredCustomer(storageKey: string, customer: CustomerForm) {
+  const value = JSON.stringify(customer);
+
+  try {
+    if (window.localStorage) {
+      window.localStorage.setItem(storageKey, value);
+      return;
+    }
+  } catch {
+    // Ignore storage failures and use the app cookie fallback below.
+  }
+
+  writeCustomerCookie(storageKey, value);
+}
 
 const SALAD_SIZE_OPTIONS: Option[] = [
   { label: "Tamaño Mediano 1000ML" },
@@ -559,12 +633,7 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
   const storageKey = `${STORAGE_KEY_PREFIX}:${companySlug}`;
 
   useEffect(() => {
-    const stored = window.localStorage.getItem(storageKey);
-
-    if (stored) {
-      setCustomer({ ...EMPTY_CUSTOMER, ...JSON.parse(stored) });
-    }
-
+    setCustomer(readStoredCustomer(storageKey));
     setCustomerLoaded(true);
   }, [storageKey]);
 
@@ -588,7 +657,7 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
 
   useEffect(() => {
     if (customerLoaded) {
-      window.localStorage.setItem(storageKey, JSON.stringify(customer));
+      writeStoredCustomer(storageKey, customer);
     }
   }, [customer, customerLoaded, storageKey]);
 
@@ -620,11 +689,12 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
   const hasSubsidizedItem = cart.some((item) => getSubsidyAmount(item.product_type) > 0);
   const companyName = data?.company.name ?? "tu empresa";
   const deliveryWindow = data?.company.delivery_window ?? DELIVERY_WINDOW;
+  const selectedBranch = data?.branches.find((branch) => branch.id === customer.company_branch_id) ?? null;
   const canConfirmOrder =
     Boolean(customer.name.trim()) &&
     Boolean(customer.email.trim()) &&
     Boolean(customer.phone.trim()) &&
-    Boolean(customer.company_branch_id) &&
+    Boolean(selectedBranch) &&
     cart.length > 0;
 
   function updateCustomer(field: keyof CustomerForm, value: string) {
@@ -664,7 +734,7 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
   async function submitOrder() {
     setSubmitState({ status: "idle" });
 
-    if (!customer.name.trim() || !customer.email.trim() || !customer.phone.trim() || !customer.company_branch_id) {
+    if (!customer.name.trim() || !customer.email.trim() || !customer.phone.trim() || !selectedBranch) {
       setSubmitState({ status: "error", message: "Completa tus datos antes de confirmar." });
       return;
     }
@@ -883,13 +953,15 @@ function InputField({
   value,
   onChange,
   placeholder,
-  type = "text"
+  type = "text",
+  required = false
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
   placeholder: string;
   type?: string;
+  required?: boolean;
 }) {
   return (
     <label className="space-y-1">
@@ -900,6 +972,7 @@ function InputField({
         value={value}
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
+        required={required}
       />
     </label>
   );
@@ -1487,21 +1560,23 @@ function CheckoutPanel({
                   readOnly
                 />
               </label>
-              <InputField label="Nombre" value={customer.name} onChange={(value) => updateCustomer("name", value)} placeholder="Nombre y apellidos" />
+              <InputField label="Nombre" value={customer.name} onChange={(value) => updateCustomer("name", value)} placeholder="Nombre y apellidos" required />
               <InputField
                 label="Email corporativo"
                 value={customer.email}
                 onChange={(value) => updateCustomer("email", value)}
                 placeholder="nombre@bureauveritas.com"
                 type="email"
+                required
               />
-              <InputField label="Teléfono" value={customer.phone} onChange={(value) => updateCustomer("phone", value)} placeholder="600 000 000" />
+              <InputField label="Teléfono" value={customer.phone} onChange={(value) => updateCustomer("phone", value)} placeholder="600 000 000" required />
               <label className="space-y-1">
                 <span className="text-sm font-bold text-matica-ink/70">Empresa</span>
                 <select
                   className="matica-focus w-full rounded-lg border border-matica-line bg-white px-3 py-3"
                   value={customer.company_branch_id}
                   onChange={(event) => updateCustomer("company_branch_id", event.target.value)}
+                  required
                 >
                   <option value="">Selecciona empresa</option>
                   {branches.map((branch) => (

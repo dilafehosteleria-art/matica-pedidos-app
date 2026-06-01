@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertCircle, Clock, Loader2, RefreshCw } from "lucide-react";
+import { AlertCircle, Clock, Download, Loader2, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AdminGate } from "./AdminGate";
 import { formatCurrency, formatTime } from "@/lib/format";
@@ -75,6 +75,7 @@ function OrdersBoard({ pin, clearPin }: { pin: string; clearPin: () => void }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [updatingId, setUpdatingId] = useState("");
+  const [reporting, setReporting] = useState(false);
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
 
   const loadOrders = useCallback(async () => {
@@ -128,6 +129,38 @@ function OrdersBoard({ pin, clearPin }: { pin: string; clearPin: () => void }) {
     setOrders((current) => current.map((order) => (order.id === orderId ? payload.order : order)));
   }
 
+  async function downloadMonthlyReport() {
+    setReporting(true);
+    const response = await fetch("/api/admin/orders/report", {
+      headers: { "x-admin-pin": pin }
+    });
+
+    if (response.status === 401) {
+      setReporting(false);
+      clearPin();
+      return;
+    }
+
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}));
+      setError(payload.error ?? "No se pudo generar el informe mensual.");
+      setReporting(false);
+      return;
+    }
+
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement("a");
+
+    link.href = url;
+    link.download = `pedidos-${new Date().toISOString().slice(0, 7)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+    setReporting(false);
+  }
+
   const grouped = useMemo(() => {
     return COLUMNS.reduce<Record<OrderStatus, AdminOrder[]>>(
       (acc, column) => {
@@ -145,13 +178,25 @@ function OrdersBoard({ pin, clearPin }: { pin: string; clearPin: () => void }) {
           <RefreshCw className="h-4 w-4 text-matica-green" />
           Refresco automático cada 5 segundos
         </div>
-        <button
-          className="matica-focus flex min-h-11 items-center justify-center gap-2 rounded-lg bg-matica-green px-4 font-black text-white"
-          onClick={loadOrders}
-        >
-          <RefreshCw className="h-4 w-4" />
-          Actualizar
-        </button>
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <button
+            className="matica-focus flex min-h-11 items-center justify-center gap-2 rounded-lg border border-matica-line bg-white px-4 font-black text-matica-ink disabled:cursor-wait disabled:opacity-60"
+            onClick={downloadMonthlyReport}
+            disabled={reporting}
+            type="button"
+          >
+            {reporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4 text-matica-green" />}
+            Informe mes
+          </button>
+          <button
+            className="matica-focus flex min-h-11 items-center justify-center gap-2 rounded-lg bg-matica-green px-4 font-black text-white"
+            onClick={loadOrders}
+            type="button"
+          >
+            <RefreshCw className="h-4 w-4" />
+            Actualizar
+          </button>
+        </div>
       </div>
 
       {lastRefresh ? (
@@ -211,14 +256,16 @@ function OrderCard({
   updating: boolean;
   onStatusChange: (status: OrderStatus) => void;
 }) {
-  const branchName = order.company_branches?.name ?? "Bureau Veritas";
+  const companyName = order.companies?.name ?? "Cliente principal";
+  const branchName = order.company_branches?.name ?? "Sin empresa interna";
 
   return (
     <article className="rounded-lg border border-matica-line bg-matica-soft p-3">
       <div className="flex items-start justify-between gap-3">
         <div>
           <h3 className="text-base font-black">{order.customer_name}</h3>
-          <p className="text-xs font-bold text-matica-green">{branchName}</p>
+          <p className="text-xs font-bold text-matica-green">Empresa interna: {branchName}</p>
+          <p className="text-xs font-semibold text-matica-ink/45">Cliente principal: {companyName}</p>
         </div>
         <span className="flex items-center gap-1 rounded-lg bg-white px-2 py-1 text-sm font-black">
           <Clock className="h-4 w-4 text-matica-green" />
