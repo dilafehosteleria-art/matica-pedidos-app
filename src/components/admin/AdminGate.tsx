@@ -79,7 +79,9 @@ export function AdminGate({
             <p className="mt-1 text-sm font-semibold text-matica-ink/60">{subtitle}</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <AdminLink href="/admin">Pedidos</AdminLink>
+            <AdminLink href="/admin">Inicio</AdminLink>
+            <AdminLink href="/admin/pedidos">Pedidos</AdminLink>
+            <AdminLink href="/admin/informes">Informes</AdminLink>
             <AdminLink href="/admin/companies">Empresas</AdminLink>
             <AdminLink href="/admin/menu">Menú del día</AdminLink>
             <AdminLink href="/admin/products">Productos</AdminLink>

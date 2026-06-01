@@ -1,6 +1,5 @@
 import { deflateRawSync } from "node:zlib";
 import { NextRequest, NextResponse } from "next/server";
-import { assertAdmin } from "@/lib/admin";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import type { AdminOrder, CompanyBranch, OrderStatus, Company } from "@/lib/types";
 
@@ -69,6 +68,10 @@ type ReportOrder = AdminOrder & {
   companies?: { id?: string; name: string } | null;
   company_branches?: { id?: string; name: string } | null;
 };
+
+type ReportAuth =
+  | { kind: "admin" }
+  | { kind: "client"; company: Company };
 
 function currentMadridDate() {
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -148,6 +151,71 @@ function readFilters(request: NextRequest): ReportFilters {
     status: VALID_STATUSES.includes(status as OrderStatus) ? status : "",
     excludeCancelled: params.get("exclude_cancelled") !== "false"
   };
+}
+
+function reportPinEnvName(slug: string) {
+  return `${slug.replace(/[^a-zA-Z0-9]+/g, "_").replace(/^_+|_+$/g, "").toUpperCase()}_REPORT_PIN`;
+}
+
+async function authorizeReportRequest(
+  request: NextRequest,
+  supabase: NonNullable<ReturnType<typeof getSupabaseServerClient>>
+): Promise<{ auth: ReportAuth } | { error: NextResponse }> {
+  const requestedAdminPin = request.headers.get("x-admin-pin") ?? "";
+
+  if (requestedAdminPin) {
+    const configuredAdminPin = process.env.ADMIN_PIN;
+
+    if (!configuredAdminPin) {
+      return {
+        error: NextResponse.json({ error: "ADMIN_PIN no está configurado en el entorno." }, { status: 500 })
+      };
+    }
+
+    if (requestedAdminPin === configuredAdminPin) {
+      return { auth: { kind: "admin" } };
+    }
+  }
+
+  const clientSlug = request.nextUrl.searchParams.get("client_slug")?.trim() ?? "";
+  const requestedClientPin = request.headers.get("x-client-report-pin") ?? "";
+
+  if (!clientSlug || !requestedClientPin) {
+    return { error: NextResponse.json({ error: "PIN no válido." }, { status: 401 }) };
+  }
+
+  const envName = reportPinEnvName(clientSlug);
+  const configuredClientPin = process.env[envName];
+
+  if (!configuredClientPin) {
+    return {
+      error: NextResponse.json({ error: `${envName} no está configurado en el entorno.` }, { status: 500 })
+    };
+  }
+
+  if (configuredClientPin === process.env.ADMIN_PIN) {
+    return {
+      error: NextResponse.json({ error: `${envName} debe ser distinto de ADMIN_PIN.` }, { status: 500 })
+    };
+  }
+
+  if (requestedClientPin !== configuredClientPin) {
+    return { error: NextResponse.json({ error: "Clave de informes no válida." }, { status: 401 }) };
+  }
+
+  const { data, error } = await supabase
+    .from("companies")
+    .select("*")
+    .eq("slug", clientSlug)
+    .eq("active", true)
+    .limit(1)
+    .single();
+
+  if (error || !data) {
+    return { error: NextResponse.json({ error: "Cliente no disponible para informes." }, { status: 401 }) };
+  }
+
+  return { auth: { kind: "client", company: data as Company } };
 }
 
 function roundMoney(value: number) {
@@ -479,10 +547,18 @@ function slugify(value: string) {
     .replace(/^-+|-+$/g, "") || "informe";
 }
 
-async function getReportOptions(supabase: NonNullable<ReturnType<typeof getSupabaseServerClient>>) {
+async function getReportOptions(supabase: NonNullable<ReturnType<typeof getSupabaseServerClient>>, companyId = "") {
+  let companiesQuery = supabase.from("companies").select("*").order("name", { ascending: true });
+  let branchesQuery = supabase.from("company_branches").select("*").order("name", { ascending: true });
+
+  if (companyId) {
+    companiesQuery = companiesQuery.eq("id", companyId);
+    branchesQuery = branchesQuery.eq("company_id", companyId);
+  }
+
   const [companies, branches] = await Promise.all([
-    supabase.from("companies").select("*").order("name", { ascending: true }),
-    supabase.from("company_branches").select("*").order("name", { ascending: true })
+    companiesQuery,
+    branchesQuery
   ]);
 
   if (companies.error || branches.error) {
@@ -533,22 +609,25 @@ async function getReportOrders(supabase: NonNullable<ReturnType<typeof getSupaba
 }
 
 export async function GET(request: NextRequest) {
-  const adminError = assertAdmin(request);
-
-  if (adminError) {
-    return adminError;
-  }
-
   const supabase = getSupabaseServerClient();
 
   if (!supabase) {
     return NextResponse.json({ error: "Configura Supabase para usar el panel." }, { status: 503 });
   }
 
+  const authorization = await authorizeReportRequest(request, supabase);
+
+  if ("error" in authorization) {
+    return authorization.error;
+  }
+
+  const auth = authorization.auth;
+  const restrictedCompanyId = auth.kind === "client" ? auth.company.id : "";
+
   const mode = request.nextUrl.searchParams.get("mode") ?? "xlsx";
 
   if (mode === "options") {
-    const options = await getReportOptions(supabase);
+    const options = await getReportOptions(supabase, restrictedCompanyId);
 
     if ("error" in options) {
       return NextResponse.json({ error: options.error }, { status: 400 });
@@ -565,6 +644,9 @@ export async function GET(request: NextRequest) {
   }
 
   const filters = readFilters(request);
+  if (restrictedCompanyId) {
+    filters.companyId = restrictedCompanyId;
+  }
   const { orders, error } = await getReportOrders(supabase, filters);
 
   if (error) {
@@ -592,9 +674,9 @@ export async function GET(request: NextRequest) {
     });
   }
 
-  let companyName = "todos-clientes";
+  let companyName = auth.kind === "client" ? auth.company.name : "todos-clientes";
 
-  if (filters.companyId) {
+  if (auth.kind === "admin" && filters.companyId) {
     const options = await getReportOptions(supabase);
     companyName = !("error" in options) ? options.companies.find((company) => company.id === filters.companyId)?.name ?? "cliente" : "cliente";
   }

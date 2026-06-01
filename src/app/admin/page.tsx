@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 
 export const metadata: Metadata = {
   title: "Admin | Matica B2B Orders",
-  description: "Panel interno de gestión de pedidos corporativos de Matica Fresh Food."
+  description: "Panel interno de administración de Matica Fresh Food."
 };
 
 export default function AdminPage() {
