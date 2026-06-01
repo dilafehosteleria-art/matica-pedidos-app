@@ -712,7 +712,7 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
   }
 
   return (
-    <main className="min-h-screen bg-matica-soft pb-16 text-matica-ink">
+    <main className="min-h-screen bg-matica-soft pb-28 text-matica-ink sm:pb-16">
       <header className="border-b border-matica-line bg-white">
         <div className="mx-auto max-w-7xl px-4 py-5 sm:px-6 lg:px-8">
           <div>
@@ -736,8 +736,8 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
           {data ? (
             <div className="sticky top-0 z-20 -mx-4 border-y border-matica-line bg-matica-soft/95 px-4 py-2 backdrop-blur sm:-mx-6 sm:px-6 lg:mx-0 lg:rounded-lg lg:border lg:bg-white lg:px-3">
               <div className="flex items-center gap-2">
-                <nav className="no-scrollbar min-w-0 flex-1 overflow-x-auto" aria-label="Categorías">
-                  <div className="flex w-max gap-1.5 pr-1">
+                <nav className="min-w-0 flex-1 overflow-x-auto pb-1 sm:pb-0" aria-label="Categorías">
+                  <div className="flex w-max gap-1.5 pr-3">
                     {publicSections.map((section) => (
                       <a
                         key={section.slug}
@@ -751,7 +751,7 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
                 </nav>
                 <button
                   type="button"
-                  className="matica-focus flex h-10 shrink-0 items-center gap-1.5 rounded-full border border-matica-green bg-white px-2.5 text-xs font-black text-matica-green shadow-sm sm:px-3"
+                  className="matica-focus hidden h-10 shrink-0 items-center gap-1.5 rounded-full border border-matica-green bg-white px-2.5 text-xs font-black text-matica-green shadow-sm sm:flex sm:px-3"
                   onClick={() => goToStep("checkout")}
                   aria-label={`Ver carrito, ${cartCount} productos, total ${formatCurrency(totals.total)}`}
                 >
@@ -811,6 +811,22 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
           </section>
 
         </div>
+      ) : null}
+
+      {data && step === "catalog" ? (
+        <button
+          type="button"
+          className="matica-focus fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] right-4 z-30 flex min-h-12 items-center gap-2 rounded-full border border-matica-green bg-white px-4 text-sm font-black text-matica-green shadow-soft sm:hidden"
+          onClick={() => goToStep("checkout")}
+          aria-label={`Ver carrito, ${cartCount} productos, total ${formatCurrency(totals.total)}`}
+        >
+          <ShoppingBag className="h-4 w-4" />
+          <span>Cesta</span>
+          <span className="h-4 w-px bg-matica-line" aria-hidden="true" />
+          <span>{cartCount}</span>
+          <span className="h-4 w-px bg-matica-line" aria-hidden="true" />
+          <span>{formatCurrency(totals.total)}</span>
+        </button>
       ) : null}
 
       {step === "checkout" ? (
