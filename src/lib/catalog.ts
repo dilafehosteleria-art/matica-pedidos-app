@@ -311,28 +311,32 @@ export function buildPublicCatalogSections(categories: Category[], products: Pro
         return compactProducts([
           cloneCatalogProduct(pick(bowlsAndSalads, nameIncludes("caesar")), {
             name: "Caesar Crunch Chicken Bowl",
-            description: "Pollo, mezclum, croutons, parmesano y salsa Caesar.",
+            description:
+              "Mézclum fresco y fusilli al dente con pollo crispy, tomate, huevo, lascas de parmesano y cebolla crujiente, acompañado de nuestra salsa César parmesana.",
             base_price: 9.9,
             customer_price: 9.9,
             product_type: "standard"
           }),
           cloneCatalogProduct(pick(bowlsAndSalads, nameIncludes("mediterranean")), {
             name: "Mediterranean Fresh Bowl",
-            description: "Quinoa, atún, huevo, tomate, aceitunas y vinagreta.",
+            description:
+              "Quinoa y espinaca fresca con atún, pepino, aceitunas, queso fresco y garbanzos, con nuestra vinagreta balsámica prémium.",
             base_price: 9.9,
             customer_price: 9.9,
             product_type: "standard"
           }),
           cloneCatalogProduct(pick(bowlsAndSalads, nameIncludes("tex-mex")), {
             name: "Tex-Mex Protein Bowl",
-            description: "Arroz, proteína especiada, maíz, pico de gallo y salsa suave.",
+            description:
+              "Arroz jazmín y mézclum fresco con cerdo asado, maíz, cebolla, pimientos y huevo, con nuestra salsa de mostaza miel.",
             base_price: 9.9,
             customer_price: 9.9,
             product_type: "standard"
           }),
           cloneCatalogProduct(pick(bowlsAndSalads, nameIncludes("green")), {
             name: "Green Fresh Bowl",
-            description: "Base verde, verduras frescas, aguacate y salsa de yogur.",
+            description:
+              "Espinaca fresca y arroz integral con pollo a la plancha, pepino, zanahoria, frutos secos y queso fresco, acompañado de nuestra salsa yogur-limón.",
             base_price: 9.9,
             customer_price: 9.9,
             product_type: "standard"
@@ -341,7 +345,7 @@ export function buildPublicCatalogSections(categories: Category[], products: Pro
             pickCustomSaladProduct(bowlsAndSalads),
             {
               name: "Diseña tu ensalada",
-              description: "Elige tamaño, base, proteína, toppings y aliño.",
+              description: "Elige una base, 3 toppings y una proteína. Termínala con la salsa que más te guste.",
               base_price: 7.5,
               customer_price: 7.5,
               product_type: "standard"
@@ -354,28 +358,31 @@ export function buildPublicCatalogSections(categories: Category[], products: Pro
         return compactProducts([
           cloneCatalogProduct(pick(wraps, nameIncludes("caesar")), {
             name: "Wrap Caesar Crunch",
-            description: "Pollo, lechuga, parmesano y salsa Caesar.",
+            description: "Pollo crispy, mézclum, tomate, parmesano y salsa César parmesana en tortilla wrap.",
             base_price: 8.9,
             customer_price: 8.9,
             product_type: "standard"
           }),
           cloneCatalogProduct(pick(wraps, nameIncludes("tex-mex")), {
             name: "Wrap Tex-Mex Pork",
-            description: "Cerdo especiado, arroz, maíz y salsa chipotle suave.",
+            description:
+              "Wrap con cerdo asado, arroz jazmín, maíz, pimiento, cebolla y salsa chipotle suave. Una opción sabrosa, contundente y con toque Tex-Mex.",
             base_price: 8.9,
             customer_price: 8.9,
             product_type: "standard"
           }),
           cloneCatalogProduct(pick(wraps, nameIncludes("fresh")), {
             name: "Wrap Fresh Chicken",
-            description: "Pollo, mezclum, tomate, zanahoria y salsa de yogur.",
+            description:
+              "Wrap con pollo a la plancha, espinaca fresca, pepino, zanahoria, queso fresco y salsa yogur-limón. Ligero, fresco y equilibrado.",
             base_price: 8.9,
             customer_price: 8.9,
             product_type: "standard"
           }),
           cloneCatalogProduct(pick(wraps, nameIncludes("mediterranean")), {
             name: "Wrap Mediterranean Tuna",
-            description: "Atún, huevo, tomate, aceitunas y vinagreta.",
+            description:
+              "Wrap con atún, mézclum fresco, pepino, aceitunas, queso fresco y salsa yogur-limón. Fresco, mediterráneo y muy fácil de comer.",
             base_price: 8.9,
             customer_price: 8.9,
             product_type: "standard"
@@ -384,7 +391,8 @@ export function buildPublicCatalogSections(categories: Category[], products: Pro
             pick(wraps, (product) => isCustomWrapProduct(product) || normalizeCatalogText(product.name).includes("a tu manera")),
             {
               name: "Diseña tu wrap",
-              description: "Monta tu wrap con proteína, relleno, toppings y salsa.",
+              description:
+                "Diseña tu wrap con tus ingredientes favoritos. Elige 2 bases, 1 proteína, 5 toppings y 2 salsas de tu preferencia.",
               base_price: 7.5,
               customer_price: 7.5,
               product_type: "standard"

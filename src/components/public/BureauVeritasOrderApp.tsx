@@ -476,7 +476,7 @@ function getConfigSpec(product: Product, section: PublicSection, menu: DailyMenu
   if (isCustomSaladProduct(product)) {
     return {
       title: "Diseña tu ensalada",
-      lead: "Elige tamaño, base, proteína, toppings y aliño.",
+      lead: "Elige una base, 3 toppings y una proteína. Termínala con la salsa que más te guste.",
       included: [],
       groups: getSaladGroups({ includeSize: true })
     };
@@ -485,7 +485,8 @@ function getConfigSpec(product: Product, section: PublicSection, menu: DailyMenu
   if (isCustomWrapProduct(product)) {
     return {
       title: "Diseña tu wrap",
-      lead: "Elige proteína, relleno/base, toppings y salsa.",
+      lead:
+        "Diseña tu wrap con tus ingredientes favoritos. Elige 2 bases, 1 proteína, 5 toppings y 2 salsas de tu preferencia.",
       included: [],
       groups: [
         { key: "protein", label: "Proteína", type: "single", options: WRAP_PROTEIN_OPTIONS },
