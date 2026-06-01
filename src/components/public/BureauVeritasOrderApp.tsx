@@ -769,13 +769,23 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
               <Loader2 className="h-7 w-7 animate-spin text-matica-green" />
             </div>
           ) : (
-            <div className="space-y-7">
-              {publicSections.map((section) => (
-                <section key={section.slug} id={section.slug} className="scroll-mt-24 space-y-3 sm:scroll-mt-28">
+            <div className="space-y-10 sm:space-y-12">
+              {publicSections.map((section, index) => (
+                <section
+                  key={section.slug}
+                  id={section.slug}
+                  className={`scroll-mt-24 space-y-4 sm:scroll-mt-28 sm:space-y-5 ${
+                    index > 0 ? "border-t border-matica-line/70 pt-10 sm:pt-12" : ""
+                  }`}
+                >
                   <div className="flex items-end justify-between gap-3">
                     <div>
-                      <h2 className="text-xl font-black">{section.title}</h2>
-                      <p className="mt-1 text-sm font-semibold text-matica-ink/60">{section.description}</p>
+                      <h2 className="max-w-3xl text-[2rem] font-extrabold leading-[1.08] tracking-normal text-matica-ink sm:text-4xl">
+                        {section.title}
+                      </h2>
+                      <p className="mt-2 max-w-2xl text-base font-semibold leading-6 text-matica-ink/58 sm:text-lg">
+                        {section.description}
+                      </p>
                     </div>
                   </div>
                   <div className="grid gap-2.5 sm:gap-4 sm:grid-cols-2 xl:grid-cols-3">
