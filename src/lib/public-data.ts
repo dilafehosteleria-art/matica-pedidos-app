@@ -7,8 +7,9 @@ import {
   PRODUCTS
 } from "@/lib/constants";
 import { mergeCatalogDefaults } from "@/lib/catalog";
+import { ensureCustomSaladProduct } from "@/lib/catalog-maintenance";
 import { toDateInputValue } from "@/lib/format";
-import { getSupabaseServerClient } from "@/lib/supabase/server";
+import { getSupabaseAdminClient, getSupabaseServerClient } from "@/lib/supabase/server";
 import type { DailyMenu, DailyMenuCourse, PublicCompany, PublicData } from "@/lib/types";
 
 function normalizeCourse(course: DailyMenuCourse): DailyMenuCourse | null {
@@ -103,6 +104,15 @@ export async function getPublicCompanyData(slug: string): Promise<PublicData | n
   }
 
   const today = toDateInputValue();
+  const adminSupabase = getSupabaseAdminClient();
+
+  if (adminSupabase) {
+    const customSaladError = await ensureCustomSaladProduct(adminSupabase);
+
+    if (customSaladError) {
+      console.warn("No se pudo asegurar la ensalada configurable:", customSaladError);
+    }
+  }
 
   const [branches, categories, products, todaysMenu] = await Promise.all([
     supabase

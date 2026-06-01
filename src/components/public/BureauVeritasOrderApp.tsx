@@ -778,7 +778,7 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
                       <p className="mt-1 text-sm font-semibold text-matica-ink/60">{section.description}</p>
                     </div>
                   </div>
-                  <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                  <div className="grid gap-2.5 sm:gap-4 sm:grid-cols-2 xl:grid-cols-3">
                     {section.products.map((product) => (
                       <ProductCard
                         key={`${section.slug}-${product.id}-${product.name}`}
@@ -907,8 +907,8 @@ function ProductCard({
   }, [imageUrl]);
 
   return (
-    <article className="overflow-hidden rounded-lg border border-matica-line bg-white shadow-sm">
-      <div className="relative aspect-[16/10] bg-matica-soft">
+    <article className="flex min-h-[132px] overflow-hidden rounded-lg border border-matica-line bg-white shadow-sm sm:block sm:min-h-0">
+      <div className="relative order-2 m-3 ml-0 h-28 w-28 shrink-0 overflow-hidden rounded-lg bg-matica-soft sm:m-0 sm:aspect-[16/10] sm:h-auto sm:w-auto sm:rounded-none">
         {imageUrl && !imageFailed ? (
           <img
             className="block h-full w-full object-cover object-center"
@@ -947,25 +947,27 @@ function ProductCard({
         ) : null}
       </div>
 
-      <div className="flex flex-col gap-2.5 p-2.5 sm:gap-3 sm:p-3">
-        <div className="flex items-start justify-between gap-3">
+      <div className="flex min-w-0 flex-1 flex-col gap-2 p-3 pr-2 sm:gap-3 sm:p-3">
+        <div className="flex min-w-0 flex-1 flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
           <div className="min-w-0">
-            <h3 className="text-base font-black leading-5">{displayName}</h3>
+            <h3 className="text-[17px] font-black leading-5 sm:text-base">{displayName}</h3>
             {product.description ? (
-              <p className="mt-1 line-clamp-2 text-sm font-semibold leading-5 text-matica-ink/60">{product.description}</p>
+              <p className="mt-0.5 line-clamp-2 text-xs font-semibold leading-4 text-matica-ink/60 sm:mt-1 sm:text-sm sm:leading-5">
+                {product.description}
+              </p>
             ) : null}
           </div>
           <div className="shrink-0 text-right">
-            <p className="text-base font-black">{pricePrefix}{formatCurrency(Number(product.customer_price))}</p>
+            <p className="text-left text-base font-black sm:text-right">{pricePrefix}{formatCurrency(Number(product.customer_price))}</p>
             {subsidy > 0 ? (
-              <p className="text-xs font-bold text-matica-ink/45 line-through">
+              <p className="text-left text-xs font-bold text-matica-ink/45 line-through sm:text-right">
                 {formatCurrency(Number(product.base_price))}
               </p>
             ) : null}
           </div>
         </div>
 
-        <div className="mt-auto flex items-center justify-between gap-2 pt-1">
+        <div className="mt-auto flex items-center justify-between gap-2 pt-0.5 sm:pt-1">
           {product.sold_out ? (
             <span className="rounded-lg bg-matica-ink/10 px-2 py-1.5 text-xs font-black text-matica-ink/60">Agotado</span>
           ) : subsidy > 0 ? (
@@ -973,18 +975,18 @@ function ProductCard({
               Subvención -{formatCurrency(subsidy)}
             </span>
           ) : (
-            <span className="flex items-center gap-1 text-xs font-bold text-matica-ink/50">
+            <span className="hidden items-center gap-1 text-xs font-bold text-matica-ink/50 sm:flex">
               <Clock className="h-3.5 w-3.5" />
               Configurar al pulsar
             </span>
           )}
           <button
-            className="matica-focus flex min-h-9 items-center gap-1.5 rounded-lg bg-matica-green px-3 py-1.5 text-sm font-black text-white disabled:cursor-not-allowed disabled:bg-matica-ink/30"
+            className="matica-focus ml-auto flex min-h-8 items-center gap-1.5 rounded-lg bg-matica-green px-2.5 py-1 text-xs font-black text-white disabled:cursor-not-allowed disabled:bg-matica-ink/30 sm:min-h-9 sm:px-3 sm:py-1.5 sm:text-sm"
             onClick={onOpen}
             disabled={!canAdd}
             type="button"
           >
-            <Plus className="h-4 w-4" />
+            <Plus className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
             Elegir
           </button>
         </div>
@@ -1057,9 +1059,16 @@ function ConfigModal({
     }
 
     const selected = multiValues[group.key] ?? [];
-    const min = group.min ?? 0;
+    const selectedCount = selected.length;
 
-    return selected.length >= min && (!group.max || selected.length <= group.max);
+    if (group.key === "salad_base") {
+      return selectedCount >= 1 && selectedCount <= 2;
+    }
+
+    const min = group.min ?? 0;
+    const max = group.max ?? Number.POSITIVE_INFINITY;
+
+    return selectedCount >= min && selectedCount <= max;
   }
 
   function toggleMulti(group: ConfigGroup, optionLabel: string) {

@@ -2,10 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { assertAdmin } from "@/lib/admin";
 import {
   CATALOG_SECTION_DEFINITIONS,
+  CUSTOM_SALAD_PRODUCT_ID,
   buildPublicCatalogSections,
   getVisibleCatalogCategories,
+  isCustomSaladCatalogProduct,
   mergeCatalogDefaults
 } from "@/lib/catalog";
+import { ensureCustomSaladProduct } from "@/lib/catalog-maintenance";
 import { CATEGORIES, PRODUCTS } from "@/lib/constants";
 import { getSupabaseAdminClient, getSupabaseServerClient } from "@/lib/supabase/server";
 import type { Category, Product, ProductDraft } from "@/lib/types";
@@ -17,7 +20,7 @@ type SupabaseAdminClient = NonNullable<ReturnType<typeof getSupabaseAdminClient>
 async function ensureDefaultCatalogRows(supabase: SupabaseAdminClient) {
   const [categories, products] = await Promise.all([
     supabase.from("categories").select("id"),
-    supabase.from("products").select("id")
+    supabase.from("products").select("id,name")
   ]);
 
   if (categories.error || products.error) {
@@ -26,8 +29,13 @@ async function ensureDefaultCatalogRows(supabase: SupabaseAdminClient) {
 
   const categoryIds = new Set((categories.data ?? []).map((category) => String(category.id)));
   const productIds = new Set((products.data ?? []).map((product) => String(product.id)));
+  const hasCustomSaladAlias = ((products.data ?? []) as Array<{ id: string; name: string }>).some(
+    (product) => product.id !== CUSTOM_SALAD_PRODUCT_ID && isCustomSaladCatalogProduct(product)
+  );
   const missingCategories = CATEGORIES.filter((category) => !categoryIds.has(category.id));
-  const missingProducts = PRODUCTS.filter((product) => !productIds.has(product.id));
+  const missingProducts = PRODUCTS.filter(
+    (product) => !productIds.has(product.id) && !(product.id === CUSTOM_SALAD_PRODUCT_ID && hasCustomSaladAlias)
+  );
 
   if (missingCategories.length) {
     const { error } = await supabase.from("categories").insert(missingCategories);
@@ -43,6 +51,12 @@ async function ensureDefaultCatalogRows(supabase: SupabaseAdminClient) {
     if (error) {
       return error.message;
     }
+  }
+
+  const customSaladError = await ensureCustomSaladProduct(supabase);
+
+  if (customSaladError) {
+    return customSaladError;
   }
 
   return null;

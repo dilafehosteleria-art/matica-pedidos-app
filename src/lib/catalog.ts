@@ -1,6 +1,8 @@
 import { CATEGORIES, PRODUCTS } from "@/lib/constants";
 import type { Category, Product } from "@/lib/types";
 
+export const CUSTOM_SALAD_PRODUCT_ID = "f4542750-92e9-4a8d-aa9c-3a9f5d5fbebd";
+
 export type SectionKind =
   | "menus"
   | "daily_menu"
@@ -107,10 +109,20 @@ export function getProductImageUrl(product: Product) {
   return product.image_url ?? "";
 }
 
-export function isCustomSaladProduct(product: Product) {
+export function isCustomSaladProduct(product: Pick<Product, "name">) {
   const name = normalizeCatalogText(product.name);
 
   return name.includes("disena tu ensalada") || name.includes("ensalada a tu manera");
+}
+
+export function isCustomSaladCatalogProduct(product: Pick<Product, "name">) {
+  const name = normalizeCatalogText(product.name);
+
+  return (
+    isCustomSaladProduct(product) ||
+    name.includes("ensalada mediana") ||
+    (name.includes("ensalada") && name.includes("manera"))
+  );
 }
 
 export function isCustomWrapProduct(product: Product) {
@@ -156,6 +168,10 @@ export function getCatalogDisplayName(product: Product, kind: SectionKind) {
 export function mergeCatalogDefaults(categories: Category[], products: Product[]) {
   const categoriesById = new Map(CATEGORIES.map((category) => [category.id, category]));
   const productsById = new Map(PRODUCTS.map((product) => [product.id, product]));
+  const dbProductIds = new Set(products.map((product) => product.id));
+  const customSaladAlias = products.find(
+    (product) => product.id !== CUSTOM_SALAD_PRODUCT_ID && isCustomSaladCatalogProduct(product)
+  );
 
   for (const category of categories) {
     const defaultCategory = categoriesById.get(category.id);
@@ -165,17 +181,26 @@ export function mergeCatalogDefaults(categories: Category[], products: Product[]
 
   for (const product of products) {
     const defaultProduct = productsById.get(product.id);
+    const forceActive = product.id === CUSTOM_SALAD_PRODUCT_ID || isCustomSaladCatalogProduct(product);
 
     productsById.set(
       product.id,
       defaultProduct
         ? {
             ...product,
+            active: forceActive ? true : product.active,
             category_id: defaultProduct.category_id,
             sort_order: defaultProduct.sort_order
           }
-        : product
+        : {
+            ...product,
+            active: forceActive ? true : product.active
+          }
     );
+  }
+
+  if (!dbProductIds.has(CUSTOM_SALAD_PRODUCT_ID) && customSaladAlias) {
+    productsById.delete(CUSTOM_SALAD_PRODUCT_ID);
   }
 
   return {
@@ -226,6 +251,16 @@ function compactProducts(products: Array<Product | undefined>) {
 
 function nameIncludes(value: string) {
   return (product: Product) => normalizeCatalogText(product.name).includes(value);
+}
+
+function pickCustomSaladProduct(products: Product[]) {
+  const candidates = products.filter(isCustomSaladCatalogProduct);
+
+  return (
+    candidates.find((product) => product.id !== CUSTOM_SALAD_PRODUCT_ID && Boolean(product.image_url)) ??
+    candidates.find((product) => product.id === CUSTOM_SALAD_PRODUCT_ID) ??
+    candidates[0]
+  );
 }
 
 export function buildPublicCatalogSections(categories: Category[], products: Product[]): PublicSection[] {
@@ -303,13 +338,7 @@ export function buildPublicCatalogSections(categories: Category[], products: Pro
             product_type: "standard"
           }),
           cloneCatalogProduct(
-            pick(
-              bowlsAndSalads,
-              (product) =>
-                isCustomSaladProduct(product) ||
-                normalizeCatalogText(product.name).includes("ensalada mediana") ||
-                normalizeCatalogText(product.name).includes("a tu manera")
-            ),
+            pickCustomSaladProduct(bowlsAndSalads),
             {
               name: "Diseña tu ensalada",
               description: "Elige tamaño, base, proteína, toppings y aliño.",
