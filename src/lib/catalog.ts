@@ -3,6 +3,13 @@ import type { Category, Product } from "@/lib/types";
 
 export const CUSTOM_SALAD_PRODUCT_ID = "f4542750-92e9-4a8d-aa9c-3a9f5d5fbebd";
 
+const SIGNATURE_BOWL_PRODUCT_IDS = {
+  caesar: "508060cf-b36f-4ae5-92bd-989954034da3",
+  mediterranean: "9e62560b-9633-4743-877c-3c387d044d3f",
+  texMex: "16eff41e-86d0-4d05-a19b-7fd977fcd4ee",
+  green: "7c53ddc4-67cc-4a30-9f46-111ef6344c4a"
+} as const;
+
 export type SectionKind =
   | "menus"
   | "daily_menu"
@@ -253,6 +260,18 @@ function nameIncludes(value: string) {
   return (product: Product) => normalizeCatalogText(product.name).includes(value);
 }
 
+function nameIncludesAny(values: string[]) {
+  return (product: Product) => {
+    const normalizedName = normalizeCatalogText(product.name);
+
+    return values.some((value) => normalizedName.includes(value));
+  };
+}
+
+function pickProductByIdOrName(products: Product[], id: string, matcher: (product: Product) => boolean) {
+  return pickCatalogProduct(products, (product) => product.id === id) ?? pickCatalogProduct(products, matcher);
+}
+
 function pickCustomSaladProduct(products: Product[]) {
   const candidates = products.filter(isCustomSaladCatalogProduct);
 
@@ -309,38 +328,50 @@ export function buildPublicCatalogSections(categories: Category[], products: Pro
         return allProducts.filter((product) => product.product_type === "half_menu");
       case "signature_bowls":
         return compactProducts([
-          cloneCatalogProduct(pick(bowlsAndSalads, nameIncludes("caesar")), {
-            name: "Caesar Crunch Chicken Bowl",
-            description:
-              "Mézclum fresco y fusilli al dente con pollo crispy, tomate, huevo, lascas de parmesano y cebolla crujiente, acompañado de nuestra salsa César parmesana.",
-            base_price: 9.9,
-            customer_price: 9.9,
-            product_type: "standard"
-          }),
-          cloneCatalogProduct(pick(bowlsAndSalads, nameIncludes("mediterranean")), {
-            name: "Mediterranean Fresh Bowl",
-            description:
-              "Quinoa y espinaca fresca con atún, pepino, aceitunas, queso fresco y garbanzos, con nuestra vinagreta balsámica prémium.",
-            base_price: 9.9,
-            customer_price: 9.9,
-            product_type: "standard"
-          }),
-          cloneCatalogProduct(pick(bowlsAndSalads, nameIncludes("tex-mex")), {
-            name: "Tex-Mex Protein Bowl",
-            description:
-              "Arroz jazmín y mézclum fresco con cerdo asado, maíz, cebolla, pimientos y huevo, con nuestra salsa de mostaza miel.",
-            base_price: 9.9,
-            customer_price: 9.9,
-            product_type: "standard"
-          }),
-          cloneCatalogProduct(pick(bowlsAndSalads, nameIncludes("green")), {
-            name: "Green Fresh Bowl",
-            description:
-              "Espinaca fresca y arroz integral con pollo a la plancha, pepino, zanahoria, frutos secos y queso fresco, acompañado de nuestra salsa yogur-limón.",
-            base_price: 9.9,
-            customer_price: 9.9,
-            product_type: "standard"
-          }),
+          cloneCatalogProduct(
+            pickProductByIdOrName(bowlsAndSalads, SIGNATURE_BOWL_PRODUCT_IDS.caesar, nameIncludesAny(["caesar", "cesar"])),
+            {
+              name: "Caesar Crunch Chicken Bowl",
+              description:
+                "Mézclum fresco y fusilli al dente con pollo crispy, tomate, huevo, lascas de parmesano y cebolla crujiente, acompañado de nuestra salsa César parmesana.",
+              base_price: 9.9,
+              customer_price: 9.9,
+              product_type: "standard"
+            }
+          ),
+          cloneCatalogProduct(
+            pickProductByIdOrName(bowlsAndSalads, SIGNATURE_BOWL_PRODUCT_IDS.mediterranean, nameIncludesAny(["mediterranean", "mediterraneo"])),
+            {
+              name: "Mediterranean Fresh Bowl",
+              description:
+                "Quinoa y espinaca fresca con atún, pepino, aceitunas, queso fresco y garbanzos, con nuestra vinagreta balsámica prémium.",
+              base_price: 9.9,
+              customer_price: 9.9,
+              product_type: "standard"
+            }
+          ),
+          cloneCatalogProduct(
+            pickProductByIdOrName(bowlsAndSalads, SIGNATURE_BOWL_PRODUCT_IDS.texMex, nameIncludesAny(["tex-mex", "tex mex", "texmex"])),
+            {
+              name: "Tex-Mex Protein Bowl",
+              description:
+                "Arroz jazmín y mézclum fresco con cerdo asado, maíz, cebolla, pimientos y huevo, con nuestra salsa de mostaza miel.",
+              base_price: 9.9,
+              customer_price: 9.9,
+              product_type: "standard"
+            }
+          ),
+          cloneCatalogProduct(
+            pickProductByIdOrName(bowlsAndSalads, SIGNATURE_BOWL_PRODUCT_IDS.green, nameIncludes("green")),
+            {
+              name: "Green Fresh Bowl",
+              description:
+                "Espinaca fresca y arroz integral con pollo a la plancha, pepino, zanahoria, frutos secos y queso fresco, acompañado de nuestra salsa yogur-limón.",
+              base_price: 9.9,
+              customer_price: 9.9,
+              product_type: "standard"
+            }
+          ),
           cloneCatalogProduct(
             pickCustomSaladProduct(bowlsAndSalads),
             {
