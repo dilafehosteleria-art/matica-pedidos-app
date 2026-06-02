@@ -81,12 +81,13 @@ button {
     position: absolute;
     inset: 0 auto auto 0;
     display: block !important;
-    width: 74mm;
+    width: 76mm;
     color: #000000;
     background: #ffffff;
     font-family: "Courier New", Courier, monospace;
-    font-size: 10px;
-    line-height: 1.25;
+    font-size: 12px;
+    font-weight: 800;
+    line-height: 1.35;
     letter-spacing: 0;
   }
 
@@ -96,8 +97,9 @@ button {
   }
 
   .thermal-ticket h1 {
-    font-size: 14px;
-    font-weight: 800;
+    font-size: 16px;
+    font-weight: 900;
+    line-height: 1.15;
   }
 
   .ticket-center {
@@ -105,32 +107,40 @@ button {
   }
 
   .ticket-separator {
-    margin: 5px 0;
-    border-top: 1px dashed #000000;
+    margin: 7px 0;
+    border-top: 2px dashed #000000;
   }
 
   .ticket-grid {
     display: grid;
-    grid-template-columns: 8mm 1fr 15mm 16mm;
+    grid-template-columns: 8mm 1fr 17mm 18mm;
     gap: 2mm;
     align-items: start;
   }
 
   .ticket-head {
-    font-weight: 800;
+    font-size: 11px;
+    font-weight: 900;
   }
 
   .ticket-item {
-    margin-top: 4px;
+    margin-top: 7px;
+    padding-top: 5px;
+    border-top: 1px solid #000000;
+    font-weight: 900;
   }
 
   .ticket-option {
     padding-left: 8mm;
+    margin-top: 2px;
+    font-size: 11px;
+    font-weight: 800;
+    color: #000000;
     word-break: break-word;
   }
 
   .ticket-note {
-    font-weight: 800;
+    font-weight: 900;
     word-break: break-word;
   }
 
@@ -138,11 +148,15 @@ button {
     display: flex;
     justify-content: space-between;
     gap: 4mm;
+    font-size: 12px;
+    font-weight: 900;
   }
 
   .ticket-total-strong {
-    margin-top: 3px;
-    font-size: 12px;
-    font-weight: 800;
+    margin-top: 5px;
+    padding-top: 5px;
+    border-top: 2px solid #000000;
+    font-size: 15px;
+    font-weight: 900;
   }
 }

@@ -233,16 +233,16 @@ function OrdersBoard({ pin, clearPin }: { pin: string; clearPin: () => void }) {
           <Loader2 className="h-7 w-7 animate-spin text-matica-green" />
         </div>
       ) : (
-        <div className="grid gap-4 lg:grid-cols-2 2xl:grid-cols-5">
+        <div className="space-y-5">
           {DAILY_COLUMNS.map((column) => (
-            <section key={column.key} className="rounded-lg border border-matica-line bg-white p-3">
+            <section key={column.key} className="rounded-lg border border-matica-line bg-white p-3 sm:p-4">
               <div className="mb-3 flex items-center justify-between gap-2">
                 <h2 className="text-lg font-black">{column.title}</h2>
                 <span className="rounded-lg bg-matica-mint px-2 py-1 text-sm font-black text-matica-green">
                   {grouped[column.key]?.length ?? 0}
                 </span>
               </div>
-              <div className="space-y-3">
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
                 {(grouped[column.key] ?? []).map((order) => (
                   <OrderCard
                     key={order.id}
@@ -253,7 +253,7 @@ function OrdersBoard({ pin, clearPin }: { pin: string; clearPin: () => void }) {
                   />
                 ))}
                 {!grouped[column.key]?.length ? (
-                  <div className="rounded-lg border border-dashed border-matica-line bg-matica-soft p-5 text-center text-sm font-bold text-matica-ink/45">
+                  <div className="col-span-full rounded-lg border border-dashed border-matica-line bg-matica-soft p-5 text-center text-sm font-bold text-matica-ink/45">
                     Sin pedidos
                   </div>
                 ) : null}
@@ -286,63 +286,79 @@ function OrderCard({
   onStatusChange: (status: OrderStatus) => void;
   onOpen: () => void;
 }) {
-  const companyName = order.companies?.name ?? "Cliente principal";
   const branchName = order.company_branches?.name ?? "Sin empresa interna";
 
   return (
-    <article className="rounded-lg border border-matica-line bg-matica-soft p-3 shadow-sm">
-      <div className="flex items-start justify-between gap-3">
+    <article className="rounded-lg border border-matica-line bg-white p-3 shadow-sm">
+      <div className="rounded-lg border border-dashed border-matica-line bg-matica-soft p-3">
+        <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-[11px] font-black uppercase tracking-wide text-matica-ink/40">#{orderReference(order.id)}</p>
-          <h3 className="text-base font-black">{order.customer_name}</h3>
-          <p className="truncate text-xs font-bold text-matica-green">{branchName}</p>
+          <p className="text-[11px] font-black uppercase tracking-wide text-matica-ink/45">REF #{orderReference(order.id)}</p>
+          <h3 className="mt-1 text-lg font-black leading-tight text-matica-ink">{order.customer_name}</h3>
+          <p className="mt-1 truncate text-sm font-black text-matica-green">{branchName}</p>
         </div>
-        <span className="flex items-center gap-1 rounded-lg bg-white px-2 py-1 text-sm font-black">
+        <span className="flex shrink-0 items-center gap-1 rounded-lg bg-white px-2 py-1 text-sm font-black text-matica-ink">
           <Clock className="h-4 w-4 text-matica-green" />
           {formatTime(order.created_at)}
         </span>
       </div>
 
-      <div className="mt-3 space-y-1 text-sm font-semibold text-matica-ink/70">
+      <div className="mt-3 space-y-1 text-sm font-bold leading-5 text-matica-ink/70">
         <p>{order.customer_phone}</p>
         <p className="break-all">{order.customer_email}</p>
       </div>
 
-      <div className="mt-3 rounded-lg bg-white p-2">
-        <div className="space-y-1 text-sm font-black">
-          {order.order_items.slice(0, 2).map((item) => (
-            <div key={item.id} className="flex justify-between gap-2">
-              <span className="min-w-0 truncate">
-                {item.quantity}x {item.name}
-              </span>
-              <span>{formatCurrency(Number(item.total_price))}</span>
+      <div className="my-3 border-t border-dashed border-matica-line" />
+
+      <div className="space-y-3 font-mono text-[13px] leading-5 text-matica-ink">
+        {order.order_items.map((item) => {
+          const entries = metadataEntries(item.metadata);
+
+          return (
+            <div key={item.id}>
+              <div className="flex justify-between gap-3 font-black">
+                <span className="min-w-0">
+                  {item.quantity}x {item.name}
+                </span>
+                <span className="shrink-0">{formatCurrency(Number(item.total_price))}</span>
+              </div>
+              {entries.length ? (
+                <div className="mt-1 space-y-0.5">
+                  {entries.map((entry) => (
+                    <p key={`${item.id}-${entry.key}`} className="pl-3 font-bold text-matica-ink/70">
+                      &gt; {entry.label}: {entry.value}
+                    </p>
+                  ))}
+                </div>
+              ) : null}
             </div>
-          ))}
-          {order.order_items.length > 2 ? (
-            <p className="text-xs font-bold text-matica-ink/45">+{order.order_items.length - 2} producto(s) más</p>
-          ) : null}
+          );
+        })}
         </div>
-      </div>
 
       {order.notes ? (
-        <div className="mt-3 line-clamp-2 rounded-lg border border-amber-200 bg-amber-50 p-2 text-sm font-bold text-amber-900">
-          {order.notes}
+        <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 p-2 text-sm font-black leading-5 text-amber-950">
+          <p className="text-[11px] uppercase tracking-wide">Observaciones</p>
+          <p className="mt-1">{order.notes}</p>
         </div>
       ) : null}
 
-      <div className="mt-3 grid grid-cols-2 gap-2 text-sm font-bold">
-        <div className="rounded-lg bg-white p-2">
-          <p className="text-[11px] font-black uppercase text-matica-ink/45">Total empleado</p>
-          <p className="text-base font-black">{formatCurrency(Number(order.total))}</p>
-        </div>
-        <div className="rounded-lg bg-white p-2">
-          <p className="text-[11px] font-black uppercase text-matica-ink/45">Factura empresa</p>
-          <p className="text-base font-black text-matica-green">{formatCurrency(Number(order.subsidy_total))}</p>
+        <div className="my-3 border-t border-dashed border-matica-line" />
+
+        <div className="space-y-1 text-sm font-black">
+          <div className="flex justify-between gap-3">
+            <span>Total empleado</span>
+            <span>{formatCurrency(Number(order.total))}</span>
+          </div>
+          <div className="flex justify-between gap-3 text-matica-green">
+            <span>Factura empresa</span>
+            <span>{formatCurrency(Number(order.subsidy_total))}</span>
+          </div>
         </div>
       </div>
 
       <div className="mt-3 flex items-center justify-between gap-2">
-        <span className="rounded-lg bg-white px-2 py-1 text-xs font-black text-matica-ink/60">
+        <span className="rounded-lg bg-matica-mint px-2 py-1 text-xs font-black text-matica-green">
           {ORDER_STATUS_LABELS[order.status]}
         </span>
         <button
