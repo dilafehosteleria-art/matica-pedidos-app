@@ -88,9 +88,10 @@ function todayInputValue() {
 
 function emptyHistoryFilters(): HistoryFilters {
   const today = todayInputValue();
+  const [year, month] = today.split("-");
 
   return {
-    date_from: today,
+    date_from: `${year}-${month}-01`,
     date_to: today,
     status: "",
     customer: "",
