@@ -89,7 +89,7 @@ export function ClientReportsPortal({ companySlug }: { companySlug: string }) {
           authHeaders={headers}
           onUnauthorized={clearPin}
           showCompanyFilter={false}
-          intro="Filtra por rango de fechas, empresa interna y estado para revisar pedidos facturables."
+          intro="Filtra por rango de fechas, tipo de facturación, empresa interna y estado para revisar pedidos facturables."
         />
       </div>
     </main>

@@ -18,14 +18,15 @@ const DETAIL_HEADERS = [
   "Email",
   "Telefono",
   "Estado",
+  "Tipo facturación",
   "Producto",
   "Detalles",
   "Cantidad",
   "Precio unidad",
   "Subvencion linea",
   "Total linea",
-  "Subtotal pedido",
-  "Subvencion pedido",
+  "Subtotal facturable",
+  "Subvención facturable",
   "Total cobrar empleado",
   "Total facturar empresa",
   "Observaciones"
@@ -35,11 +36,18 @@ const SUMMARY_HEADERS = [
   "Cliente principal",
   "Empresa interna",
   "Numero pedidos",
+  "Nº menus",
+  "Nº medios menus",
   "Subtotal acumulado",
   "Subvencion acumulada",
+  "Importe subvencionado total",
   "Total cobrar empleado",
   "Total facturar empresa"
 ];
+
+const BILLING_TYPES = ["all", "subsidized", "non_subsidized"] as const;
+
+type BillingType = (typeof BILLING_TYPES)[number];
 
 type ReportFilters = {
   dateFrom: string;
@@ -47,6 +55,7 @@ type ReportFilters = {
   companyId: string;
   branchId: string;
   status: string;
+  billingType: BillingType;
   excludeCancelled: boolean;
 };
 
@@ -56,6 +65,9 @@ type ReportSummary = {
   subsidyTotal: number;
   employeeTotal: number;
   companyInvoiceTotal: number;
+  menuCount: number;
+  halfMenuCount: number;
+  subsidizedAmountTotal: number;
 };
 
 type ReportSummaryRow = ReportSummary & {
@@ -67,6 +79,17 @@ type ReportSummaryRow = ReportSummary & {
 type ReportOrder = AdminOrder & {
   companies?: { id?: string; name: string } | null;
   company_branches?: { id?: string; name: string } | null;
+};
+
+type ReportLine = {
+  order: ReportOrder;
+  item: ReportOrder["order_items"][number] | null;
+  lineSubtotal: number;
+  lineSubsidy: number;
+  lineTotal: number;
+  billingType: "Subvencionado" | "No subvencionado";
+  menuCount: number;
+  halfMenuCount: number;
 };
 
 type ReportAuth =
@@ -142,6 +165,7 @@ function readFilters(request: NextRequest): ReportFilters {
   const dateFrom = params.get("date_from");
   const dateTo = params.get("date_to");
   const status = params.get("status")?.trim() ?? "";
+  const billingType = params.get("billing_type")?.trim() ?? "";
 
   return {
     dateFrom: isDateInput(dateFrom) ? dateFrom! : defaults.dateFrom,
@@ -149,8 +173,16 @@ function readFilters(request: NextRequest): ReportFilters {
     companyId: params.get("company_id")?.trim() ?? "",
     branchId: params.get("company_branch_id")?.trim() ?? "",
     status: VALID_STATUSES.includes(status as OrderStatus) ? status : "",
+    billingType: BILLING_TYPES.includes(billingType as BillingType) ? (billingType as BillingType) : "all",
     excludeCancelled: params.get("exclude_cancelled") !== "false"
   };
+}
+
+function defaultBillingType(company?: Pick<Company, "slug" | "name"> | null): BillingType {
+  const slug = company?.slug?.trim().toLowerCase() ?? "";
+  const name = company?.name?.trim().toLowerCase() ?? "";
+
+  return slug === "bureau-veritas" || name === "bureau veritas" ? "subsidized" : "all";
 }
 
 function reportPinEnvName(slug: string) {
@@ -241,17 +273,87 @@ function formatMetadata(metadata?: Record<string, string> | null) {
     .join(" | ");
 }
 
-function summarizeOrders(orders: ReportOrder[]): { summary: ReportSummary; byBranch: ReportSummaryRow[] } {
+function normalizeText(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
+
+function menuCounters(item: ReportLine["item"], quantity: number, lineSubsidy: number) {
+  const normalizedName = normalizeText(`${item?.name ?? ""} ${item?.metadata?.display_name ?? ""}`);
+  const isHalfMenu = normalizedName.includes("medio") && normalizedName.includes("menu");
+  const isDailyMenu =
+    normalizedName.includes("menu") &&
+    normalizedName.includes("dia") &&
+    !isHalfMenu &&
+    !normalizedName.includes("ensalada");
+
+  if (!isDailyMenu && !isHalfMenu && lineSubsidy > 0) {
+    return {
+      menuCount: Math.abs(lineSubsidy - 3.5) < 0.01 ? 0 : quantity,
+      halfMenuCount: Math.abs(lineSubsidy - 3.5) < 0.01 ? quantity : 0
+    };
+  }
+
+  return {
+    menuCount: isDailyMenu ? quantity : 0,
+    halfMenuCount: isHalfMenu ? quantity : 0
+  };
+}
+
+function buildReportLines(orders: ReportOrder[], billingType: BillingType): ReportLine[] {
+  return orders.flatMap((order) => {
+    const items = order.order_items.length ? order.order_items : [null];
+
+    return items.flatMap((item): ReportLine[] => {
+      const quantity = item ? Number(item.quantity) : 1;
+      const lineSubsidy = item ? Number(item.subsidy_amount) : Number(order.subsidy_total);
+      const lineTotal = item ? Number(item.total_price) : Number(order.total);
+      const lineSubtotal = item ? roundMoney(Number(item.unit_price) * quantity) : Number(order.subtotal);
+      const isSubsidized = lineSubsidy > 0;
+
+      if (billingType === "subsidized" && !isSubsidized) {
+        return [];
+      }
+
+      if (billingType === "non_subsidized" && isSubsidized) {
+        return [];
+      }
+
+      const counters = menuCounters(item, quantity, lineSubsidy);
+
+      return [
+        {
+          order,
+          item,
+          lineSubtotal,
+          lineSubsidy,
+          lineTotal,
+          billingType: isSubsidized ? "Subvencionado" : "No subvencionado",
+          ...counters
+        }
+      ];
+    });
+  });
+}
+
+function summarizeLines(lines: ReportLine[]): { summary: ReportSummary; byBranch: ReportSummaryRow[] } {
+  const orderIds = new Set<string>();
   const summary: ReportSummary = {
-    orderCount: orders.length,
+    orderCount: 0,
     subtotal: 0,
     subsidyTotal: 0,
     employeeTotal: 0,
-    companyInvoiceTotal: 0
+    companyInvoiceTotal: 0,
+    menuCount: 0,
+    halfMenuCount: 0,
+    subsidizedAmountTotal: 0
   };
-  const byBranch = new Map<string, ReportSummaryRow>();
+  const byBranch = new Map<string, ReportSummaryRow & { orderIds: Set<string> }>();
 
-  for (const order of orders) {
+  for (const line of lines) {
+    const order = line.order;
     const companyName = order.companies?.name ?? "Sin cliente principal";
     const branchName = order.company_branches?.name ?? "Sin empresa interna";
     const key = `${companyName}::${branchName}`;
@@ -265,55 +367,73 @@ function summarizeOrders(orders: ReportOrder[]): { summary: ReportSummary; byBra
         subtotal: 0,
         subsidyTotal: 0,
         employeeTotal: 0,
-        companyInvoiceTotal: 0
+        companyInvoiceTotal: 0,
+        menuCount: 0,
+        halfMenuCount: 0,
+        subsidizedAmountTotal: 0,
+        orderIds: new Set<string>()
       };
 
-    summary.subtotal = addMoney(summary.subtotal, Number(order.subtotal));
-    summary.subsidyTotal = addMoney(summary.subsidyTotal, Number(order.subsidy_total));
-    summary.employeeTotal = addMoney(summary.employeeTotal, Number(order.total));
-    summary.companyInvoiceTotal = addMoney(summary.companyInvoiceTotal, Number(order.subsidy_total));
+    orderIds.add(order.id);
+    row.orderIds.add(order.id);
 
-    row.orderCount += 1;
-    row.subtotal = addMoney(row.subtotal, Number(order.subtotal));
-    row.subsidyTotal = addMoney(row.subsidyTotal, Number(order.subsidy_total));
-    row.employeeTotal = addMoney(row.employeeTotal, Number(order.total));
-    row.companyInvoiceTotal = addMoney(row.companyInvoiceTotal, Number(order.subsidy_total));
+    summary.subtotal = addMoney(summary.subtotal, line.lineSubtotal);
+    summary.subsidyTotal = addMoney(summary.subsidyTotal, line.lineSubsidy);
+    summary.employeeTotal = addMoney(summary.employeeTotal, line.lineTotal);
+    summary.companyInvoiceTotal = addMoney(summary.companyInvoiceTotal, line.lineSubsidy);
+    summary.menuCount += line.menuCount;
+    summary.halfMenuCount += line.halfMenuCount;
+    summary.subsidizedAmountTotal = addMoney(summary.subsidizedAmountTotal, line.lineSubsidy > 0 ? line.lineSubtotal : 0);
+
+    row.subtotal = addMoney(row.subtotal, line.lineSubtotal);
+    row.subsidyTotal = addMoney(row.subsidyTotal, line.lineSubsidy);
+    row.employeeTotal = addMoney(row.employeeTotal, line.lineTotal);
+    row.companyInvoiceTotal = addMoney(row.companyInvoiceTotal, line.lineSubsidy);
+    row.menuCount += line.menuCount;
+    row.halfMenuCount += line.halfMenuCount;
+    row.subsidizedAmountTotal = addMoney(row.subsidizedAmountTotal, line.lineSubsidy > 0 ? line.lineSubtotal : 0);
     byBranch.set(key, row);
   }
 
+  summary.orderCount = orderIds.size;
+
   return {
     summary,
-    byBranch: Array.from(byBranch.values()).sort((a, b) => a.branchName.localeCompare(b.branchName, "es"))
+    byBranch: Array.from(byBranch.values())
+      .map(({ orderIds: branchOrderIds, ...row }) => ({
+        ...row,
+        orderCount: branchOrderIds.size
+      }))
+      .sort((a, b) => a.branchName.localeCompare(b.branchName, "es"))
   };
 }
 
-function detailRows(orders: ReportOrder[]) {
-  return orders.flatMap((order) => {
-    const items = order.order_items.length ? order.order_items : [null];
-    const companyName = order.companies?.name ?? "";
-    const branchName = order.company_branches?.name ?? "";
+function detailRows(lines: ReportLine[]) {
+  return lines.map((line) => {
+    const order = line.order;
 
-    return items.map((item) => [
+    return [
       formatDateTime(order.created_at),
       order.id,
-      companyName,
-      branchName,
+      order.companies?.name ?? "",
+      order.company_branches?.name ?? "",
       order.customer_name,
       order.customer_email,
       order.customer_phone,
       order.status,
-      item?.name ?? "",
-      formatMetadata(item?.metadata),
-      item?.quantity ?? "",
-      item ? Number(item.unit_price) : "",
-      item ? Number(item.subsidy_amount) : "",
-      item ? Number(item.total_price) : "",
-      Number(order.subtotal),
-      Number(order.subsidy_total),
-      Number(order.total),
-      Number(order.subsidy_total),
+      line.billingType,
+      line.item?.name ?? "",
+      formatMetadata(line.item?.metadata),
+      line.item?.quantity ?? "",
+      line.item ? Number(line.item.unit_price) : "",
+      line.lineSubsidy,
+      line.lineTotal,
+      line.lineSubtotal,
+      line.lineSubsidy,
+      line.lineTotal,
+      line.lineSubsidy,
       order.notes ?? ""
-    ]);
+    ];
   });
 }
 
@@ -322,8 +442,11 @@ function summaryRows(rows: ReportSummaryRow[]) {
     row.companyName,
     row.branchName,
     row.orderCount,
+    row.menuCount,
+    row.halfMenuCount,
     row.subtotal,
     row.subsidyTotal,
+    row.subsidizedAmountTotal,
     row.employeeTotal,
     row.companyInvoiceTotal
   ]);
@@ -523,8 +646,8 @@ function stylesXml() {
 </styleSheet>`;
 }
 
-function createWorkbook(orders: ReportOrder[], byBranch: ReportSummaryRow[]) {
-  const detail = [DETAIL_HEADERS, ...detailRows(orders)];
+function createWorkbook(lines: ReportLine[], byBranch: ReportSummaryRow[]) {
+  const detail = [DETAIL_HEADERS, ...detailRows(lines)];
   const summary = [SUMMARY_HEADERS, ...summaryRows(byBranch)];
 
   return createZip([
@@ -533,8 +656,8 @@ function createWorkbook(orders: ReportOrder[], byBranch: ReportSummaryRow[]) {
     { name: "xl/workbook.xml", content: workbookXml() },
     { name: "xl/_rels/workbook.xml.rels", content: workbookRelsXml() },
     { name: "xl/styles.xml", content: stylesXml() },
-    { name: "xl/worksheets/sheet1.xml", content: worksheetXml(detail, [11, 12, 13, 14, 15, 16, 17]) },
-    { name: "xl/worksheets/sheet2.xml", content: worksheetXml(summary, [3, 4, 5, 6]) }
+    { name: "xl/worksheets/sheet1.xml", content: worksheetXml(detail, [12, 13, 14, 15, 16, 17, 18]) },
+    { name: "xl/worksheets/sheet2.xml", content: worksheetXml(summary, [5, 6, 7, 8, 9]) }
   ]);
 }
 
@@ -637,15 +760,19 @@ export async function GET(request: NextRequest) {
       ...options,
       defaults: {
         ...defaultDateRange(),
+        billingType: defaultBillingType(auth.kind === "client" ? auth.company : null),
         excludeCancelled: true
       },
       statuses: VALID_STATUSES
     });
   }
 
+  const hasBillingTypeParam = request.nextUrl.searchParams.has("billing_type");
   const filters = readFilters(request);
-  if (restrictedCompanyId) {
+
+  if (auth.kind === "client") {
     filters.companyId = restrictedCompanyId;
+    filters.billingType = hasBillingTypeParam ? filters.billingType : defaultBillingType(auth.company);
   }
   const { orders, error } = await getReportOrders(supabase, filters);
 
@@ -653,14 +780,15 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 400 });
   }
 
-  const { summary, byBranch } = summarizeOrders(orders);
+  const lines = buildReportLines(orders, filters.billingType);
+  const { summary, byBranch } = summarizeLines(lines);
 
   if (mode === "summary") {
     return NextResponse.json({
       filters,
       summary,
       byBranch,
-      previewOrders: orders.slice(0, 12).map((order) => ({
+      previewOrders: Array.from(new Map(lines.map((line) => [line.order.id, line.order])).values()).slice(0, 12).map((order) => ({
         id: order.id,
         created_at: order.created_at,
         customer_name: order.customer_name,
@@ -682,7 +810,7 @@ export async function GET(request: NextRequest) {
   }
 
   const filename = `informe-${slugify(companyName)}-${filters.dateFrom}_${filters.dateTo}.xlsx`;
-  const workbook = createWorkbook(orders, byBranch);
+  const workbook = createWorkbook(lines, byBranch);
 
   return new NextResponse(workbook, {
     headers: {

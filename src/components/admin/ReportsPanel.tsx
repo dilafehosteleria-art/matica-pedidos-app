@@ -14,12 +14,21 @@ const STATUS_OPTIONS: { status: OrderStatus; label: string }[] = [
   { status: "cancelado", label: "Cancelado" }
 ];
 
+type BillingType = "all" | "subsidized" | "non_subsidized";
+
+const BILLING_TYPE_OPTIONS: { value: BillingType; label: string }[] = [
+  { value: "all", label: "Todos los pedidos" },
+  { value: "subsidized", label: "Solo pedidos subvencionados" },
+  { value: "non_subsidized", label: "Solo pedidos no subvencionados" }
+];
+
 const EMPTY_REPORT_FILTERS = {
   date_from: "",
   date_to: "",
   company_id: "",
   company_branch_id: "",
   status: "",
+  billing_type: "all" as BillingType,
   exclude_cancelled: true
 };
 
@@ -28,6 +37,7 @@ type ReportFilters = typeof EMPTY_REPORT_FILTERS;
 type ReportOptionCompany = {
   id: string;
   name: string;
+  slug?: string;
 };
 
 type ReportOptionBranch = {
@@ -42,6 +52,9 @@ type ReportSummary = {
   subsidyTotal: number;
   employeeTotal: number;
   companyInvoiceTotal: number;
+  menuCount: number;
+  halfMenuCount: number;
+  subsidizedAmountTotal: number;
 };
 
 type ReportSummaryRow = ReportSummary & {
@@ -72,6 +85,7 @@ type ReportOptionsResponse = {
   defaults: {
     dateFrom: string;
     dateTo: string;
+    billingType: BillingType;
     excludeCancelled: boolean;
   };
   statuses: OrderStatus[];
@@ -90,6 +104,7 @@ function buildReportParams(filters: ReportFilters, mode: "summary" | "xlsx") {
     mode,
     date_from: filters.date_from,
     date_to: filters.date_to,
+    billing_type: filters.billing_type,
     exclude_cancelled: String(filters.exclude_cancelled)
   });
 
@@ -124,6 +139,34 @@ function filenameFromDisposition(disposition: string | null) {
   return match?.[1] ?? `informe-${new Date().toISOString().slice(0, 10)}.xlsx`;
 }
 
+function isBureauVeritasCompany(company?: ReportOptionCompany | null) {
+  const slug = company?.slug?.trim().toLowerCase() ?? "";
+  const name = company?.name?.trim().toLowerCase() ?? "";
+
+  return slug === "bureau-veritas" || name === "bureau veritas";
+}
+
+function billingSummaryLabels(type: BillingType) {
+  if (type === "subsidized") {
+    return {
+      orders: "Pedidos subvencionados",
+      subtotal: "Subtotal subvencionables"
+    };
+  }
+
+  if (type === "non_subsidized") {
+    return {
+      orders: "Pedidos no subvencionados",
+      subtotal: "Subtotal no subvencionado"
+    };
+  }
+
+  return {
+    orders: "Pedidos",
+    subtotal: "Subtotal"
+  };
+}
+
 export function ReportsPanel({
   endpoint,
   authHeaders,
@@ -134,7 +177,7 @@ export function ReportsPanel({
   const [reportOptions, setReportOptions] = useState<ReportOptionsResponse>({
     companies: [],
     branches: [],
-    defaults: { dateFrom: "", dateTo: "", excludeCancelled: true },
+    defaults: { dateFrom: "", dateTo: "", billingType: "all", excludeCancelled: true },
     statuses: []
   });
   const [reportFilters, setReportFilters] = useState<ReportFilters>(EMPTY_REPORT_FILTERS);
@@ -168,6 +211,10 @@ export function ReportsPanel({
       date_from: current.date_from || payload.defaults?.dateFrom || "",
       date_to: current.date_to || payload.defaults?.dateTo || "",
       company_id: showCompanyFilter ? current.company_id : payload.companies?.[0]?.id ?? "",
+      billing_type:
+        current.billing_type === EMPTY_REPORT_FILTERS.billing_type
+          ? payload.defaults?.billingType || current.billing_type
+          : current.billing_type,
       exclude_cancelled: payload.defaults?.excludeCancelled ?? true
     }));
     setError("");
@@ -183,7 +230,9 @@ export function ReportsPanel({
       const next = { ...current, [key]: value };
 
       if (key === "company_id") {
+        const selectedCompanyId = typeof value === "string" ? value : "";
         next.company_branch_id = "";
+        next.billing_type = isBureauVeritasCompany(reportOptions.companies.find((company) => company.id === selectedCompanyId)) ? "subsidized" : "all";
       }
 
       return next;
@@ -254,6 +303,7 @@ export function ReportsPanel({
   );
   const reportCanRun = Boolean(reportFilters.date_from && reportFilters.date_to);
   const selectedCompany = reportOptions.companies.find((company) => company.id === reportFilters.company_id) ?? reportOptions.companies[0];
+  const summaryLabels = billingSummaryLabels(reportFilters.billing_type);
 
   return (
     <section className="rounded-lg border border-matica-line bg-white p-4 shadow-sm">
@@ -274,7 +324,7 @@ export function ReportsPanel({
         </div>
       ) : null}
 
-      <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+      <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-6">
         <label className="space-y-1">
           <span className="text-xs font-black uppercase text-matica-ink/45">Fecha desde</span>
           <input
@@ -352,6 +402,21 @@ export function ReportsPanel({
             ))}
           </select>
         </label>
+        <label className="space-y-1">
+          <span className="text-xs font-black uppercase text-matica-ink/45">Tipo de facturación</span>
+          <select
+            className="matica-focus min-h-11 w-full rounded-lg border border-matica-line bg-white px-3 text-sm font-bold text-matica-ink"
+            value={reportFilters.billing_type}
+            onChange={(event) => updateReportFilter("billing_type", event.target.value as BillingType)}
+            disabled={loadingOptions}
+          >
+            {BILLING_TYPE_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
       </div>
 
       <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -395,12 +460,11 @@ export function ReportsPanel({
 
       {reportSummary ? (
         <div className="mt-5 space-y-4">
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-            <SummaryMetric label="Pedidos" value={String(reportSummary.summary.orderCount)} />
-            <SummaryMetric label="Subtotal" value={formatCurrency(reportSummary.summary.subtotal)} />
-            <SummaryMetric label="Subvención" value={formatCurrency(reportSummary.summary.subsidyTotal)} highlight />
-            <SummaryMetric label="Cobra empleado" value={formatCurrency(reportSummary.summary.employeeTotal)} />
-            <SummaryMetric label="Factura empresa" value={formatCurrency(reportSummary.summary.companyInvoiceTotal)} />
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <SummaryMetric label={summaryLabels.orders} value={String(reportSummary.summary.orderCount)} />
+            <SummaryMetric label={summaryLabels.subtotal} value={formatCurrency(reportSummary.summary.subtotal)} />
+            <SummaryMetric label="Total subvención empresa" value={formatCurrency(reportSummary.summary.subsidyTotal)} highlight />
+            <SummaryMetric label="Total a cobrar empleados" value={formatCurrency(reportSummary.summary.employeeTotal)} />
           </div>
 
           <div className="overflow-x-auto rounded-lg border border-matica-line">
@@ -410,8 +474,11 @@ export function ReportsPanel({
                   <th className="px-3 py-2">Cliente principal</th>
                   <th className="px-3 py-2">Empresa interna</th>
                   <th className="px-3 py-2 text-right">Pedidos</th>
+                  <th className="px-3 py-2 text-right">Nº menús</th>
+                  <th className="px-3 py-2 text-right">Nº medios menús</th>
                   <th className="px-3 py-2 text-right">Subtotal</th>
                   <th className="px-3 py-2 text-right">Subvención</th>
+                  <th className="px-3 py-2 text-right">Importe subvencionado</th>
                   <th className="px-3 py-2 text-right">Cobra empleado</th>
                   <th className="px-3 py-2 text-right">Factura empresa</th>
                 </tr>
@@ -422,15 +489,18 @@ export function ReportsPanel({
                     <td className="px-3 py-2 font-bold">{row.companyName}</td>
                     <td className="px-3 py-2 font-bold text-matica-green">{row.branchName}</td>
                     <td className="px-3 py-2 text-right font-bold">{row.orderCount}</td>
+                    <td className="px-3 py-2 text-right font-semibold">{row.menuCount}</td>
+                    <td className="px-3 py-2 text-right font-semibold">{row.halfMenuCount}</td>
                     <td className="px-3 py-2 text-right font-semibold">{formatCurrency(row.subtotal)}</td>
                     <td className="px-3 py-2 text-right font-semibold">{formatCurrency(row.subsidyTotal)}</td>
+                    <td className="px-3 py-2 text-right font-semibold">{formatCurrency(row.subsidizedAmountTotal)}</td>
                     <td className="px-3 py-2 text-right font-semibold">{formatCurrency(row.employeeTotal)}</td>
                     <td className="px-3 py-2 text-right font-semibold">{formatCurrency(row.companyInvoiceTotal)}</td>
                   </tr>
                 ))}
                 {!reportSummary.byBranch.length ? (
                   <tr>
-                    <td className="px-3 py-6 text-center font-bold text-matica-ink/45" colSpan={7}>
+                    <td className="px-3 py-6 text-center font-bold text-matica-ink/45" colSpan={10}>
                       No hay pedidos con estos filtros.
                     </td>
                   </tr>
