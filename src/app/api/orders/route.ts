@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { DELIVERY_WINDOW } from "@/lib/constants";
 import { toDateInputValue } from "@/lib/format";
+import { sendOrderNotificationEmail } from "@/lib/order-email";
 import { createPaymentPlaceholder, shouldRequireOnlinePayment } from "@/lib/payment";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
-import type { OrderStatus, ProductType } from "@/lib/types";
+import type { AdminOrder, OrderStatus, ProductType } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -389,6 +390,18 @@ export async function POST(request: NextRequest) {
       .eq("id", order.id);
 
     return badRequest(orderItemsError.message);
+  }
+
+  const { data: emailOrder, error: emailOrderError } = await supabase
+    .from("orders")
+    .select("*,order_items(*),companies(name),company_branches(name)")
+    .eq("id", order.id)
+    .single();
+
+  if (emailOrderError || !emailOrder) {
+    console.warn("[order-email] No se pudo cargar el pedido completo para notificar.", emailOrderError?.message);
+  } else {
+    await sendOrderNotificationEmail(emailOrder as AdminOrder);
   }
 
   return NextResponse.json({

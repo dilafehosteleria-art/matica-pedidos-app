@@ -54,3 +54,95 @@ button {
 .no-scrollbar::-webkit-scrollbar {
   display: none;
 }
+
+@media print {
+  @page {
+    size: 80mm auto;
+    margin: 3mm;
+  }
+
+  html,
+  body {
+    width: 80mm;
+    min-height: auto;
+    background: #ffffff;
+  }
+
+  body * {
+    visibility: hidden;
+  }
+
+  .thermal-ticket,
+  .thermal-ticket * {
+    visibility: visible;
+  }
+
+  .thermal-ticket {
+    position: absolute;
+    inset: 0 auto auto 0;
+    display: block !important;
+    width: 74mm;
+    color: #000000;
+    background: #ffffff;
+    font-family: "Courier New", Courier, monospace;
+    font-size: 10px;
+    line-height: 1.25;
+    letter-spacing: 0;
+  }
+
+  .thermal-ticket h1,
+  .thermal-ticket p {
+    margin: 0;
+  }
+
+  .thermal-ticket h1 {
+    font-size: 14px;
+    font-weight: 800;
+  }
+
+  .ticket-center {
+    text-align: center;
+  }
+
+  .ticket-separator {
+    margin: 5px 0;
+    border-top: 1px dashed #000000;
+  }
+
+  .ticket-grid {
+    display: grid;
+    grid-template-columns: 8mm 1fr 15mm 16mm;
+    gap: 2mm;
+    align-items: start;
+  }
+
+  .ticket-head {
+    font-weight: 800;
+  }
+
+  .ticket-item {
+    margin-top: 4px;
+  }
+
+  .ticket-option {
+    padding-left: 8mm;
+    word-break: break-word;
+  }
+
+  .ticket-note {
+    font-weight: 800;
+    word-break: break-word;
+  }
+
+  .ticket-total {
+    display: flex;
+    justify-content: space-between;
+    gap: 4mm;
+  }
+
+  .ticket-total-strong {
+    margin-top: 3px;
+    font-size: 12px;
+    font-weight: 800;
+  }
+}

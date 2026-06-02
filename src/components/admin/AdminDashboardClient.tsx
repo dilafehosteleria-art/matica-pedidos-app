@@ -1,11 +1,12 @@
 "use client";
 
-import { AlertCircle, Building2, CalendarDays, ClipboardList, Clock, FileSpreadsheet, Loader2, Package, RefreshCw, Utensils } from "lucide-react";
+import { AlertCircle, Building2, CalendarDays, ClipboardList, Clock, Eye, FileSpreadsheet, Loader2, Package, Printer, RefreshCw, X, Utensils } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AdminGate } from "./AdminGate";
 import { ReportsPanel } from "./ReportsPanel";
 import { formatCurrency, formatTime } from "@/lib/format";
+import { formatOrderDateTime, metadataEntries, ORDER_STATUS_LABELS, orderReference } from "@/lib/order-ticket";
 import type { AdminOrder, OrderStatus } from "@/lib/types";
 
 const DAILY_COLUMNS: { key: string; statuses: OrderStatus[]; title: string }[] = [
@@ -56,44 +57,6 @@ const DASHBOARD_LINKS = [
     icon: Package
   }
 ];
-
-function formatMetadataKey(key: string) {
-  const labels: Record<string, string> = {
-    categoria: "Categoría",
-    first_course: "Primero",
-    second_course: "Segundo",
-    side: "Guarnición",
-    sides: "Guarnición",
-    drink_or_dessert: "Bebida o postre",
-    plate: "Plato único",
-    salad_size: "Tamaño ensalada",
-    salad_base: "Base ensalada",
-    protein: "Proteína",
-    toppings: "Toppings",
-    dressing: "Aliño",
-    sandwich: "Bocadillo",
-    filling: "Relleno/base",
-    sauce: "Salsa",
-    main_protein: "Proteína principal",
-    drink: "Bebida",
-    dessert: "Postre",
-    bread: "Pan",
-    suplementos: "Suplementos"
-  };
-
-  return labels[key] ?? key.replaceAll("_", " ").replace(/^\w/, (letter) => letter.toUpperCase());
-}
-
-function formatMetadata(metadata?: Record<string, string>) {
-  if (!metadata) {
-    return "";
-  }
-
-  return Object.entries(metadata)
-    .filter(([key, value]) => Boolean(value) && !key.startsWith("_") && key !== "display_name")
-    .map(([key, value]) => `${formatMetadataKey(key)}: ${value}`)
-    .join(" · ");
-}
 
 export function AdminDashboardClient() {
   return (
@@ -174,6 +137,7 @@ function OrdersBoard({ pin, clearPin }: { pin: string; clearPin: () => void }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [updatingId, setUpdatingId] = useState("");
+  const [selectedOrder, setSelectedOrder] = useState<AdminOrder | null>(null);
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
 
   const loadOrders = useCallback(async () => {
@@ -225,6 +189,7 @@ function OrdersBoard({ pin, clearPin }: { pin: string; clearPin: () => void }) {
     }
 
     setOrders((current) => current.map((order) => (order.id === orderId ? payload.order : order)));
+    setSelectedOrder((current) => (current?.id === orderId ? payload.order : current));
   }
 
   const grouped = useMemo(() => {
@@ -284,6 +249,7 @@ function OrdersBoard({ pin, clearPin }: { pin: string; clearPin: () => void }) {
                     order={order}
                     updating={updatingId === order.id}
                     onStatusChange={(status) => updateStatus(order.id, status)}
+                    onOpen={() => setSelectedOrder(order)}
                   />
                 ))}
                 {!grouped[column.key]?.length ? (
@@ -296,6 +262,15 @@ function OrdersBoard({ pin, clearPin }: { pin: string; clearPin: () => void }) {
           ))}
         </div>
       )}
+
+      {selectedOrder ? (
+        <OrderDetailModal
+          order={selectedOrder}
+          updating={updatingId === selectedOrder.id}
+          onClose={() => setSelectedOrder(null)}
+          onStatusChange={(status) => updateStatus(selectedOrder.id, status)}
+        />
+      ) : null}
     </div>
   );
 }
@@ -303,22 +278,24 @@ function OrdersBoard({ pin, clearPin }: { pin: string; clearPin: () => void }) {
 function OrderCard({
   order,
   updating,
-  onStatusChange
+  onStatusChange,
+  onOpen
 }: {
   order: AdminOrder;
   updating: boolean;
   onStatusChange: (status: OrderStatus) => void;
+  onOpen: () => void;
 }) {
   const companyName = order.companies?.name ?? "Cliente principal";
   const branchName = order.company_branches?.name ?? "Sin empresa interna";
 
   return (
-    <article className="rounded-lg border border-matica-line bg-matica-soft p-3">
+    <article className="rounded-lg border border-matica-line bg-matica-soft p-3 shadow-sm">
       <div className="flex items-start justify-between gap-3">
-        <div>
+        <div className="min-w-0">
+          <p className="text-[11px] font-black uppercase tracking-wide text-matica-ink/40">#{orderReference(order.id)}</p>
           <h3 className="text-base font-black">{order.customer_name}</h3>
-          <p className="text-xs font-bold text-matica-green">Empresa interna: {branchName}</p>
-          <p className="text-xs font-semibold text-matica-ink/45">Cliente principal: {companyName}</p>
+          <p className="truncate text-xs font-bold text-matica-green">{branchName}</p>
         </div>
         <span className="flex items-center gap-1 rounded-lg bg-white px-2 py-1 text-sm font-black">
           <Clock className="h-4 w-4 text-matica-green" />
@@ -331,47 +308,51 @@ function OrderCard({
         <p className="break-all">{order.customer_email}</p>
       </div>
 
-      <div className="mt-3 space-y-2">
-        {order.order_items.map((item) => (
-          <div key={item.id} className="rounded-lg bg-white p-2">
-            <div className="flex justify-between gap-2 text-sm font-black">
-              <span>
+      <div className="mt-3 rounded-lg bg-white p-2">
+        <div className="space-y-1 text-sm font-black">
+          {order.order_items.slice(0, 2).map((item) => (
+            <div key={item.id} className="flex justify-between gap-2">
+              <span className="min-w-0 truncate">
                 {item.quantity}x {item.name}
               </span>
               <span>{formatCurrency(Number(item.total_price))}</span>
             </div>
-            {item.metadata ? (
-              <p className="mt-1 text-xs font-semibold leading-5 text-matica-ink/55">
-                {formatMetadata(item.metadata)}
-              </p>
-            ) : null}
-          </div>
-        ))}
+          ))}
+          {order.order_items.length > 2 ? (
+            <p className="text-xs font-bold text-matica-ink/45">+{order.order_items.length - 2} producto(s) más</p>
+          ) : null}
+        </div>
       </div>
 
       {order.notes ? (
-        <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-2 text-sm font-bold text-amber-900">
+        <div className="mt-3 line-clamp-2 rounded-lg border border-amber-200 bg-amber-50 p-2 text-sm font-bold text-amber-900">
           {order.notes}
         </div>
       ) : null}
 
-      <div className="mt-3 space-y-1 rounded-lg bg-white p-2 text-sm font-bold">
-        <div className="flex justify-between">
-          <span>Subtotal</span>
-          <span>{formatCurrency(Number(order.subtotal))}</span>
+      <div className="mt-3 grid grid-cols-2 gap-2 text-sm font-bold">
+        <div className="rounded-lg bg-white p-2">
+          <p className="text-[11px] font-black uppercase text-matica-ink/45">Total empleado</p>
+          <p className="text-base font-black">{formatCurrency(Number(order.total))}</p>
         </div>
-        <div className="flex justify-between text-matica-green">
-          <span>Subvención</span>
-          <span>-{formatCurrency(Number(order.subsidy_total))}</span>
+        <div className="rounded-lg bg-white p-2">
+          <p className="text-[11px] font-black uppercase text-matica-ink/45">Factura empresa</p>
+          <p className="text-base font-black text-matica-green">{formatCurrency(Number(order.subsidy_total))}</p>
         </div>
-        <div className="flex justify-between">
-          <span>Factura empresa</span>
-          <span>{formatCurrency(Number(order.subsidy_total))}</span>
-        </div>
-        <div className="flex justify-between border-t border-matica-line pt-1 text-base font-black">
-          <span>Total empleado</span>
-          <span>{formatCurrency(Number(order.total))}</span>
-        </div>
+      </div>
+
+      <div className="mt-3 flex items-center justify-between gap-2">
+        <span className="rounded-lg bg-white px-2 py-1 text-xs font-black text-matica-ink/60">
+          {ORDER_STATUS_LABELS[order.status]}
+        </span>
+        <button
+          className="matica-focus inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-matica-green px-3 text-sm font-black text-white"
+          onClick={onOpen}
+          type="button"
+        >
+          <Eye className="h-4 w-4" />
+          Ver pedido
+        </button>
       </div>
 
       <label className="mt-3 block space-y-1">
@@ -391,5 +372,221 @@ function OrderCard({
       </label>
       {updating ? <p className="mt-2 text-xs font-bold text-matica-ink/50">Actualizando estado...</p> : null}
     </article>
+  );
+}
+
+function OrderDetailModal({
+  order,
+  updating,
+  onClose,
+  onStatusChange
+}: {
+  order: AdminOrder;
+  updating: boolean;
+  onClose: () => void;
+  onStatusChange: (status: OrderStatus) => void;
+}) {
+  const companyName = order.companies?.name ?? "Cliente principal";
+  const branchName = order.company_branches?.name ?? "Sin empresa interna";
+
+  return (
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-matica-ink/55 px-3 py-5 print:static print:bg-white print:p-0">
+      <div className="mx-auto max-w-5xl rounded-lg bg-white shadow-2xl print:max-w-none print:rounded-none print:shadow-none">
+        <div className="flex items-start justify-between gap-3 border-b border-matica-line p-4 print:hidden">
+          <div>
+            <p className="text-xs font-black uppercase text-matica-green">Pedido #{orderReference(order.id)}</p>
+            <h2 className="text-2xl font-black text-matica-ink">{order.customer_name}</h2>
+            <p className="mt-1 text-sm font-semibold text-matica-ink/55">{formatOrderDateTime(order.created_at)}</p>
+          </div>
+          <button
+            className="matica-focus grid h-11 w-11 place-items-center rounded-lg border border-matica-line bg-white text-matica-ink"
+            onClick={onClose}
+            type="button"
+            aria-label="Cerrar"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="grid gap-5 p-4 lg:grid-cols-[1fr_320px] print:block print:p-0">
+          <div className="space-y-4 print:hidden">
+            <section className="rounded-lg border border-matica-line p-4">
+              <h3 className="text-lg font-black">Datos del pedido</h3>
+              <div className="mt-3 grid gap-3 text-sm font-semibold text-matica-ink/70 sm:grid-cols-2">
+                <InfoRow label="Referencia" value={orderReference(order.id)} />
+                <InfoRow label="Fecha y hora" value={formatOrderDateTime(order.created_at)} />
+                <InfoRow label="Cliente principal" value={companyName} />
+                <InfoRow label="Empresa interna" value={branchName} />
+                <InfoRow label="Nombre" value={order.customer_name} />
+                <InfoRow label="Teléfono" value={order.customer_phone} />
+                <InfoRow label="Email" value={order.customer_email} />
+                <InfoRow label="Estado pago" value="PAGO EN SITIO / PENDIENTE DE COBRO ONLINE" />
+              </div>
+            </section>
+
+            <section className="rounded-lg border border-matica-line p-4">
+              <h3 className="text-lg font-black">Productos</h3>
+              <div className="mt-3 space-y-3">
+                {order.order_items.map((item) => (
+                  <div key={item.id} className="rounded-lg bg-matica-soft p-3">
+                    <div className="flex justify-between gap-3 text-sm font-black">
+                      <span>
+                        {item.quantity}x {item.name}
+                      </span>
+                      <span>{formatCurrency(Number(item.total_price))}</span>
+                    </div>
+                    {metadataEntries(item.metadata).length ? (
+                      <div className="mt-2 space-y-1 text-sm font-semibold text-matica-ink/65">
+                        {metadataEntries(item.metadata).map((entry) => (
+                          <p key={`${item.id}-${entry.key}`}>
+                            <span className="font-black">{entry.label}:</span> {entry.value}
+                          </p>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            {order.notes ? (
+              <section className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-amber-950">
+                <h3 className="text-lg font-black">Observaciones</h3>
+                <p className="mt-2 text-sm font-bold leading-6">{order.notes}</p>
+              </section>
+            ) : null}
+          </div>
+
+          <aside className="space-y-4 print:hidden">
+            <section className="rounded-lg border border-matica-line p-4">
+              <h3 className="text-lg font-black">Importes</h3>
+              <div className="mt-3 space-y-2 text-sm font-bold">
+                <TotalRow label="Subtotal" value={Number(order.subtotal)} />
+                <TotalRow label="Subvención" value={-Number(order.subsidy_total)} highlight />
+                <TotalRow label="Factura empresa" value={Number(order.subsidy_total)} />
+                <TotalRow label="Total empleado" value={Number(order.total)} strong />
+              </div>
+            </section>
+
+            <section className="rounded-lg border border-matica-line p-4">
+              <label className="block space-y-1">
+                <span className="text-xs font-black uppercase text-matica-ink/45">Estado actual</span>
+                <select
+                  className="matica-focus w-full rounded-lg border border-matica-line bg-white px-3 py-3 text-sm font-black disabled:cursor-wait disabled:bg-matica-ink/10"
+                  value={order.status === "pendiente_pago" ? "nuevo" : order.status}
+                  disabled={updating}
+                  onChange={(event) => onStatusChange(event.target.value as OrderStatus)}
+                >
+                  {ORDER_STATUS_OPTIONS.map((option) => (
+                    <option key={option.status} value={option.status}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </section>
+
+            <div className="flex flex-col gap-2">
+              <button
+                className="matica-focus flex min-h-12 items-center justify-center gap-2 rounded-lg bg-matica-green px-4 font-black text-white"
+                onClick={() => window.print()}
+                type="button"
+              >
+                <Printer className="h-5 w-5" />
+                Imprimir ticket
+              </button>
+              <button
+                className="matica-focus flex min-h-12 items-center justify-center rounded-lg border border-matica-line bg-white px-4 font-black text-matica-ink"
+                onClick={onClose}
+                type="button"
+              >
+                Cerrar
+              </button>
+            </div>
+          </aside>
+
+          <ThermalTicket order={order} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function InfoRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <p className="text-xs font-black uppercase text-matica-ink/45">{label}</p>
+      <p className="break-words font-black text-matica-ink">{value}</p>
+    </div>
+  );
+}
+
+function TotalRow({ label, value, highlight = false, strong = false }: { label: string; value: number; highlight?: boolean; strong?: boolean }) {
+  return (
+    <div className={`flex justify-between gap-3 ${strong ? "border-t border-matica-line pt-2 text-base font-black" : ""} ${highlight ? "text-matica-green" : ""}`}>
+      <span>{label}</span>
+      <span>{formatCurrency(value)}</span>
+    </div>
+  );
+}
+
+function ThermalTicket({ order }: { order: AdminOrder }) {
+  const companyName = order.companies?.name ?? "Cliente principal";
+  const branchName = order.company_branches?.name ?? "Sin empresa interna";
+
+  return (
+    <section className="hidden print:block thermal-ticket">
+      <header className="ticket-center">
+        <h1>MATICA FRESH FOOD</h1>
+        <p>SERVICIO DE ENTREGA PARA EMPRESAS</p>
+      </header>
+      <div className="ticket-separator" />
+      <p>REF: {orderReference(order.id)}</p>
+      <p>FECHA: {formatOrderDateTime(order.created_at)}</p>
+      <p>CLIENTE: {order.customer_name}</p>
+      <p>TEL: {order.customer_phone}</p>
+      <p>EMAIL: {order.customer_email}</p>
+      <p>EMPRESA: {branchName}</p>
+      <p>CLIENTE PRINCIPAL: {companyName}</p>
+      <div className="ticket-separator" />
+      <div className="ticket-grid ticket-head">
+        <span>QTY</span>
+        <span>PRODUCT</span>
+        <span>UNIT</span>
+        <span>TOTAL</span>
+      </div>
+      {order.order_items.map((item) => (
+        <div key={item.id} className="ticket-item">
+          <div className="ticket-grid">
+            <span>{item.quantity}</span>
+            <span>{item.name}</span>
+            <span>{formatCurrency(Number(item.unit_price))}</span>
+            <span>{formatCurrency(Number(item.total_price))}</span>
+          </div>
+          {metadataEntries(item.metadata).map((entry) => (
+            <p key={`${item.id}-${entry.key}`} className="ticket-option">
+              &gt; {entry.label}: {entry.value}
+            </p>
+          ))}
+        </div>
+      ))}
+      {order.notes ? (
+        <>
+          <div className="ticket-separator" />
+          <p className="ticket-note">OBSERVACIONES: {order.notes}</p>
+        </>
+      ) : null}
+      <div className="ticket-separator" />
+      <div className="ticket-total"><span>Subtotal</span><span>{formatCurrency(Number(order.subtotal))}</span></div>
+      <div className="ticket-total"><span>Subvención</span><span>-{formatCurrency(Number(order.subsidy_total))}</span></div>
+      <div className="ticket-total"><span>Factura empresa</span><span>{formatCurrency(Number(order.subsidy_total))}</span></div>
+      <div className="ticket-total ticket-total-strong"><span>Total empleado</span><span>{formatCurrency(Number(order.total))}</span></div>
+      <div className="ticket-separator" />
+      <p>ESTADO DE PAGO:</p>
+      <p>PAGO EN SITIO / PENDIENTE DE COBRO ONLINE</p>
+      <p>ESTADO PEDIDO: {ORDER_STATUS_LABELS[order.status]}</p>
+      <div className="ticket-separator" />
+      <p className="ticket-center">Gracias por confiar en Matica.</p>
+    </section>
   );
 }
