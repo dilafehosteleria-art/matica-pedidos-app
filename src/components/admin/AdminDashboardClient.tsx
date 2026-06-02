@@ -6,14 +6,13 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { AdminGate } from "./AdminGate";
 import { ReportsPanel } from "./ReportsPanel";
 import { formatCurrency, formatTime } from "@/lib/format";
-import { formatOrderDateTime, metadataEntries, ORDER_STATUS_LABELS, orderReference } from "@/lib/order-ticket";
+import { formatOrderDateTime, ORDER_STATUS_LABELS, orderItemOptionLines, orderReference } from "@/lib/order-ticket";
 import type { AdminOrder, OrderStatus } from "@/lib/types";
 
 const DAILY_COLUMNS: { key: string; statuses: OrderStatus[]; title: string }[] = [
   { key: "nuevo", statuses: ["nuevo", "pendiente_pago"], title: "Nuevos" },
   { key: "preparando", statuses: ["preparando"], title: "En preparación" },
   { key: "listo", statuses: ["listo"], title: "Listos" },
-  { key: "entregado", statuses: ["entregado"], title: "Entregados" },
   { key: "cancelado", statuses: ["cancelado"], title: "Cancelados" }
 ];
 
@@ -24,6 +23,81 @@ const ORDER_STATUS_OPTIONS: { status: OrderStatus; label: string }[] = [
   { status: "entregado", label: "Entregado" },
   { status: "cancelado", label: "Cancelado" }
 ];
+
+type OrdersView = "daily" | "history";
+
+type HistoryFilters = {
+  date_from: string;
+  date_to: string;
+  status: string;
+  customer: string;
+  branch: string;
+  reference: string;
+};
+
+const STATUS_THEME: Record<OrderStatus, { card: string; panel: string; badge: string; count: string }> = {
+  pendiente_pago: {
+    card: "border-l-4 border-l-matica-green",
+    panel: "border-matica-line bg-matica-soft",
+    badge: "bg-matica-mint text-matica-green",
+    count: "bg-matica-mint text-matica-green"
+  },
+  nuevo: {
+    card: "border-l-4 border-l-matica-green",
+    panel: "border-matica-line bg-matica-soft",
+    badge: "bg-matica-mint text-matica-green",
+    count: "bg-matica-mint text-matica-green"
+  },
+  preparando: {
+    card: "border-l-4 border-l-amber-500",
+    panel: "border-amber-200 bg-amber-50",
+    badge: "bg-amber-100 text-amber-800",
+    count: "bg-amber-100 text-amber-800"
+  },
+  listo: {
+    card: "border-l-4 border-l-emerald-600",
+    panel: "border-emerald-200 bg-emerald-50",
+    badge: "bg-emerald-600 text-white",
+    count: "bg-emerald-600 text-white"
+  },
+  entregado: {
+    card: "border-l-4 border-l-slate-400",
+    panel: "border-slate-200 bg-slate-50",
+    badge: "bg-slate-200 text-slate-700",
+    count: "bg-slate-200 text-slate-700"
+  },
+  cancelado: {
+    card: "border-l-4 border-l-red-500",
+    panel: "border-red-200 bg-red-50",
+    badge: "bg-red-100 text-red-700",
+    count: "bg-red-100 text-red-700"
+  }
+};
+
+function todayInputValue() {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    day: "2-digit",
+    month: "2-digit",
+    timeZone: "Europe/Madrid",
+    year: "numeric"
+  }).formatToParts(new Date());
+  const get = (type: string) => parts.find((part) => part.type === type)?.value ?? "";
+
+  return `${get("year")}-${get("month")}-${get("day")}`;
+}
+
+function emptyHistoryFilters(): HistoryFilters {
+  const today = todayInputValue();
+
+  return {
+    date_from: today,
+    date_to: today,
+    status: "",
+    customer: "",
+    branch: "",
+    reference: ""
+  };
+}
 
 const DASHBOARD_LINKS = [
   {
@@ -134,11 +208,16 @@ function AdminHome() {
 
 function OrdersBoard({ pin, clearPin }: { pin: string; clearPin: () => void }) {
   const [orders, setOrders] = useState<AdminOrder[]>([]);
+  const [view, setView] = useState<OrdersView>("daily");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [updatingId, setUpdatingId] = useState("");
   const [selectedOrder, setSelectedOrder] = useState<AdminOrder | null>(null);
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
+  const [historyFilters, setHistoryFilters] = useState<HistoryFilters>(() => emptyHistoryFilters());
+  const [historyOrders, setHistoryOrders] = useState<AdminOrder[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historySearched, setHistorySearched] = useState(false);
 
   const loadOrders = useCallback(async () => {
     const response = await fetch("/api/admin/orders", {
@@ -162,6 +241,38 @@ function OrdersBoard({ pin, clearPin }: { pin: string; clearPin: () => void }) {
     setLoading(false);
     setLastRefresh(new Date());
   }, [clearPin, pin]);
+
+  const loadHistory = useCallback(async () => {
+    setHistoryLoading(true);
+    const params = new URLSearchParams({ mode: "history" });
+
+    Object.entries(historyFilters).forEach(([key, value]) => {
+      if (value.trim()) {
+        params.set(key, value.trim());
+      }
+    });
+
+    const response = await fetch(`/api/admin/orders?${params.toString()}`, {
+      headers: { "x-admin-pin": pin }
+    });
+    const payload = await response.json();
+    setHistoryLoading(false);
+
+    if (response.status === 401) {
+      clearPin();
+      return;
+    }
+
+    if (!response.ok) {
+      setError(payload.error ?? "No se pudo cargar el histórico.");
+      setHistorySearched(false);
+      return;
+    }
+
+    setHistoryOrders(payload.orders ?? []);
+    setHistorySearched(true);
+    setError("");
+  }, [clearPin, historyFilters, pin]);
 
   useEffect(() => {
     loadOrders();
@@ -189,6 +300,7 @@ function OrdersBoard({ pin, clearPin }: { pin: string; clearPin: () => void }) {
     }
 
     setOrders((current) => current.map((order) => (order.id === orderId ? payload.order : order)));
+    setHistoryOrders((current) => current.map((order) => (order.id === orderId ? payload.order : order)));
     setSelectedOrder((current) => (current?.id === orderId ? payload.order : current));
   }
 
@@ -228,17 +340,40 @@ function OrdersBoard({ pin, clearPin }: { pin: string; clearPin: () => void }) {
         </div>
       ) : null}
 
-      {loading ? (
+      <div className="mb-4 flex flex-wrap gap-2">
+        <button
+          className={`matica-focus min-h-11 rounded-lg px-4 text-sm font-black ${
+            view === "daily" ? "bg-matica-green text-white" : "border border-matica-line bg-white text-matica-ink"
+          }`}
+          onClick={() => setView("daily")}
+          type="button"
+        >
+          Operativa diaria
+        </button>
+        <button
+          className={`matica-focus min-h-11 rounded-lg px-4 text-sm font-black ${
+            view === "history" ? "bg-matica-green text-white" : "border border-matica-line bg-white text-matica-ink"
+          }`}
+          onClick={() => setView("history")}
+          type="button"
+        >
+          Histórico
+        </button>
+      </div>
+
+      {view === "daily" && loading ? (
         <div className="grid min-h-72 place-items-center rounded-lg border border-matica-line bg-white">
           <Loader2 className="h-7 w-7 animate-spin text-matica-green" />
         </div>
-      ) : (
+      ) : null}
+
+      {view === "daily" && !loading ? (
         <div className="space-y-5">
           {DAILY_COLUMNS.map((column) => (
             <section key={column.key} className="rounded-lg border border-matica-line bg-white p-3 sm:p-4">
               <div className="mb-3 flex items-center justify-between gap-2">
                 <h2 className="text-lg font-black">{column.title}</h2>
-                <span className="rounded-lg bg-matica-mint px-2 py-1 text-sm font-black text-matica-green">
+                <span className={`rounded-lg px-2 py-1 text-sm font-black ${STATUS_THEME[column.statuses[0]].count}`}>
                   {grouped[column.key]?.length ?? 0}
                 </span>
               </div>
@@ -261,7 +396,113 @@ function OrdersBoard({ pin, clearPin }: { pin: string; clearPin: () => void }) {
             </section>
           ))}
         </div>
-      )}
+      ) : null}
+
+      {view === "history" ? (
+        <section className="rounded-lg border border-matica-line bg-white p-4 shadow-sm">
+          <div className="flex flex-col gap-1">
+            <h2 className="text-xl font-black text-matica-ink">Histórico de pedidos</h2>
+            <p className="text-sm font-semibold text-matica-ink/55">
+              Busca entregados y pedidos antiguos sin llenar la pantalla operativa diaria.
+            </p>
+          </div>
+
+          <div className="mt-4 grid gap-3 md:grid-cols-3 xl:grid-cols-6">
+            <HistoryInput
+              label="Fecha desde"
+              type="date"
+              value={historyFilters.date_from}
+              onChange={(value) => setHistoryFilters((current) => ({ ...current, date_from: value }))}
+            />
+            <HistoryInput
+              label="Fecha hasta"
+              type="date"
+              value={historyFilters.date_to}
+              onChange={(value) => setHistoryFilters((current) => ({ ...current, date_to: value }))}
+            />
+            <label className="space-y-1">
+              <span className="text-xs font-black uppercase text-matica-ink/45">Estado</span>
+              <select
+                className="matica-focus w-full rounded-lg border border-matica-line bg-white px-3 py-3 text-sm font-bold"
+                value={historyFilters.status}
+                onChange={(event) => setHistoryFilters((current) => ({ ...current, status: event.target.value }))}
+              >
+                <option value="">Todos</option>
+                {ORDER_STATUS_OPTIONS.map((option) => (
+                  <option key={option.status} value={option.status}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <HistoryInput
+              label="Cliente"
+              value={historyFilters.customer}
+              onChange={(value) => setHistoryFilters((current) => ({ ...current, customer: value }))}
+            />
+            <HistoryInput
+              label="Empresa interna"
+              value={historyFilters.branch}
+              onChange={(value) => setHistoryFilters((current) => ({ ...current, branch: value }))}
+            />
+            <HistoryInput
+              label="Referencia"
+              value={historyFilters.reference}
+              onChange={(value) => setHistoryFilters((current) => ({ ...current, reference: value }))}
+            />
+          </div>
+
+          <div className="mt-4 flex flex-wrap gap-2">
+            <button
+              className="matica-focus inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-matica-green px-4 text-sm font-black text-white disabled:cursor-wait disabled:opacity-60"
+              onClick={loadHistory}
+              disabled={historyLoading}
+              type="button"
+            >
+              {historyLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              Buscar
+            </button>
+            <button
+              className="matica-focus min-h-11 rounded-lg border border-matica-line bg-white px-4 text-sm font-black text-matica-ink"
+              onClick={() => {
+                setHistoryFilters(emptyHistoryFilters());
+                setHistoryOrders([]);
+                setHistorySearched(false);
+              }}
+              type="button"
+            >
+              Limpiar
+            </button>
+          </div>
+
+          <div className="mt-5">
+            <div className="mb-3 flex items-center justify-between">
+              <h3 className="text-lg font-black">Resultados</h3>
+              <span className="rounded-lg bg-matica-mint px-2 py-1 text-sm font-black text-matica-green">
+                {historyOrders.length}
+              </span>
+            </div>
+            {historySearched && !historyOrders.length && !historyLoading ? (
+              <div className="rounded-lg border border-dashed border-matica-line bg-matica-soft p-5 text-center text-sm font-bold text-matica-ink/45">
+                No hay pedidos con esos filtros.
+              </div>
+            ) : null}
+            {historyOrders.length ? (
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+                {historyOrders.map((order) => (
+                  <OrderCard
+                    key={order.id}
+                    order={order}
+                    updating={updatingId === order.id}
+                    onStatusChange={(status) => updateStatus(order.id, status)}
+                    onOpen={() => setSelectedOrder(order)}
+                  />
+                ))}
+              </div>
+            ) : null}
+          </div>
+        </section>
+      ) : null}
 
       {selectedOrder ? (
         <OrderDetailModal
@@ -272,6 +513,30 @@ function OrdersBoard({ pin, clearPin }: { pin: string; clearPin: () => void }) {
         />
       ) : null}
     </div>
+  );
+}
+
+function HistoryInput({
+  label,
+  onChange,
+  type = "text",
+  value
+}: {
+  label: string;
+  onChange: (value: string) => void;
+  type?: "date" | "text";
+  value: string;
+}) {
+  return (
+    <label className="space-y-1">
+      <span className="text-xs font-black uppercase text-matica-ink/45">{label}</span>
+      <input
+        className="matica-focus w-full rounded-lg border border-matica-line bg-white px-3 py-3 text-sm font-bold"
+        type={type}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+      />
+    </label>
   );
 }
 
@@ -287,10 +552,11 @@ function OrderCard({
   onOpen: () => void;
 }) {
   const branchName = order.company_branches?.name ?? "Sin empresa interna";
+  const theme = STATUS_THEME[order.status] ?? STATUS_THEME.nuevo;
 
   return (
-    <article className="rounded-lg border border-matica-line bg-white p-3 shadow-sm">
-      <div className="rounded-lg border border-dashed border-matica-line bg-matica-soft p-3">
+    <article className={`rounded-lg border border-matica-line bg-white p-3 shadow-sm ${theme.card}`}>
+      <div className={`rounded-lg border border-dashed p-3 ${theme.panel}`}>
         <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-[11px] font-black uppercase tracking-wide text-matica-ink/45">REF #{orderReference(order.id)}</p>
@@ -312,7 +578,7 @@ function OrderCard({
 
       <div className="space-y-3 font-mono text-[13px] leading-5 text-matica-ink">
         {order.order_items.map((item) => {
-          const entries = metadataEntries(item.metadata);
+          const entries = orderItemOptionLines(item.metadata);
 
           return (
             <div key={item.id}>
@@ -358,7 +624,7 @@ function OrderCard({
       </div>
 
       <div className="mt-3 flex items-center justify-between gap-2">
-        <span className="rounded-lg bg-matica-mint px-2 py-1 text-xs font-black text-matica-green">
+        <span className={`rounded-lg px-2 py-1 text-xs font-black ${theme.badge}`}>
           {ORDER_STATUS_LABELS[order.status]}
         </span>
         <button
@@ -451,9 +717,9 @@ function OrderDetailModal({
                       </span>
                       <span>{formatCurrency(Number(item.total_price))}</span>
                     </div>
-                    {metadataEntries(item.metadata).length ? (
+                    {orderItemOptionLines(item.metadata).length ? (
                       <div className="mt-2 space-y-1 text-sm font-semibold text-matica-ink/65">
-                        {metadataEntries(item.metadata).map((entry) => (
+                        {orderItemOptionLines(item.metadata).map((entry) => (
                           <p key={`${item.id}-${entry.key}`}>
                             <span className="font-black">{entry.label}:</span> {entry.value}
                           </p>
@@ -579,7 +845,7 @@ function ThermalTicket({ order }: { order: AdminOrder }) {
             <span>{formatCurrency(Number(item.unit_price))}</span>
             <span>{formatCurrency(Number(item.total_price))}</span>
           </div>
-          {metadataEntries(item.metadata).map((entry) => (
+          {orderItemOptionLines(item.metadata).map((entry) => (
             <p key={`${item.id}-${entry.key}`} className="ticket-option">
               &gt; {entry.label}: {entry.value}
             </p>

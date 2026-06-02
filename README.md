@@ -89,8 +89,20 @@ npm run start
    - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
    - `SUPABASE_SERVICE_ROLE_KEY`
    - `ADMIN_PIN`
+   - `CRON_SECRET`
 4. Railway usara Nixpacks. El `startCommand` esta en `railway.json`.
 5. Despliega y abre `/bureau-veritas`.
+
+### Cierre automatico diario
+
+Para cerrar la operativa diaria sin tocar pedidos nuevos ni cancelados, configura un scheduler/cron en Railway a las 23:59 hora de Madrid contra:
+
+```bash
+curl -X POST https://TU_DOMINIO/api/cron/close-daily-orders \
+  -H "Authorization: Bearer $CRON_SECRET"
+```
+
+El endpoint marca como `entregado` los pedidos del dia en `pendiente_pago`, `preparando` o `listo`. No modifica pedidos en `nuevo` ni `cancelado`. Para pruebas controladas se puede anadir `?date=YYYY-MM-DD`.
 
 ## GitHub
 
