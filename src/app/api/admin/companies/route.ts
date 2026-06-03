@@ -5,6 +5,17 @@ import type { CompanyDraft } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
+function isMissingPaymentSettingsColumn(message?: string) {
+  return Boolean(
+    message &&
+      (
+        message.includes("'allow_pay_on_delivery' column") ||
+        message.includes("'allow_card_payment' column") ||
+        message.includes("'allow_bizum_payment' column")
+      )
+  );
+}
+
 export async function GET(request: NextRequest) {
   const adminError = assertAdmin(request);
 
@@ -49,19 +60,35 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ error: "Empresa, nombre y slug requeridos." }, { status: 400 });
   }
 
-  const { error: companyError } = await supabase
+  const companyUpdate = {
+    name: body.name.trim(),
+    slug: body.slug.trim(),
+    active: body.active,
+    order_window: body.order_window?.trim() || null,
+    delivery_window: body.delivery_window?.trim() || null,
+    allow_pay_on_delivery: Boolean(body.allow_pay_on_delivery),
+    allow_card_payment: Boolean(body.allow_card_payment),
+    allow_bizum_payment: Boolean(body.allow_bizum_payment)
+  };
+
+  let { error: companyError } = await supabase
     .from("companies")
-    .update({
-      name: body.name.trim(),
-      slug: body.slug.trim(),
-      active: body.active,
-      order_window: body.order_window?.trim() || null,
-      delivery_window: body.delivery_window?.trim() || null,
-      allow_pay_on_delivery: Boolean(body.allow_pay_on_delivery),
-      allow_card_payment: Boolean(body.allow_card_payment),
-      allow_bizum_payment: Boolean(body.allow_bizum_payment)
-    })
+    .update(companyUpdate)
     .eq("id", body.id);
+
+  if (companyError && isMissingPaymentSettingsColumn(companyError.message)) {
+    const {
+      allow_pay_on_delivery: _allowPayOnDelivery,
+      allow_card_payment: _allowCardPayment,
+      allow_bizum_payment: _allowBizumPayment,
+      ...legacyCompanyUpdate
+    } = companyUpdate;
+
+    ({ error: companyError } = await supabase
+      .from("companies")
+      .update(legacyCompanyUpdate)
+      .eq("id", body.id));
+  }
 
   if (companyError) {
     return NextResponse.json({ error: companyError.message }, { status: 400 });

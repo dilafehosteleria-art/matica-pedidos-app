@@ -120,6 +120,20 @@ function badRequest(message: string, status = 400) {
   return NextResponse.json({ error: message }, { status });
 }
 
+function isMissingPaymentColumnError(message?: string) {
+  return Boolean(
+    message &&
+      (
+        message.includes("'payment_method' column") ||
+        message.includes("'payment_status' column") ||
+        message.includes("'payment_provider' column") ||
+        message.includes("'stripe_checkout_session_id' column") ||
+        message.includes("'stripe_payment_intent_id' column") ||
+        message.includes("'paid_at' column")
+      )
+  );
+}
+
 function expectedSaladConfiguredUnitPrice(basePrice: number, metadata: Record<string, string>, includeSize: boolean) {
   const sizeSupplement = includeSize ? SALAD_SIZE_SUPPLEMENTS[metadata.salad_size?.trim() ?? ""] : 0;
   const proteinSupplement = SALAD_PROTEIN_SUPPLEMENTS[metadata.protein?.trim() ?? ""];
@@ -367,27 +381,44 @@ export async function POST(request: NextRequest) {
   const isOnlinePayment = isOnlinePaymentMethod(requestedPaymentMethod);
   const initialStatus: OrderStatus = isOnlinePayment ? "pendiente_pago" : "nuevo";
 
-  const { data: order, error: orderError } = await supabase
+  const orderPayload = {
+    customer_id: null,
+    company_id: selectedCompany.id,
+    company_branch_id: companyBranchId,
+    customer_name: customerName,
+    customer_email: customerEmail,
+    customer_phone: customerPhone,
+    status: initialStatus,
+    payment_method: requestedPaymentMethod,
+    payment_status: "pending",
+    payment_provider: isOnlinePayment ? "stripe" : null,
+    subtotal,
+    subsidy_total: subsidyTotal,
+    total,
+    notes,
+    delivery_window: selectedCompany.delivery_window || DELIVERY_WINDOW
+  };
+
+  let { data: order, error: orderError } = await supabase
     .from("orders")
-    .insert({
-      customer_id: null,
-      company_id: selectedCompany.id,
-      company_branch_id: companyBranchId,
-      customer_name: customerName,
-      customer_email: customerEmail,
-      customer_phone: customerPhone,
-      status: initialStatus,
-      payment_method: requestedPaymentMethod,
-      payment_status: "pending",
-      payment_provider: isOnlinePayment ? "stripe" : null,
-      subtotal,
-      subsidy_total: subsidyTotal,
-      total,
-      notes,
-      delivery_window: selectedCompany.delivery_window || DELIVERY_WINDOW
-    })
+    .insert(orderPayload)
     .select("id")
     .single();
+
+  if (orderError && !isOnlinePayment && isMissingPaymentColumnError(orderError.message)) {
+    const {
+      payment_method: _paymentMethod,
+      payment_status: _paymentStatus,
+      payment_provider: _paymentProvider,
+      ...legacyOrderPayload
+    } = orderPayload;
+
+    ({ data: order, error: orderError } = await supabase
+      .from("orders")
+      .insert(legacyOrderPayload)
+      .select("id")
+      .single());
+  }
 
   if (orderError || !order) {
     return badRequest(orderError?.message ?? "No se pudo crear el pedido.");

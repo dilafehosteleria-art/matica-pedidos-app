@@ -14,7 +14,7 @@ const PAYMENT_STATUS_LABELS: Record<PaymentStatus, string> = {
 };
 
 export function paymentMethodLabel(method?: PaymentMethod | null) {
-  return method ? PAYMENT_LABELS[method] ?? "Pago" : "Pago no indicado";
+  return method ? PAYMENT_LABELS[method] ?? "Pago" : PAYMENT_LABELS.pay_on_delivery;
 }
 
 export function paymentStatusLabel(status?: PaymentStatus | null) {
@@ -22,7 +22,7 @@ export function paymentStatusLabel(status?: PaymentStatus | null) {
 }
 
 export function operationalPaymentLabel(order: { payment_method?: PaymentMethod | null; payment_status?: PaymentStatus | null }) {
-  if (order.payment_method === "pay_on_delivery") {
+  if (!order.payment_method || order.payment_method === "pay_on_delivery") {
     return "Pago a la entrega";
   }
 
