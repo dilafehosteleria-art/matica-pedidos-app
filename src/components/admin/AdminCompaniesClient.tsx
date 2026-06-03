@@ -25,7 +25,10 @@ function getDraft(company: AdminCompany): CompanyDraft {
     order_window: company.order_window ?? "lunes a jueves de 09:30 a 12:30",
     delivery_window: company.delivery_window ?? "13:00 a 13:30",
     daily_menu_subsidy: Number(dailyRule?.subsidy_amount ?? 0),
-    half_menu_subsidy: Number(halfRule?.subsidy_amount ?? 0)
+    half_menu_subsidy: Number(halfRule?.subsidy_amount ?? 0),
+    allow_pay_on_delivery: company.allow_pay_on_delivery ?? true,
+    allow_card_payment: company.allow_card_payment ?? false,
+    allow_bizum_payment: company.allow_bizum_payment ?? false
   };
 }
 
@@ -158,6 +161,30 @@ function CompaniesEditor({ pin, clearPin }: { pin: string; clearPin: () => void 
                   />
                 </div>
 
+                <div className="mt-4 rounded-lg border border-matica-line bg-matica-soft p-3">
+                  <h3 className="text-sm font-black uppercase text-matica-ink/45">Metodos de pago</h3>
+                  <div className="mt-3 grid gap-2 md:grid-cols-3">
+                    <Toggle
+                      label="Pago a la entrega"
+                      checked={draft.allow_pay_on_delivery}
+                      onChange={(value) => updateDraft(company.id, "allow_pay_on_delivery", value)}
+                    />
+                    <Toggle
+                      label="Stripe / tarjeta"
+                      checked={draft.allow_card_payment}
+                      onChange={(value) => updateDraft(company.id, "allow_card_payment", value)}
+                    />
+                    <Toggle
+                      label="Bizum por Stripe"
+                      checked={draft.allow_bizum_payment}
+                      onChange={(value) => updateDraft(company.id, "allow_bizum_payment", value)}
+                    />
+                  </div>
+                  <p className="mt-2 text-xs font-bold text-matica-ink/50">
+                    Si Stripe no esta configurado, la carta publica ocultara tarjeta y Bizum y dejara disponible el pago a la entrega.
+                  </p>
+                </div>
+
                 <button
                   className="matica-focus mt-4 flex min-h-12 items-center justify-center gap-2 rounded-lg bg-matica-green px-4 font-black text-white disabled:cursor-wait disabled:bg-matica-ink/30"
                   disabled={savingId === company.id}
@@ -172,6 +199,20 @@ function CompaniesEditor({ pin, clearPin }: { pin: string; clearPin: () => void 
         </div>
       )}
     </div>
+  );
+}
+
+function Toggle({ checked, label, onChange }: { checked: boolean; label: string; onChange: (value: boolean) => void }) {
+  return (
+    <label className="flex min-h-11 items-center gap-2 rounded-lg border border-matica-line bg-white px-3 text-sm font-black">
+      <input
+        className="h-4 w-4 accent-matica-green"
+        type="checkbox"
+        checked={checked}
+        onChange={(event) => onChange(event.target.checked)}
+      />
+      {label}
+    </label>
   );
 }
 

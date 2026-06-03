@@ -9,6 +9,7 @@ import {
 import { mergeCatalogDefaults } from "@/lib/catalog";
 import { ensureCustomSaladProduct } from "@/lib/catalog-maintenance";
 import { toDateInputValue } from "@/lib/format";
+import { publicStripePaymentsEnabled } from "@/lib/payment";
 import { getSupabaseAdminClient, getSupabaseServerClient } from "@/lib/supabase/server";
 import type { DailyMenu, DailyMenuCourse, PublicCompany, PublicData } from "@/lib/types";
 
@@ -52,7 +53,13 @@ export function seedCompanyData(slug = "bureau-veritas"): PublicData | null {
   }
 
   return {
-    company: BUREAU_VERITAS_COMPANY,
+    company: {
+      ...BUREAU_VERITAS_COMPANY,
+      allow_pay_on_delivery: true,
+      allow_card_payment: false,
+      allow_bizum_payment: false,
+      stripe_payments_enabled: publicStripePaymentsEnabled()
+    },
     branches: BUREAU_VERITAS_BRANCHES,
     categories: [...CATEGORIES].sort((a, b) => a.sort_order - b.sort_order),
     products: [...PRODUCTS].sort((a, b) => a.sort_order - b.sort_order),
@@ -158,7 +165,10 @@ export async function getPublicCompanyData(slug: string): Promise<PublicData | n
   const catalog = mergeCatalogDefaults(categories.data ?? [], products.data ?? []);
 
   return {
-    company,
+    company: {
+      ...company,
+      stripe_payments_enabled: publicStripePaymentsEnabled()
+    },
     branches: branches.data ?? [],
     categories: catalog.categories.filter((category) => category.active),
     products: catalog.products.filter((product) => product.active),

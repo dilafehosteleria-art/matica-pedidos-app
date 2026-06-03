@@ -5,7 +5,7 @@ import type { OrderStatus } from "@/lib/types";
 export const dynamic = "force-dynamic";
 
 const TIME_ZONE = "Europe/Madrid";
-const CLOSABLE_STATUSES: OrderStatus[] = ["pendiente_pago", "preparando", "listo"];
+const CLOSABLE_STATUSES: OrderStatus[] = ["preparando", "listo"];
 
 function isDateInput(value: string | null) {
   return Boolean(value && /^\d{4}-\d{2}-\d{2}$/.test(value));

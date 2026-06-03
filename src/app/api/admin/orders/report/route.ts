@@ -1,5 +1,6 @@
 import { deflateRawSync } from "node:zlib";
 import { NextRequest, NextResponse } from "next/server";
+import { operationalPaymentLabel, paymentMethodLabel, paymentStatusLabel } from "@/lib/payment-display";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import type { AdminOrder, CompanyBranch, OrderStatus, Company } from "@/lib/types";
 
@@ -18,6 +19,8 @@ const DETAIL_HEADERS = [
   "Email",
   "Telefono",
   "Estado",
+  "Metodo de pago",
+  "Estado de pago",
   "Tipo facturación",
   "Producto",
   "Detalles",
@@ -421,6 +424,8 @@ function detailRows(lines: ReportLine[]) {
       order.customer_email,
       order.customer_phone,
       order.status,
+      paymentMethodLabel(order.payment_method),
+      order.payment_method === "pay_on_delivery" ? operationalPaymentLabel(order) : paymentStatusLabel(order.payment_status),
       line.billingType,
       line.item?.name ?? "",
       formatMetadata(line.item?.metadata),
@@ -656,7 +661,7 @@ function createWorkbook(lines: ReportLine[], byBranch: ReportSummaryRow[]) {
     { name: "xl/workbook.xml", content: workbookXml() },
     { name: "xl/_rels/workbook.xml.rels", content: workbookRelsXml() },
     { name: "xl/styles.xml", content: stylesXml() },
-    { name: "xl/worksheets/sheet1.xml", content: worksheetXml(detail, [12, 13, 14, 15, 16, 17, 18]) },
+    { name: "xl/worksheets/sheet1.xml", content: worksheetXml(detail, [14, 15, 16, 17, 18, 19, 20]) },
     { name: "xl/worksheets/sheet2.xml", content: worksheetXml(summary, [5, 6, 7, 8, 9]) }
   ]);
 }

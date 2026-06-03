@@ -29,7 +29,7 @@ import {
 import { DELIVERY_WINDOW } from "@/lib/constants";
 import { formatCurrency } from "@/lib/format";
 import { calculateCartTotals, getSubsidyAmount } from "@/lib/pricing";
-import type { CartItem, CompanyBranch, CustomerForm, DailyMenu, DailyMenuCourse, Product, PublicData } from "@/lib/types";
+import type { CartItem, CompanyBranch, CustomerForm, DailyMenu, DailyMenuCourse, PaymentMethod, Product, PublicData } from "@/lib/types";
 
 const STORAGE_KEY_PREFIX = "matica:customer";
 const CUSTOMER_STORAGE_MAX_AGE_SECONDS = 60 * 60 * 24 * 180;
@@ -41,6 +41,41 @@ const EMPTY_CUSTOMER: CustomerForm = {
   company_branch_id: ""
 };
 
+function publicPaymentOptions(company: PublicData["company"] | null | undefined): PublicPaymentOption[] {
+  const stripeEnabled = Boolean(company?.stripe_payments_enabled);
+  const options: PublicPaymentOption[] = [];
+
+  if ((company?.allow_pay_on_delivery ?? true) || !stripeEnabled) {
+    options.push({
+      method: "pay_on_delivery",
+      label: "Pago a la entrega",
+      description: "Confirmas el pedido ahora y pagas en el punto de entrega."
+    });
+  }
+
+  if (stripeEnabled && (company?.allow_card_payment ?? false)) {
+    options.push({
+      method: "stripe_card",
+      label: "Tarjeta / Apple Pay / Google Pay",
+      description: "Pago seguro con Stripe Checkout."
+    });
+  }
+
+  if (stripeEnabled && (company?.allow_bizum_payment ?? false)) {
+    options.push({
+      method: "stripe_bizum",
+      label: "Bizum",
+      description: "Stripe lo mostrara si Bizum esta habilitado."
+    });
+  }
+
+  return options.length ? options : [{
+    method: "pay_on_delivery",
+    label: "Pago a la entrega",
+    description: "Confirmas el pedido ahora y pagas en el punto de entrega."
+  }];
+}
+
 type SubmitState =
   | { status: "idle" }
   | { status: "loading" }
@@ -48,6 +83,12 @@ type SubmitState =
   | { status: "error"; message: string };
 
 type PublicStep = "catalog" | "checkout" | "confirmation";
+
+type PublicPaymentOption = {
+  method: PaymentMethod;
+  label: string;
+  description: string;
+};
 
 type Option = {
   label: string;
@@ -628,6 +669,7 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
   const [configuring, setConfiguring] = useState<{ product: Product; section: PublicSection } | null>(null);
   const [subsidyAlreadyUsed, setSubsidyAlreadyUsed] = useState(false);
   const [submitState, setSubmitState] = useState<SubmitState>({ status: "idle" });
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("pay_on_delivery");
   const [customerLoaded, setCustomerLoaded] = useState(false);
   const [lastOrder, setLastOrder] = useState<{ id: string; total: number } | null>(null);
   const storageKey = `${STORAGE_KEY_PREFIX}:${companySlug}`;
@@ -683,6 +725,13 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
     () => (data ? buildPublicCatalogSections(data.categories, data.products) : []),
     [data]
   );
+  const paymentOptions = useMemo(() => publicPaymentOptions(data?.company), [data?.company]);
+
+  useEffect(() => {
+    if (!paymentOptions.some((option) => option.method === paymentMethod)) {
+      setPaymentMethod(paymentOptions[0]?.method ?? "pay_on_delivery");
+    }
+  }, [paymentMethod, paymentOptions]);
 
   const totals = useMemo(() => calculateCartTotals(cart, subsidyAlreadyUsed), [cart, subsidyAlreadyUsed]);
   const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
@@ -695,6 +744,7 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
     Boolean(customer.email.trim()) &&
     Boolean(customer.phone.trim()) &&
     Boolean(selectedBranch) &&
+    paymentOptions.some((option) => option.method === paymentMethod) &&
     cart.length > 0;
 
   function updateCustomer(field: keyof CustomerForm, value: string) {
@@ -744,6 +794,11 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
       return;
     }
 
+    if (!paymentOptions.some((option) => option.method === paymentMethod)) {
+      setSubmitState({ status: "error", message: "Selecciona una forma de pago disponible." });
+      return;
+    }
+
     setSubmitState({ status: "loading" });
 
     const response = await fetch("/api/orders", {
@@ -757,7 +812,8 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
           quantity: item.quantity,
           metadata: item.metadata ?? {}
         })),
-        notes
+        notes,
+        payment_method: paymentMethod
       })
     });
 
@@ -765,6 +821,11 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
 
     if (!response.ok) {
       setSubmitState({ status: "error", message: payload.error ?? "No se pudo confirmar el pedido." });
+      return;
+    }
+
+    if (payload.payment?.redirect_url) {
+      window.location.href = payload.payment.redirect_url;
       return;
     }
 
@@ -912,6 +973,9 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
           notes={notes}
           setNotes={setNotes}
           updateCustomer={updateCustomer}
+          paymentOptions={paymentOptions}
+          paymentMethod={paymentMethod}
+          setPaymentMethod={setPaymentMethod}
           submitState={submitState}
           canConfirmOrder={canConfirmOrder}
           hasSubsidizedItem={hasSubsidizedItem}
@@ -1431,6 +1495,9 @@ function CheckoutPanel({
   notes,
   setNotes,
   updateCustomer,
+  paymentOptions,
+  paymentMethod,
+  setPaymentMethod,
   submitState,
   canConfirmOrder,
   hasSubsidizedItem,
@@ -1449,6 +1516,9 @@ function CheckoutPanel({
   notes: string;
   setNotes: (value: string) => void;
   updateCustomer: (field: keyof CustomerForm, value: string) => void;
+  paymentOptions: PublicPaymentOption[];
+  paymentMethod: PaymentMethod;
+  setPaymentMethod: (method: PaymentMethod) => void;
   submitState: SubmitState;
   canConfirmOrder: boolean;
   hasSubsidizedItem: boolean;
@@ -1610,11 +1680,35 @@ function CheckoutPanel({
           <div className="mt-4 rounded-lg border border-matica-line bg-white p-3">
             <div className="flex items-center gap-2 text-sm font-black text-matica-ink">
               <CreditCard className="h-4 w-4 text-matica-green" />
-              Pago online
+              Forma de pago
             </div>
-            <p className="mt-1 text-sm font-semibold text-matica-ink/60">
-              Pago online próximamente. Durante el piloto, el pedido se confirma sin cobro online.
-            </p>
+            <div className="mt-3 space-y-2">
+              {paymentOptions.map((option) => (
+                <label
+                  key={option.method}
+                  className={`block cursor-pointer rounded-lg border p-3 transition ${
+                    paymentMethod === option.method
+                      ? "border-matica-green bg-matica-mint text-matica-green"
+                      : "border-matica-line bg-white text-matica-ink"
+                  }`}
+                >
+                  <span className="flex items-start gap-2">
+                    <input
+                      className="mt-1 h-4 w-4 accent-matica-green"
+                      type="radio"
+                      name="payment_method"
+                      value={option.method}
+                      checked={paymentMethod === option.method}
+                      onChange={() => setPaymentMethod(option.method)}
+                    />
+                    <span>
+                      <span className="block text-sm font-black">{option.label}</span>
+                      <span className="mt-0.5 block text-xs font-bold text-matica-ink/55">{option.description}</span>
+                    </span>
+                  </span>
+                </label>
+              ))}
+            </div>
           </div>
 
           {subsidyAlreadyUsed && hasSubsidizedItem ? (
@@ -1671,10 +1765,10 @@ function ConfirmationPanel({
         <div className="mt-5 rounded-lg border border-matica-line bg-matica-soft p-4 text-left">
           <div className="flex items-center gap-2 font-black">
             <CreditCard className="h-5 w-5 text-matica-green" />
-            Pago futuro con Adyen
+            Pago a la entrega
           </div>
           <p className="mt-1 text-sm font-semibold text-matica-ink/60">
-            Pago online próximamente. Durante el piloto, el pedido se confirma sin cobro online.
+            Durante el piloto puedes pagar en el punto de entrega. Si eliges pago online, Stripe confirmara el pedido al completar el pago.
           </p>
         </div>
 

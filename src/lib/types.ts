@@ -14,12 +14,27 @@ export type OrderStatus =
   | "entregado"
   | "cancelado";
 
+export type PaymentMethod =
+  | "pay_on_delivery"
+  | "stripe_card"
+  | "stripe_bizum";
+
+export type PaymentStatus =
+  | "pending"
+  | "paid"
+  | "failed"
+  | "cancelled";
+
 export type Company = {
   id: string;
   name: string;
   slug: string;
   order_window?: string | null;
   delivery_window?: string | null;
+  allow_pay_on_delivery?: boolean | null;
+  allow_card_payment?: boolean | null;
+  allow_bizum_payment?: boolean | null;
+  stripe_payments_enabled?: boolean;
   active: boolean;
   created_at?: string;
 };
@@ -126,6 +141,12 @@ export type AdminOrder = {
   customer_email: string;
   customer_phone: string;
   status: OrderStatus;
+  payment_method?: PaymentMethod | null;
+  payment_status?: PaymentStatus | null;
+  payment_provider?: string | null;
+  stripe_checkout_session_id?: string | null;
+  stripe_payment_intent_id?: string | null;
+  paid_at?: string | null;
   subtotal: number;
   subsidy_total: number;
   total: number;
@@ -147,6 +168,9 @@ export type AdminCompany = Company & {
 export type CompanyDraft = Pick<Company, "id" | "name" | "slug" | "active" | "order_window" | "delivery_window"> & {
   daily_menu_subsidy: number;
   half_menu_subsidy: number;
+  allow_pay_on_delivery: boolean;
+  allow_card_payment: boolean;
+  allow_bizum_payment: boolean;
 };
 
 export type ProductDraft = Pick<

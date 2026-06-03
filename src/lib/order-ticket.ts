@@ -1,4 +1,5 @@
 import { formatCurrency } from "@/lib/format";
+import { operationalPaymentLabel } from "@/lib/payment-display";
 import type { AdminOrder, OrderItem, OrderStatus } from "@/lib/types";
 
 export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
@@ -255,7 +256,7 @@ export function buildOrderPlainText(order: AdminOrder) {
     `Total empleado: ${formatCurrency(Number(order.total))}`,
     "",
     "ESTADO DE PAGO",
-    "PAGO EN SITIO / PENDIENTE DE COBRO ONLINE",
+    operationalPaymentLabel(order).toUpperCase(),
     "",
     `Estado pedido: ${ORDER_STATUS_LABELS[order.status]}`,
     "",

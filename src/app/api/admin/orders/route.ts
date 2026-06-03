@@ -6,7 +6,7 @@ import type { AdminOrder, OrderStatus } from "@/lib/types";
 export const dynamic = "force-dynamic";
 
 const TIME_ZONE = "Europe/Madrid";
-const DAILY_STATUSES: OrderStatus[] = ["pendiente_pago", "nuevo", "preparando", "listo", "cancelado"];
+const DAILY_STATUSES: OrderStatus[] = ["nuevo", "preparando", "listo", "cancelado"];
 const VALID_STATUSES: OrderStatus[] = ["pendiente_pago", "nuevo", "preparando", "listo", "entregado", "cancelado"];
 
 function isDateInput(value: string | null) {

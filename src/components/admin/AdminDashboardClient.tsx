@@ -7,10 +7,11 @@ import { AdminGate } from "./AdminGate";
 import { ReportsPanel } from "./ReportsPanel";
 import { formatCurrency, formatTime } from "@/lib/format";
 import { formatOrderDateTime, ORDER_STATUS_LABELS, orderItemOptionLines, orderReference } from "@/lib/order-ticket";
+import { operationalPaymentLabel } from "@/lib/payment-display";
 import type { AdminOrder, OrderStatus } from "@/lib/types";
 
 const DAILY_COLUMNS: { key: string; statuses: OrderStatus[]; title: string }[] = [
-  { key: "nuevo", statuses: ["nuevo", "pendiente_pago"], title: "Nuevos" },
+  { key: "nuevo", statuses: ["nuevo"], title: "Nuevos" },
   { key: "preparando", statuses: ["preparando"], title: "En preparación" },
   { key: "listo", statuses: ["listo"], title: "Listos" },
   { key: "cancelado", statuses: ["cancelado"], title: "Cancelados" }
@@ -573,6 +574,7 @@ function OrderCard({
       <div className="mt-3 space-y-1 text-sm font-bold leading-5 text-matica-ink/70">
         <p>{order.customer_phone}</p>
         <p className="break-all">{order.customer_email}</p>
+        <p className="font-black text-matica-ink">{operationalPaymentLabel(order)}</p>
       </div>
 
       <div className="my-3 border-t border-dashed border-matica-line" />
@@ -703,7 +705,7 @@ function OrderDetailModal({
                 <InfoRow label="Nombre" value={order.customer_name} />
                 <InfoRow label="Teléfono" value={order.customer_phone} />
                 <InfoRow label="Email" value={order.customer_email} />
-                <InfoRow label="Estado pago" value="PAGO EN SITIO / PENDIENTE DE COBRO ONLINE" />
+                <InfoRow label="Estado pago" value={operationalPaymentLabel(order)} />
               </div>
             </section>
 
@@ -866,7 +868,7 @@ function ThermalTicket({ order }: { order: AdminOrder }) {
       <div className="ticket-total ticket-total-strong"><span>Total empleado</span><span>{formatCurrency(Number(order.total))}</span></div>
       <div className="ticket-separator" />
       <p>ESTADO DE PAGO:</p>
-      <p>PAGO EN SITIO / PENDIENTE DE COBRO ONLINE</p>
+      <p>{operationalPaymentLabel(order).toUpperCase()}</p>
       <p>ESTADO PEDIDO: {ORDER_STATUS_LABELS[order.status]}</p>
       <div className="ticket-separator" />
       <p className="ticket-center">Gracias por confiar en Matica.</p>

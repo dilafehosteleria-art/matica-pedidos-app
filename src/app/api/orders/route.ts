@@ -2,9 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { DELIVERY_WINDOW } from "@/lib/constants";
 import { toDateInputValue } from "@/lib/format";
 import { sendOrderNotificationEmail } from "@/lib/order-email";
-import { createPaymentPlaceholder, shouldRequireOnlinePayment } from "@/lib/payment";
+import {
+  createStripeCheckoutSession,
+  isOnlinePaymentMethod,
+  paymentOptionsForCompany
+} from "@/lib/payment";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
-import type { AdminOrder, OrderStatus, ProductType } from "@/lib/types";
+import type { AdminOrder, OrderStatus, PaymentMethod, ProductType } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -22,6 +26,7 @@ type IncomingOrder = {
     metadata?: Record<string, string>;
   }[];
   notes?: string;
+  payment_method?: PaymentMethod;
 };
 
 type SupabaseProduct = {
@@ -44,7 +49,11 @@ type ExistingSubsidyOrder = {
 
 type SupabaseCompany = {
   id: string;
+  name: string;
   delivery_window?: string | null;
+  allow_pay_on_delivery?: boolean | null;
+  allow_card_payment?: boolean | null;
+  allow_bizum_payment?: boolean | null;
 };
 
 const FIXED_CONFIGURED_PRICES: Record<string, number> = {
@@ -203,6 +212,13 @@ export async function POST(request: NextRequest) {
   }
 
   const selectedCompany = company as SupabaseCompany;
+  const paymentOptions = paymentOptionsForCompany(selectedCompany);
+  const requestedPaymentMethod = body.payment_method ?? paymentOptions[0]?.method ?? "pay_on_delivery";
+  const selectedPaymentOption = paymentOptions.find((option) => option.method === requestedPaymentMethod);
+
+  if (!selectedPaymentOption) {
+    return badRequest("La forma de pago seleccionada no estÃ¡ disponible para esta empresa.");
+  }
 
   const { data: branch, error: branchError } = await supabase
     .from("company_branches")
@@ -348,7 +364,8 @@ export async function POST(request: NextRequest) {
   });
 
   const total = Number((subtotal - subsidyTotal).toFixed(2));
-  const initialStatus: OrderStatus = shouldRequireOnlinePayment() ? "pendiente_pago" : "nuevo";
+  const isOnlinePayment = isOnlinePaymentMethod(requestedPaymentMethod);
+  const initialStatus: OrderStatus = isOnlinePayment ? "pendiente_pago" : "nuevo";
 
   const { data: order, error: orderError } = await supabase
     .from("orders")
@@ -360,6 +377,9 @@ export async function POST(request: NextRequest) {
       customer_email: customerEmail,
       customer_phone: customerPhone,
       status: initialStatus,
+      payment_method: requestedPaymentMethod,
+      payment_status: "pending",
+      payment_provider: isOnlinePayment ? "stripe" : null,
       subtotal,
       subsidy_total: subsidyTotal,
       total,
@@ -392,16 +412,51 @@ export async function POST(request: NextRequest) {
     return badRequest(orderItemsError.message);
   }
 
-  const { data: emailOrder, error: emailOrderError } = await supabase
-    .from("orders")
-    .select("*,order_items(*),companies(name),company_branches(name)")
-    .eq("id", order.id)
-    .single();
+  let stripeSession: { id: string; url: string } | null = null;
 
-  if (emailOrderError || !emailOrder) {
-    console.warn("[order-email] No se pudo cargar el pedido completo para notificar.", emailOrderError?.message);
+  if (isOnlinePayment) {
+    try {
+      stripeSession = await createStripeCheckoutSession({
+        amount: total,
+        companyName: selectedCompany.name,
+        companySlug,
+        customerEmail,
+        orderId: order.id,
+        origin: request.nextUrl.origin,
+        paymentMethod: requestedPaymentMethod
+      });
+
+      await supabase
+        .from("orders")
+        .update({
+          stripe_checkout_session_id: stripeSession.id
+        })
+        .eq("id", order.id);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudo iniciar el pago.";
+
+      await supabase
+        .from("orders")
+        .update({
+          payment_status: "failed",
+          notes: `${notes ? `${notes}\n` : ""}Error iniciando pago Stripe: ${message}`
+        })
+        .eq("id", order.id);
+
+      return badRequest(message, 503);
+    }
   } else {
-    await sendOrderNotificationEmail(emailOrder as AdminOrder);
+    const { data: emailOrder, error: emailOrderError } = await supabase
+      .from("orders")
+      .select("*,order_items(*),companies(name),company_branches(name)")
+      .eq("id", order.id)
+      .single();
+
+    if (emailOrderError || !emailOrder) {
+      console.warn("[order-email] No se pudo cargar el pedido completo para notificar.", emailOrderError?.message);
+    } else {
+      await sendOrderNotificationEmail(emailOrder as AdminOrder);
+    }
   }
 
   return NextResponse.json({
@@ -413,6 +468,17 @@ export async function POST(request: NextRequest) {
       subsidy_applied: subsidyApplied,
       prior_subsidy_used: priorSubsidyUsed
     },
-    payment: createPaymentPlaceholder(order.id, total)
+    payment: isOnlinePayment
+      ? {
+          provider: "stripe",
+          method: requestedPaymentMethod,
+          status: "pending",
+          redirect_url: stripeSession?.url ?? null
+        }
+      : {
+          provider: "manual",
+          method: requestedPaymentMethod,
+          status: "pending"
+        }
   });
 }
