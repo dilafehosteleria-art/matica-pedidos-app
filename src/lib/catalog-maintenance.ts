@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   CUSTOM_SALAD_PRODUCT_ID,
-  isCustomSaladCatalogProduct
+  isCustomSaladAliasProduct
 } from "@/lib/catalog";
 import { CATEGORIES, PRODUCTS } from "@/lib/constants";
 import type { Product } from "@/lib/types";
@@ -34,32 +34,33 @@ export async function ensureCustomSaladProduct(supabase: SupabaseClient) {
 
   const products = (data ?? []) as CatalogProductRow[];
   const canonicalProduct = products.find((product) => product.id === CUSTOM_SALAD_PRODUCT_ID);
-  const aliasProduct = products.find(
-    (product) => product.id !== CUSTOM_SALAD_PRODUCT_ID && isCustomSaladCatalogProduct(product)
-  );
-  const targetProduct = canonicalProduct ?? aliasProduct;
+  const aliasProduct = products.find(isCustomSaladAliasProduct);
 
-  if (!targetProduct) {
+  if (!canonicalProduct) {
     const { error: insertError } = await supabase
       .from("products")
       .insert({
         ...CUSTOM_SALAD_PRODUCT,
+        description: aliasProduct?.description ?? CUSTOM_SALAD_PRODUCT.description,
+        base_price: Number(aliasProduct?.base_price ?? CUSTOM_SALAD_PRODUCT.base_price),
+        customer_price: Number(aliasProduct?.customer_price ?? CUSTOM_SALAD_PRODUCT.customer_price),
+        image_url: aliasProduct?.image_url ?? CUSTOM_SALAD_PRODUCT.image_url,
         active: true
       });
 
     return insertError?.message ?? null;
   }
 
-  const copiedImageUrl = !targetProduct.image_url && canonicalProduct && aliasProduct?.image_url
+  const copiedImageUrl = !canonicalProduct.image_url && aliasProduct?.image_url
     ? aliasProduct.image_url
     : undefined;
 
   const updatePayload: Partial<Product> = {
     category_id: CUSTOM_SALAD_PRODUCT.category_id,
     name: CUSTOM_SALAD_PRODUCT.name,
-    description: targetProduct.description ?? CUSTOM_SALAD_PRODUCT.description,
-    base_price: Number(targetProduct.base_price ?? CUSTOM_SALAD_PRODUCT.base_price),
-    customer_price: Number(targetProduct.customer_price ?? CUSTOM_SALAD_PRODUCT.customer_price),
+    description: canonicalProduct.description?.trim() ? canonicalProduct.description : CUSTOM_SALAD_PRODUCT.description,
+    base_price: Number(canonicalProduct.base_price ?? CUSTOM_SALAD_PRODUCT.base_price),
+    customer_price: Number(canonicalProduct.customer_price ?? CUSTOM_SALAD_PRODUCT.customer_price),
     active: true,
     sort_order: CUSTOM_SALAD_PRODUCT.sort_order,
     product_type: CUSTOM_SALAD_PRODUCT.product_type
@@ -72,7 +73,7 @@ export async function ensureCustomSaladProduct(supabase: SupabaseClient) {
   const { error: updateError } = await supabase
     .from("products")
     .update(updatePayload)
-    .eq("id", targetProduct.id);
+    .eq("id", canonicalProduct.id);
 
   return updateError?.message ?? null;
 }

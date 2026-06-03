@@ -5,7 +5,7 @@ import {
   CUSTOM_SALAD_PRODUCT_ID,
   buildPublicCatalogSections,
   getVisibleCatalogCategories,
-  isCustomSaladCatalogProduct,
+  isCustomSaladAliasProduct,
   mergeCatalogDefaults
 } from "@/lib/catalog";
 import { ensureCustomSaladProduct } from "@/lib/catalog-maintenance";
@@ -16,6 +16,26 @@ import type { Category, Product, ProductDraft } from "@/lib/types";
 export const dynamic = "force-dynamic";
 
 type SupabaseAdminClient = NonNullable<ReturnType<typeof getSupabaseAdminClient>>;
+
+async function ensureDefaultProductIdentities(supabase: SupabaseAdminClient) {
+  for (const product of PRODUCTS) {
+    const { error } = await supabase
+      .from("products")
+      .update({
+        category_id: product.category_id,
+        name: product.name,
+        sort_order: product.sort_order,
+        product_type: product.product_type
+      })
+      .eq("id", product.id);
+
+    if (error) {
+      return error.message;
+    }
+  }
+
+  return null;
+}
 
 async function ensureDefaultCatalogRows(supabase: SupabaseAdminClient) {
   const [categories, products] = await Promise.all([
@@ -29,9 +49,7 @@ async function ensureDefaultCatalogRows(supabase: SupabaseAdminClient) {
 
   const categoryIds = new Set((categories.data ?? []).map((category) => String(category.id)));
   const productIds = new Set((products.data ?? []).map((product) => String(product.id)));
-  const hasCustomSaladAlias = ((products.data ?? []) as Array<{ id: string; name: string }>).some(
-    (product) => product.id !== CUSTOM_SALAD_PRODUCT_ID && isCustomSaladCatalogProduct(product)
-  );
+  const hasCustomSaladAlias = ((products.data ?? []) as Array<{ id: string; name: string }>).some(isCustomSaladAliasProduct);
   const missingCategories = CATEGORIES.filter((category) => !categoryIds.has(category.id));
   const missingProducts = PRODUCTS.filter(
     (product) => !productIds.has(product.id) && !(product.id === CUSTOM_SALAD_PRODUCT_ID && hasCustomSaladAlias)
@@ -51,6 +69,12 @@ async function ensureDefaultCatalogRows(supabase: SupabaseAdminClient) {
     if (error) {
       return error.message;
     }
+  }
+
+  const identityError = await ensureDefaultProductIdentities(supabase);
+
+  if (identityError) {
+    return identityError;
   }
 
   const customSaladError = await ensureCustomSaladProduct(supabase);
@@ -73,15 +97,25 @@ function buildAdminCatalogPayload(categories: Category[], products: Product[]) {
     ])
   );
 
+  const adminProducts = visibleSections.flatMap((section) => {
+    const categoryId = categoryIdBySectionSlug.get(section.slug);
+
+    return section.products.map((product) => ({
+      ...product,
+      category_id: categoryId ?? product.category_id
+    }));
+  });
+  const seenProductIds = new Set<string>();
+
   return {
     categories: getVisibleCatalogCategories(mergedCatalog.categories),
-    products: visibleSections.flatMap((section) => {
-      const categoryId = categoryIdBySectionSlug.get(section.slug);
+    products: adminProducts.filter((product) => {
+      if (seenProductIds.has(product.id)) {
+        return false;
+      }
 
-      return section.products.map((product) => ({
-        ...product,
-        category_id: categoryId ?? product.category_id
-      }));
+      seenProductIds.add(product.id);
+      return true;
     })
   };
 }

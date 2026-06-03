@@ -2,6 +2,7 @@ import { CATEGORIES, PRODUCTS } from "@/lib/constants";
 import type { Category, Product } from "@/lib/types";
 
 export const CUSTOM_SALAD_PRODUCT_ID = "f4542750-92e9-4a8d-aa9c-3a9f5d5fbebd";
+const DEFAULT_PRODUCT_IDS = new Set(PRODUCTS.map((product) => product.id));
 
 const SIGNATURE_BOWL_PRODUCT_IDS = {
   caesar: "508060cf-b36f-4ae5-92bd-989954034da3",
@@ -132,6 +133,10 @@ export function isCustomSaladCatalogProduct(product: Pick<Product, "name">) {
   );
 }
 
+export function isCustomSaladAliasProduct(product: Pick<Product, "id" | "name">) {
+  return product.id !== CUSTOM_SALAD_PRODUCT_ID && !DEFAULT_PRODUCT_IDS.has(product.id) && isCustomSaladCatalogProduct(product);
+}
+
 export function isCustomWrapProduct(product: Product) {
   const name = normalizeCatalogText(product.name);
 
@@ -176,9 +181,7 @@ export function mergeCatalogDefaults(categories: Category[], products: Product[]
   const categoriesById = new Map(CATEGORIES.map((category) => [category.id, category]));
   const productsById = new Map(PRODUCTS.map((product) => [product.id, product]));
   const dbProductIds = new Set(products.map((product) => product.id));
-  const customSaladAlias = products.find(
-    (product) => product.id !== CUSTOM_SALAD_PRODUCT_ID && isCustomSaladCatalogProduct(product)
-  );
+  const customSaladAlias = products.find(isCustomSaladAliasProduct);
 
   for (const category of categories) {
     const defaultCategory = categoriesById.get(category.id);
@@ -188,7 +191,7 @@ export function mergeCatalogDefaults(categories: Category[], products: Product[]
 
   for (const product of products) {
     const defaultProduct = productsById.get(product.id);
-    const forceActive = product.id === CUSTOM_SALAD_PRODUCT_ID || isCustomSaladCatalogProduct(product);
+    const forceActive = product.id === CUSTOM_SALAD_PRODUCT_ID || isCustomSaladAliasProduct(product);
 
     productsById.set(
       product.id,
@@ -244,7 +247,13 @@ function cloneCatalogProduct(
 
   return {
     ...product,
-    ...overrides
+    name: overrides.name ?? product.name,
+    description: product.description?.trim() ? product.description : overrides.description ?? product.description,
+    base_price: Number.isFinite(Number(product.base_price)) ? Number(product.base_price) : Number(overrides.base_price ?? 0),
+    customer_price: Number.isFinite(Number(product.customer_price))
+      ? Number(product.customer_price)
+      : Number(overrides.customer_price ?? overrides.base_price ?? 0),
+    product_type: overrides.product_type ?? product.product_type
   };
 }
 
@@ -273,12 +282,13 @@ function pickProductByIdOrName(products: Product[], id: string, matcher: (produc
 }
 
 function pickCustomSaladProduct(products: Product[]) {
-  const candidates = products.filter(isCustomSaladCatalogProduct);
+  const canonicalProduct = products.find((product) => product.id === CUSTOM_SALAD_PRODUCT_ID);
+  const aliasProducts = products.filter(isCustomSaladAliasProduct);
 
   return (
-    candidates.find((product) => product.id !== CUSTOM_SALAD_PRODUCT_ID && Boolean(product.image_url)) ??
-    candidates.find((product) => product.id === CUSTOM_SALAD_PRODUCT_ID) ??
-    candidates[0]
+    canonicalProduct ??
+    aliasProducts.find((product) => Boolean(product.image_url)) ??
+    aliasProducts[0]
   );
 }
 
