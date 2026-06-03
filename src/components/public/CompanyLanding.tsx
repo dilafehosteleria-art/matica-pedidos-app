@@ -5,12 +5,12 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useMemo, useState } from "react";
 import { formatCurrency } from "@/lib/format";
+import { resolvePublicProductImageUrl } from "@/lib/public-product-images";
 import type { Product, PublicCompany } from "@/lib/types";
 
 type LandingProduct = Pick<Product, "id" | "name" | "description" | "base_price" | "image_url">;
 
-const WHATSAPP_URL =
-  "https://wa.me/34674323152?text=Hola,%20quiero%20informaci%C3%B3n%20sobre%20el%20servicio%20de%20pedidos%20para%20empresas";
+const WHATSAPP_URL = "https://wa.me/34674323152";
 const EMAIL_URL = "mailto:pedidomatica@gmail.com?subject=Alta%20empresa%20Matica%20B2B";
 
 export function CompanyLanding({
@@ -38,20 +38,23 @@ export function CompanyLanding({
       <section className="relative overflow-hidden border-b border-matica-line bg-white">
         <div className="absolute inset-x-0 top-0 h-56 bg-matica-mint/70" aria-hidden="true" />
         <div className="relative mx-auto grid min-h-[720px] max-w-7xl content-start gap-7 px-4 py-6 sm:px-6 sm:py-10 lg:grid-cols-[minmax(0,1fr)_410px] lg:items-center lg:gap-10 lg:px-8">
-          <div>
+          <div className="order-2 lg:order-1">
             <div className="inline-flex items-center gap-2 rounded-lg bg-white px-3 py-2 text-sm font-black text-matica-green shadow-sm">
               <Leaf className="h-5 w-5" />
               Matica Fresh Food para empresas
             </div>
             <h1 className="mt-4 max-w-3xl text-4xl font-black leading-[1.04] tracking-normal sm:text-6xl">
-              La forma más fácil de pedir tu comida cada día
+              Comida fresca para tu empresa, lista cada mediodía
             </h1>
-            <p className="mt-4 max-w-2xl text-lg font-bold leading-8 text-matica-ink/72 sm:text-xl">
-              Comida fresca preparada cada mañana y entregada directamente en tu empresa.
-            </p>
-            <p className="mt-3 max-w-xl text-base font-semibold leading-7 text-matica-ink/62 sm:text-lg">
-              Menús, ensaladas, bowls y wraps listos para disfrutar a mediodía.
-            </p>
+            <div className="mt-4 max-w-2xl space-y-3 text-lg font-bold leading-8 text-matica-ink/72 sm:text-xl">
+              <p>Nuestra app de comida para empresas y oficinas.</p>
+              <p>Menú del día, buffet de ensaladas, bowls, wraps, bocadillos y mucho más.</p>
+              <p>Preparado cada mañana y entregado directamente en tu empresa.</p>
+            </div>
+
+            <div className="mt-5 rounded-lg border border-matica-green/20 bg-matica-mint px-4 py-3 text-sm font-black leading-6 text-matica-green shadow-sm sm:text-base">
+              Pedidos de lunes a viernes de 09:30 a 12:30 · Entrega en tu empresa de 13:00 a 13:30
+            </div>
 
             <div className="mt-6 flex flex-col gap-3 sm:flex-row">
               <Link
@@ -66,14 +69,14 @@ export function CompanyLanding({
                 href={EMAIL_URL}
               >
                 <Mail className="h-5 w-5" />
-                Da de alta tu empresa
+                Solicitar información
               </a>
             </div>
 
             <div className="mt-6 flex flex-wrap gap-2 text-sm font-black text-matica-ink/62">
-              <span className="rounded-full bg-white px-3 py-2 shadow-sm">Pedido online</span>
-              <span className="rounded-full bg-white px-3 py-2 shadow-sm">Entrega en oficina</span>
-              <span className="rounded-full bg-white px-3 py-2 shadow-sm">Carta fresca cada día</span>
+              <span className="rounded-full bg-white px-3 py-2 shadow-sm">Menú del día</span>
+              <span className="rounded-full bg-white px-3 py-2 shadow-sm">Bowls y ensaladas</span>
+              <span className="rounded-full bg-white px-3 py-2 shadow-sm">Entrega en tu empresa</span>
             </div>
 
             {previewProducts.length ? (
@@ -93,7 +96,7 @@ export function CompanyLanding({
             )}
           </div>
 
-          <form className="rounded-lg border border-matica-line bg-white p-4 shadow-soft sm:p-5" onSubmit={submit}>
+          <form className="order-1 rounded-lg border border-matica-line bg-white p-4 shadow-soft sm:p-5 lg:order-2" onSubmit={submit}>
             <div className="grid h-10 w-10 place-items-center rounded-lg bg-matica-mint text-matica-green sm:h-12 sm:w-12">
               <ShoppingBag className="h-5 w-5 sm:h-6 sm:w-6" />
             </div>
@@ -127,21 +130,6 @@ export function CompanyLanding({
               Empezar pedido
             </button>
 
-            <Link
-              className="matica-focus mt-3 flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-matica-line bg-white px-4 text-sm font-black text-matica-ink hover:border-matica-green hover:text-matica-green"
-              href="/carta"
-            >
-              <Utensils className="h-4 w-4" />
-              Ver nuestra carta
-            </Link>
-
-            <a
-              className="matica-focus mt-2 flex min-h-9 w-full items-center justify-center gap-2 rounded-lg px-4 text-sm font-bold text-matica-ink/60 hover:text-matica-green"
-              href={EMAIL_URL}
-            >
-              <Mail className="h-4 w-4" />
-              Da de alta tu empresa
-            </a>
           </form>
         </div>
       </section>
@@ -158,7 +146,7 @@ export function CompanyLanding({
                 ¿Quieres ofrecer este servicio en tu empresa?
               </h2>
               <p className="mt-3 max-w-3xl text-base font-semibold leading-7 text-matica-ink/65 sm:text-lg">
-                Damos de alta empresas para que sus empleados puedan realizar pedidos online de forma rápida y sencilla.
+                Contacta con nosotros y activaremos tu empresa para que tus empleados puedan realizar sus pedidos de comida diaria de forma rápida y cómoda.
               </p>
             </div>
 
@@ -204,11 +192,13 @@ export function CompanyLanding({
 }
 
 function ProductPreview({ product }: { product: LandingProduct }) {
+  const imageUrl = resolvePublicProductImageUrl(product);
+
   return (
     <article className="overflow-hidden rounded-lg border border-white/70 bg-white shadow-sm">
       <div className="aspect-[4/3] bg-matica-soft">
-        {product.image_url ? (
-          <img className="h-full w-full object-cover object-center" src={product.image_url} alt={product.name} />
+        {imageUrl ? (
+          <img className="h-full w-full object-cover object-center" src={imageUrl} alt={product.name} />
         ) : (
           <div className="grid h-full place-items-center bg-gradient-to-br from-matica-mint via-white to-matica-soft text-matica-green">
             <Utensils className="h-7 w-7" />

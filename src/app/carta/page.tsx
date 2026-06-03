@@ -1,28 +1,245 @@
 import { ArrowLeft, Leaf, Mail, MessageCircle, Sparkles, Utensils } from "lucide-react";
-import Link from "next/link";
 import type { Metadata } from "next";
+import Link from "next/link";
 import { buildPublicCatalogSections, normalizeCatalogText } from "@/lib/catalog";
 import { formatCurrency } from "@/lib/format";
 import { getPublicCompanyData } from "@/lib/public-data";
+import { resolvePublicProductImageUrl } from "@/lib/public-product-images";
 import type { Product } from "@/lib/types";
 
 export const metadata: Metadata = {
   title: "Carta Matica | Comida para empresas",
-  description: "Carta pública de Matica Fresh Food para empresas: menús, bowls, wraps y ensaladas."
+  description: "Carta pública de Matica Fresh Food para empresas: menús, bowls, wraps, ensaladas y opciones rápidas."
 };
 
-type CommercialProduct = Pick<Product, "id" | "name" | "description" | "base_price" | "image_url" | "product_type">;
+const WHATSAPP_URL = "https://wa.me/34674323152";
+const EMAIL_URL = "mailto:pedidomatica@gmail.com?subject=Alta%20empresa%20Matica%20B2B";
 
-type CommercialSection = {
+type CommercialProductDefinition = {
+  id: string;
+  name: string;
+  description: string;
+  price: number;
+  pricePrefix?: "desde";
+  imageProductId: string;
+  imageProductName?: string;
+};
+
+type CommercialProduct = CommercialProductDefinition & {
+  image_url: string | null;
+};
+
+type CommercialSectionDefinition = {
   slug: string;
   title: string;
   description: string;
+  products: CommercialProductDefinition[];
+};
+
+type CommercialSection = Omit<CommercialSectionDefinition, "products"> & {
   products: CommercialProduct[];
 };
 
-const WHATSAPP_URL =
-  "https://wa.me/34674323152?text=Hola,%20quiero%20informaci%C3%B3n%20sobre%20el%20servicio%20de%20pedidos%20para%20empresas";
-const EMAIL_URL = "mailto:pedidomatica@gmail.com?subject=Alta%20empresa%20Matica%20B2B";
+const PRODUCT_IDS = {
+  dailyMenu: "e0cc5cbb-9170-4df3-a07a-8d8a76fa36d3",
+  halfMenu: "fe6a9ab8-f7a4-4f29-9606-3a4213816eb5",
+  saladSandwichMenu: "55cae0d1-1d44-4dcb-96fb-a1dc05c74511",
+  caesarBowl: "508060cf-b36f-4ae5-92bd-989954034da3",
+  mediterraneanBowl: "9e62560b-9633-4743-877c-3c387d044d3f",
+  texMexBowl: "16eff41e-86d0-4d05-a19b-7fd977fcd4ee",
+  greenBowl: "7c53ddc4-67cc-4a30-9f46-111ef6344c4a",
+  customSalad: "f4542750-92e9-4a8d-aa9c-3a9f5d5fbebd",
+  caesarWrap: "f42ace28-8bbb-48a2-b4af-18bf4fa74606",
+  texMexWrap: "d8e39218-2a10-4f21-8b5f-b2089300c911",
+  freshWrap: "3191e6e9-34ed-4468-8cfe-bb825e963c97",
+  mediterraneanWrap: "4f0b8a09-ea54-44c1-b215-d914d204b7fd",
+  customWrap: "b0c4026f-b520-4202-b206-320dc152607a",
+  grill: "fa921f79-4917-48b6-a25f-20cf7f3a55ca",
+  sandwich: "ef86e12e-9dc5-4646-b2f2-50977d21f2cc",
+  drink: "d7d6e225-1156-4d66-9d4e-afad4147fb5e",
+  dessert: "d93d5c58-2200-43d8-9c16-ed4b3d291006"
+} as const;
+
+const COMMERCIAL_SECTIONS: CommercialSectionDefinition[] = [
+  {
+    slug: "menus",
+    title: "Menús",
+    description: "Formatos completos y rápidos para comer bien en la oficina.",
+    products: [
+      {
+        id: "public-daily-menu",
+        imageProductId: PRODUCT_IDS.dailyMenu,
+        name: "Menú del día",
+        description: "Primer plato, segundo plato y bebida o postre.",
+        price: 13
+      },
+      {
+        id: "public-half-menu",
+        imageProductId: PRODUCT_IDS.halfMenu,
+        name: "Medio menú",
+        description: "Un plato y bebida o postre.",
+        price: 10
+      },
+      {
+        id: "public-salad-sandwich-menu",
+        imageProductId: PRODUCT_IDS.saladSandwichMenu,
+        name: "Menú ensalada pequeña + bocadillo",
+        description: "Ensalada pequeña 750ML configurable y bocadillo a elegir.",
+        price: 10
+      }
+    ]
+  },
+  {
+    slug: "bowls-signature",
+    title: "Bowls Signature",
+    description: "Recetas frescas, completas y listas para disfrutar a mediodía.",
+    products: [
+      {
+        id: "public-caesar-bowl",
+        imageProductId: PRODUCT_IDS.caesarBowl,
+        name: "Caesar Crunch Chicken Bowl",
+        description:
+          "Mézclum fresco y fusilli al dente con pollo crispy, tomate, huevo, lascas de parmesano y cebolla crujiente, con salsa César parmesana.",
+        price: 9.9
+      },
+      {
+        id: "public-mediterranean-bowl",
+        imageProductId: PRODUCT_IDS.mediterraneanBowl,
+        name: "Mediterranean Fresh Bowl",
+        description: "Quinoa y espinaca fresca con atún, pepino, aceitunas, queso fresco y garbanzos, con vinagreta balsámica.",
+        price: 9.9
+      },
+      {
+        id: "public-tex-mex-bowl",
+        imageProductId: PRODUCT_IDS.texMexBowl,
+        name: "Tex-Mex Protein Bowl",
+        description: "Arroz jazmín y mézclum fresco con cerdo asado, maíz, cebolla, pimientos y huevo, con salsa de mostaza y miel.",
+        price: 9.9
+      },
+      {
+        id: "public-green-bowl",
+        imageProductId: PRODUCT_IDS.greenBowl,
+        name: "Green Fresh Bowl",
+        description:
+          "Espinaca fresca y arroz integral con pollo a la plancha, pepino, zanahoria, frutos secos y queso fresco, con salsa yogur-limón.",
+        price: 9.9
+      },
+      {
+        id: "public-custom-salad",
+        imageProductId: PRODUCT_IDS.customSalad,
+        name: "Diseña tu ensalada",
+        description: "Elige tamaño, base, proteína, toppings y aliño.",
+        price: 7.5,
+        pricePrefix: "desde"
+      }
+    ]
+  },
+  {
+    slug: "wraps-signature",
+    title: "Wraps Signature",
+    description: "Wraps sabrosos y fáciles de comer, pensados para el ritmo de oficina.",
+    products: [
+      {
+        id: "public-caesar-wrap",
+        imageProductId: PRODUCT_IDS.caesarWrap,
+        name: "Wrap Caesar Crunch",
+        description: "Pollo crispy, mézclum, tomate, parmesano y salsa César.",
+        price: 8.9
+      },
+      {
+        id: "public-tex-mex-wrap",
+        imageProductId: PRODUCT_IDS.texMexWrap,
+        name: "Wrap Tex-Mex Pork",
+        description: "Cerdo especiado, arroz, maíz y salsa chipotle suave.",
+        price: 8.9
+      },
+      {
+        id: "public-fresh-wrap",
+        imageProductId: PRODUCT_IDS.freshWrap,
+        name: "Wrap Fresh Chicken",
+        description: "Pollo, mézclum, tomate, zanahoria y salsa de yogur.",
+        price: 8.9
+      },
+      {
+        id: "public-mediterranean-wrap",
+        imageProductId: PRODUCT_IDS.mediterraneanWrap,
+        name: "Wrap Mediterranean Tuna",
+        description: "Atún, queso fresco, pepino, aceitunas y salsa yogur-limón.",
+        price: 8.9
+      },
+      {
+        id: "public-custom-wrap",
+        imageProductId: PRODUCT_IDS.customWrap,
+        name: "Diseña tu wrap",
+        description: "Elige base, proteína, relleno, toppings y salsa.",
+        price: 8.9,
+        pricePrefix: "desde"
+      }
+    ]
+  },
+  {
+    slug: "matica-grill",
+    title: "Matica Grill",
+    description: "Platos combinados con proteína, guarniciones y acompañamiento.",
+    products: [
+      {
+        id: "public-grill",
+        imageProductId: PRODUCT_IDS.grill,
+        name: "Platos combinados Matica",
+        description:
+          "Escoge entre pollo a la plancha, lomo de cerdo o filete de ternera + 1 huevo frito + 2 guarniciones + bebida o postre + pan.",
+        price: 10
+      }
+    ]
+  },
+  {
+    slug: "bocadillos",
+    title: "Bocadillos",
+    description: "Opciones sencillas y rápidas con pan crujiente.",
+    products: [
+      {
+        id: "public-sandwich",
+        imageProductId: PRODUCT_IDS.sandwich,
+        name: "Escoge tu bocadillo",
+        description: "Pan crujiente con relleno a elegir.",
+        price: 5.5,
+        pricePrefix: "desde"
+      }
+    ]
+  },
+  {
+    slug: "bebidas",
+    title: "Bebidas",
+    description: "Bebidas frías para completar la comida.",
+    products: [
+      {
+        id: "public-drink",
+        imageProductId: PRODUCT_IDS.drink,
+        imageProductName: "Escoge tu bebida",
+        name: "Escoge tu bebida",
+        description: "Agua, refrescos y bebidas frías.",
+        price: 1.5,
+        pricePrefix: "desde"
+      }
+    ]
+  },
+  {
+    slug: "postres",
+    title: "Postres",
+    description: "Postres y fruta para cerrar la comida.",
+    products: [
+      {
+        id: "public-dessert",
+        imageProductId: PRODUCT_IDS.dessert,
+        imageProductName: "Escoge tu postre",
+        name: "Escoge tu postre",
+        description: "Flan, yogur, natillas, fruta, flan de queso o cookie.",
+        price: 1,
+        pricePrefix: "desde"
+      }
+    ]
+  }
+];
 
 export default async function PublicMenuPage() {
   const data = await getPublicCompanyData("bureau-veritas");
@@ -47,7 +264,7 @@ export default async function PublicMenuPage() {
                 Comida fresca para disfrutar en la oficina
               </h1>
               <p className="mt-4 max-w-2xl text-base font-semibold leading-7 text-matica-ink/65 sm:text-lg">
-                Consulta la oferta de Matica para empresas. Esta página es informativa: no muestra subvenciones, precios especiales ni botones de compra.
+                Consulta la oferta de Matica para empresas. Solo imagen, nombre, descripción y precio público, sin datos internos ni compra online.
               </p>
             </div>
             <div className="rounded-lg border border-matica-line bg-matica-soft p-4">
@@ -108,21 +325,11 @@ export default async function PublicMenuPage() {
               </div>
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 {section.products.map((product) => (
-                  <PublicMenuCard key={`${section.slug}-${product.id}-${product.name}`} product={product} />
+                  <PublicMenuCard key={product.id} product={product} />
                 ))}
               </div>
             </section>
           ))}
-
-          {!sections.length ? (
-            <div className="rounded-lg border border-matica-line bg-white p-6 text-center shadow-sm">
-              <Utensils className="mx-auto h-8 w-8 text-matica-green" />
-              <h2 className="mt-3 text-2xl font-black">Carta no disponible</h2>
-              <p className="mt-1 text-sm font-semibold text-matica-ink/60">
-                Ahora mismo no se pudo cargar la carta pública.
-              </p>
-            </div>
-          ) : null}
         </div>
 
         <section className="mt-12 rounded-lg border border-matica-line bg-white p-5 shadow-sm sm:p-7">
@@ -158,66 +365,27 @@ export default async function PublicMenuPage() {
   );
 }
 
-function buildCommercialSections(publicSections: { slug: string; products: Product[] }[]): CommercialSection[] {
-  const sectionProducts = (slug: string) => publicSections.find((section) => section.slug === slug)?.products ?? [];
-  const menus = sectionProducts("menus");
-  const grill = sectionProducts("matica-grill");
-  const bowls = sectionProducts("bowls-signature");
-  const wraps = sectionProducts("wraps-signature");
-  const dailyMenus = menus.filter((product) => product.product_type === "daily_menu" || product.product_type === "half_menu");
-  const menuSalad = menus.filter((product) => normalizeCatalogText(product.name).includes("ensalada"));
-  const customSalad = bowls.find((product) => normalizeCatalogText(product.name).includes("disena"));
-  const signatureBowls = bowls.filter((product) => product.id !== customSalad?.id);
+function buildCommercialSections(publicSections: { products: Product[] }[]): CommercialSection[] {
+  const products = publicSections.flatMap((section) => section.products);
+  const imageById = new Map(products.map((product) => [product.id, resolvePublicProductImageUrl(product)]));
+  const imageByName = new Map(products.map((product) => [normalizeCatalogText(product.name), resolvePublicProductImageUrl(product)]));
 
-  return [
-    {
-      slug: "menu-del-dia",
-      title: "Menú del día",
-      description: "Opciones completas para comer bien a mediodía, con plato principal y bebida o postre.",
-      products: dailyMenus
-    },
-    {
-      slug: "menu-ejecutivo",
-      title: "Menú Ejecutivo",
-      description: "Platos combinados y formatos prácticos para jornadas de oficina.",
-      products: [...grill, ...menuSalad]
-    },
-    {
-      slug: "bowls-signature",
-      title: "Bowls Signature",
-      description: "Recetas Matica equilibradas, frescas y listas para tomar.",
-      products: signatureBowls
-    },
-    {
-      slug: "disena-tu-bowl",
-      title: "Diseña tu bowl",
-      description: "Elige base, proteína, toppings y aliño para montar una opción fresca a tu gusto.",
-      products: customSalad
-        ? [
-            {
-              ...customSalad,
-              name: "Diseña tu bowl",
-              description: "Elige base, proteína, toppings y aliño para crear tu bowl o ensalada a medida."
-            }
-          ]
-        : []
-    },
-    {
-      slug: "wraps",
-      title: "Wraps",
-      description: "Wraps completos, fáciles de comer y pensados para el ritmo de la oficina.",
-      products: wraps
-    },
-    {
-      slug: "ensaladas-personalizadas",
-      title: "Ensaladas personalizadas",
-      description: "Combina bases, proteína, toppings y salsa para una ensalada fresca a tu manera.",
-      products: customSalad ? [customSalad] : []
-    }
-  ].filter((section) => section.products.length > 0);
+  return COMMERCIAL_SECTIONS.map((section) => ({
+    ...section,
+    products: section.products.map((product) => ({
+      ...product,
+      image_url:
+        imageById.get(product.imageProductId) ??
+        (product.imageProductName ? imageByName.get(normalizeCatalogText(product.imageProductName)) : undefined) ??
+        imageByName.get(normalizeCatalogText(product.name)) ??
+        null
+    }))
+  }));
 }
 
 function PublicMenuCard({ product }: { product: CommercialProduct }) {
+  const price = `${product.pricePrefix ? `${product.pricePrefix} ` : ""}${formatCurrency(product.price)}`;
+
   return (
     <article className="overflow-hidden rounded-lg border border-matica-line bg-white shadow-sm">
       <div className="aspect-[4/3] bg-matica-soft">
@@ -232,13 +400,9 @@ function PublicMenuCard({ product }: { product: CommercialProduct }) {
       <div className="p-4">
         <div className="flex items-start justify-between gap-3">
           <h3 className="text-lg font-black leading-6">{product.name}</h3>
-          <p className="shrink-0 text-base font-black text-matica-green">{formatCurrency(Number(product.base_price))}</p>
+          <p className="shrink-0 text-base font-black text-matica-green">{price}</p>
         </div>
-        {product.description ? (
-          <p className="mt-2 line-clamp-3 text-sm font-semibold leading-5 text-matica-ink/62">
-            {product.description}
-          </p>
-        ) : null}
+        <p className="mt-2 text-sm font-semibold leading-5 text-matica-ink/62">{product.description}</p>
       </div>
     </article>
   );
