@@ -7,11 +7,24 @@ import {
   PRODUCTS
 } from "@/lib/constants";
 import { mergeCatalogDefaults } from "@/lib/catalog";
-import { ensureCustomSaladProduct } from "@/lib/catalog-maintenance";
 import { toDateInputValue } from "@/lib/format";
 import { publicStripePaymentsEnabled } from "@/lib/payment";
-import { getSupabaseAdminClient, getSupabaseServerClient } from "@/lib/supabase/server";
-import type { DailyMenu, DailyMenuCourse, PublicCompany, PublicData } from "@/lib/types";
+import { getSupabaseServerClient } from "@/lib/supabase/server";
+import type { DailyMenu, DailyMenuCourse, Product, PublicCompany, PublicData } from "@/lib/types";
+
+export const LANDING_FEATURED_PRODUCT_IDS = [
+  "e0cc5cbb-9170-4df3-a07a-8d8a76fa36d3",
+  "fe6a9ab8-f7a4-4f29-9606-3a4213816eb5",
+  "55cae0d1-1d44-4dcb-96fb-a1dc05c74511",
+  "508060cf-b36f-4ae5-92bd-989954034da3"
+];
+
+const COMPANY_PUBLIC_FIELDS = "id,name,slug,active,order_window,delivery_window";
+const COMPANY_FIELDS = "id,name,slug,order_window,delivery_window,allow_pay_on_delivery,allow_card_payment,allow_bizum_payment,active,created_at";
+const BRANCH_FIELDS = "id,company_id,name,active";
+const CATEGORY_FIELDS = "id,name,slug,sort_order,active";
+const PRODUCT_FIELDS = "id,category_id,name,description,base_price,customer_price,image_url,active,sold_out,sort_order,product_type,created_at";
+const DAILY_MENU_FIELDS = "id,date,first_courses,second_courses,drinks,desserts,active,created_at";
 
 function normalizeCourse(course: DailyMenuCourse): DailyMenuCourse | null {
   if (typeof course === "string") {
@@ -80,7 +93,7 @@ export async function getPublicCompanies(): Promise<PublicCompany[]> {
 
   const { data, error } = await supabase
     .from("companies")
-    .select("*")
+    .select(COMPANY_PUBLIC_FIELDS)
     .eq("active", true)
     .order("name", { ascending: true });
 
@@ -91,6 +104,39 @@ export async function getPublicCompanies(): Promise<PublicCompany[]> {
   return data as PublicCompany[];
 }
 
+function orderFeaturedProducts(products: Product[], productIds: string[]) {
+  const productsById = new Map(products.map((product) => [product.id, product]));
+
+  return productIds.flatMap((productId) => {
+    const product = productsById.get(productId);
+
+    return product && product.active && !product.sold_out ? [product] : [];
+  });
+}
+
+export async function getPublicFeaturedProducts(
+  productIds = LANDING_FEATURED_PRODUCT_IDS
+): Promise<Product[]> {
+  const supabase = getSupabaseServerClient();
+
+  if (!supabase) {
+    return orderFeaturedProducts(PRODUCTS, productIds);
+  }
+
+  const { data, error } = await supabase
+    .from("products")
+    .select(PRODUCT_FIELDS)
+    .in("id", productIds)
+    .eq("active", true)
+    .eq("sold_out", false);
+
+  if (error || !data?.length) {
+    return orderFeaturedProducts(PRODUCTS, productIds);
+  }
+
+  return orderFeaturedProducts(data as Product[], productIds);
+}
+
 export async function getPublicCompanyData(slug: string): Promise<PublicData | null> {
   const fallback = seedCompanyData(slug);
   const supabase = getSupabaseServerClient();
@@ -99,57 +145,53 @@ export async function getPublicCompanyData(slug: string): Promise<PublicData | n
     return fallback;
   }
 
-  const { data: company, error: companyError } = await supabase
+  const today = toDateInputValue();
+  const companyQuery = supabase
     .from("companies")
-    .select("*")
+    .select(COMPANY_FIELDS)
     .eq("slug", slug)
     .eq("active", true)
     .maybeSingle();
+  const categoriesQuery = supabase
+    .from("categories")
+    .select(CATEGORY_FIELDS)
+    .order("sort_order", { ascending: true });
+  const productsQuery = supabase
+    .from("products")
+    .select(PRODUCT_FIELDS)
+    .order("sort_order", { ascending: true });
+  const todaysMenuQuery = supabase
+    .from("daily_menus")
+    .select(DAILY_MENU_FIELDS)
+    .eq("date", today)
+    .eq("active", true)
+    .maybeSingle();
+
+  const [companyResult, categories, products, todaysMenu] = await Promise.all([
+    companyQuery,
+    categoriesQuery,
+    productsQuery,
+    todaysMenuQuery
+  ]);
+  const { data: company, error: companyError } = companyResult;
 
   if (companyError || !company) {
     return fallback;
   }
 
-  const today = toDateInputValue();
-  const adminSupabase = getSupabaseAdminClient();
-
-  if (adminSupabase) {
-    const customSaladError = await ensureCustomSaladProduct(adminSupabase);
-
-    if (customSaladError) {
-      console.warn("No se pudo asegurar la ensalada configurable:", customSaladError);
-    }
-  }
-
-  const [branches, categories, products, todaysMenu] = await Promise.all([
-    supabase
-      .from("company_branches")
-      .select("*")
-      .eq("company_id", company.id)
-      .eq("active", true)
-      .order("name", { ascending: true }),
-    supabase
-      .from("categories")
-      .select("*")
-      .order("sort_order", { ascending: true }),
-    supabase
-      .from("products")
-      .select("*")
-      .order("sort_order", { ascending: true }),
-    supabase
-      .from("daily_menus")
-      .select("*")
-      .eq("date", today)
-      .eq("active", true)
-      .maybeSingle()
-  ]);
+  const branches = await supabase
+    .from("company_branches")
+    .select(BRANCH_FIELDS)
+    .eq("company_id", company.id)
+    .eq("active", true)
+    .order("name", { ascending: true });
 
   let dailyMenu = todaysMenu.data as DailyMenu | null;
 
   if (!dailyMenu) {
     const { data } = await supabase
       .from("daily_menus")
-      .select("*")
+      .select(DAILY_MENU_FIELDS)
       .eq("active", true)
       .order("date", { ascending: false })
       .limit(1)

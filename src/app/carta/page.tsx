@@ -390,7 +390,14 @@ function PublicMenuCard({ product }: { product: CommercialProduct }) {
     <article className="overflow-hidden rounded-lg border border-matica-line bg-white shadow-sm">
       <div className="aspect-[4/3] bg-matica-soft">
         {product.image_url ? (
-          <img className="h-full w-full object-cover object-center" src={product.image_url} alt={product.name} />
+          <img
+            className="h-full w-full object-cover object-center"
+            src={product.image_url}
+            alt={product.name}
+            decoding="async"
+            loading="lazy"
+            sizes="(max-width: 640px) 100vw, (max-width: 1280px) 50vw, 33vw"
+          />
         ) : (
           <div className="grid h-full place-items-center bg-gradient-to-br from-matica-mint via-white to-matica-soft text-matica-green">
             <Utensils className="h-8 w-8" />

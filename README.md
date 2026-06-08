@@ -52,6 +52,7 @@ El admin de productos sube imagenes a Supabase Storage en el bucket `product-ima
 - Si Supabase no permite crearlo automaticamente, crealo manualmente en `Storage > New bucket` con nombre `product-images` y opcion `Public bucket` activada.
 - Las subidas se hacen desde `/api/admin/products/images`, protegidas por `ADMIN_PIN` y usando `SUPABASE_SERVICE_ROLE_KEY` solo en servidor.
 - El panel guarda la URL publica resultante en `products.image_url`, que es la imagen usada por la carta publica.
+- Para rendimiento en movil, se recomienda subir imagenes `webp` o `jpg` de 800-1000 px de ancho como maximo, idealmente por debajo de 300 KB por imagen.
 
 ## Desarrollo local
 

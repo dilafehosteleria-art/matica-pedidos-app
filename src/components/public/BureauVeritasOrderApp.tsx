@@ -921,12 +921,13 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
                     </div>
                   </div>
                   <div className="grid gap-2.5 sm:gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                    {section.products.map((product) => (
+                    {section.products.map((product, productIndex) => (
                       <ProductCard
                         key={`${section.slug}-${product.id}-${product.name}`}
                         product={product}
                         section={section}
                         menu={data.dailyMenu}
+                        eagerImage={index === 0 && productIndex < 3}
                         onOpen={() => setConfiguring({ product, section })}
                       />
                     ))}
@@ -1046,11 +1047,13 @@ function ProductCard({
   product,
   section,
   menu,
+  eagerImage = false,
   onOpen
 }: {
   product: Product;
   section: PublicSection;
   menu: DailyMenu | null;
+  eagerImage?: boolean;
   onOpen: () => void;
 }) {
   const canAdd = !product.sold_out && hasMenuChoices(product, menu);
@@ -1059,12 +1062,6 @@ function ProductCard({
   const imageUrl = getProductImageUrl(product);
   const [imageFailed, setImageFailed] = useState(false);
   const pricePrefix = section.kind === "drinks" || section.kind === "desserts" ? "desde " : "";
-
-  console.log({
-    id: product.id,
-    name: product.name,
-    image_url: product.image_url
-  });
 
   useEffect(() => {
     setImageFailed(false);
@@ -1078,22 +1075,11 @@ function ProductCard({
             className="block h-full w-full object-cover object-center"
             src={imageUrl}
             alt={displayName}
-            onLoad={(event) => {
-              console.log({
-                id: product.id,
-                name: product.name,
-                image_url: product.image_url,
-                img_src: event.currentTarget.currentSrc || event.currentTarget.src
-              });
-            }}
-            onError={(event) => {
-              console.log({
-                id: product.id,
-                name: product.name,
-                image_url: product.image_url,
-                img_src: event.currentTarget.currentSrc || event.currentTarget.src,
-                image_error: true
-              });
+            decoding="async"
+            fetchPriority={eagerImage ? "high" : "auto"}
+            loading={eagerImage ? "eager" : "lazy"}
+            sizes="(max-width: 640px) 112px, (max-width: 1280px) 50vw, 33vw"
+            onError={() => {
               setImageFailed(true);
             }}
           />

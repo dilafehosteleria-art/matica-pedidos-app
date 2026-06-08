@@ -81,8 +81,8 @@ export function CompanyLanding({
 
             {previewProducts.length ? (
               <div className="mt-7 grid grid-cols-2 gap-3 sm:grid-cols-4">
-                {previewProducts.map((product) => (
-                  <ProductPreview key={product.id} product={product} />
+                {previewProducts.map((product, index) => (
+                  <ProductPreview key={product.id} eagerImage={index === 0} product={product} />
                 ))}
               </div>
             ) : (
@@ -191,14 +191,22 @@ export function CompanyLanding({
   );
 }
 
-function ProductPreview({ product }: { product: LandingProduct }) {
+function ProductPreview({ product, eagerImage = false }: { product: LandingProduct; eagerImage?: boolean }) {
   const imageUrl = resolvePublicProductImageUrl(product);
 
   return (
     <article className="overflow-hidden rounded-lg border border-white/70 bg-white shadow-sm">
       <div className="aspect-[4/3] bg-matica-soft">
         {imageUrl ? (
-          <img className="h-full w-full object-cover object-center" src={imageUrl} alt={product.name} />
+          <img
+            className="h-full w-full object-cover object-center"
+            src={imageUrl}
+            alt={product.name}
+            decoding="async"
+            fetchPriority={eagerImage ? "high" : "auto"}
+            loading={eagerImage ? "eager" : "lazy"}
+            sizes="(max-width: 640px) 50vw, 25vw"
+          />
         ) : (
           <div className="grid h-full place-items-center bg-gradient-to-br from-matica-mint via-white to-matica-soft text-matica-green">
             <Utensils className="h-7 w-7" />

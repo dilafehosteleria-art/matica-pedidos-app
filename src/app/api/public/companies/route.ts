@@ -1,8 +1,8 @@
-import { NextResponse } from "next/server";
+import { publicJson } from "@/lib/public-cache";
 import { getPublicCompanies } from "@/lib/public-data";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 60;
 
 export async function GET() {
-  return NextResponse.json({ companies: await getPublicCompanies() });
+  return publicJson({ companies: await getPublicCompanies() });
 }

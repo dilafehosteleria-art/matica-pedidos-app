@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
+import { publicJson } from "@/lib/public-cache";
 import { getPublicCompanyData } from "@/lib/public-data";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 60;
 
 export async function GET(
   _request: Request,
@@ -14,5 +15,5 @@ export async function GET(
     return NextResponse.json({ error: "Empresa no encontrada." }, { status: 404 });
   }
 
-  return NextResponse.json(data);
+  return publicJson(data);
 }
