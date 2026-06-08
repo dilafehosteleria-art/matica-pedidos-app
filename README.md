@@ -91,6 +91,9 @@ npm run start
    - `SUPABASE_SERVICE_ROLE_KEY`
    - `ADMIN_PIN`
    - `CRON_SECRET`
+   - `RESEND_API_KEY`
+   - `ORDER_NOTIFICATION_FROM`
+   - `CUSTOMER_ORDER_CONFIRMATION_ENABLED=true`
 4. Railway usara Nixpacks. El `startCommand` esta en `railway.json`.
 5. Despliega y abre `/bureau-veritas`.
 
