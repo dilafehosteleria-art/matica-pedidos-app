@@ -691,6 +691,38 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
   }, [companySlug]);
 
   useEffect(() => {
+    const url = new URL(window.location.href);
+    const paymentStatus = url.searchParams.get("payment");
+    const orderId = url.searchParams.get("order") ?? "";
+
+    if (paymentStatus !== "success" && paymentStatus !== "cancelled") {
+      return;
+    }
+
+    setCart([]);
+    setNotes("");
+    setConfiguring(null);
+    setLastOrder(orderId ? { id: orderId, total: 0 } : null);
+    setSubmitState(
+      paymentStatus === "success"
+        ? {
+            status: "success",
+            message: "Gracias, hemos recibido tu pedido correctamente."
+          }
+        : {
+            status: "error",
+            message: "Pago cancelado. Tu pedido no se ha confirmado."
+          }
+    );
+    setStep("confirmation");
+    window.scrollTo({ top: 0 });
+
+    url.searchParams.delete("payment");
+    url.searchParams.delete("order");
+    window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+  }, []);
+
+  useEffect(() => {
     if (customerLoaded) {
       writeStoredCustomer(storageKey, customer);
     }
@@ -1741,28 +1773,42 @@ function ConfirmationPanel({
   submitState: SubmitState;
   onBackToCatalog: () => void;
 }) {
+  const isError = submitState.status === "error";
+
   return (
     <section className="mx-auto max-w-3xl px-4 py-10 sm:px-6 lg:px-8">
       <div className="rounded-lg border border-matica-line bg-white p-6 text-center shadow-soft">
-        <div className="mx-auto grid h-14 w-14 place-items-center rounded-lg bg-matica-mint text-matica-green">
-          <CheckCircle2 className="h-8 w-8" />
+        <div className={`mx-auto grid h-14 w-14 place-items-center rounded-lg ${isError ? "bg-red-50 text-red-600" : "bg-matica-mint text-matica-green"}`}>
+          {isError ? <X className="h-8 w-8" /> : <CheckCircle2 className="h-8 w-8" />}
         </div>
-        <h2 className="mt-4 text-3xl font-black">Pedido confirmado</h2>
+        <h2 className="mt-4 text-3xl font-black">{isError ? "Pago cancelado" : "Pedido confirmado"}</h2>
         <p className="mx-auto mt-2 max-w-xl text-sm font-semibold leading-6 text-matica-ink/65">
-          {submitState.status === "success" ? submitState.message : "Hemos recibido tu pedido."}
+          {submitState.status === "success" || submitState.status === "error" ? submitState.message : "Hemos recibido tu pedido."}
         </p>
+        {!isError ? (
+          <>
+            <p className="mx-auto mt-2 max-w-xl text-sm font-semibold leading-6 text-matica-ink/65">
+              Recibirás un email de confirmación con el detalle del pedido.
+            </p>
+            <p className="mx-auto mt-2 max-w-xl text-sm font-semibold leading-6 text-matica-ink/65">
+              Puedes cerrar esta página.
+            </p>
+          </>
+        ) : null}
         {order?.id ? (
           <p className="mt-3 text-xs font-black uppercase text-matica-ink/45">Referencia {order.id.slice(0, 8)}</p>
         ) : null}
-        {order ? <p className="mt-2 text-2xl font-black text-matica-green">{formatCurrency(order.total)}</p> : null}
+        {order && order.total > 0 ? <p className="mt-2 text-2xl font-black text-matica-green">{formatCurrency(order.total)}</p> : null}
 
         <div className="mt-5 rounded-lg border border-matica-line bg-matica-soft p-4 text-left">
           <div className="flex items-center gap-2 font-black">
             <CreditCard className="h-5 w-5 text-matica-green" />
-            Pago a la entrega
+            {isError ? "Pago no confirmado" : "Confirmación enviada"}
           </div>
           <p className="mt-1 text-sm font-semibold text-matica-ink/60">
-            Durante el piloto puedes pagar en el punto de entrega. Si eliges pago online, Stripe confirmara el pedido al completar el pago.
+            {isError
+              ? "Si quieres finalizar el pedido, vuelve a la carta y repite el pago."
+              : "Si has pagado online, Stripe ya ha confirmado el pedido y el equipo de Matica ha recibido el aviso."}
           </p>
         </div>
 
