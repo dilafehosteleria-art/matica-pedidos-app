@@ -20,7 +20,7 @@ export const LANDING_FEATURED_PRODUCT_IDS = [
 ];
 
 const COMPANY_PUBLIC_FIELDS = "id,name,slug,active,order_window,delivery_window";
-const COMPANY_FIELDS = "id,name,slug,order_window,delivery_window,allow_pay_on_delivery,allow_card_payment,allow_bizum_payment,active,created_at";
+const COMPANY_FIELDS = "*";
 const BRANCH_FIELDS = "id,company_id,name,active";
 const CATEGORY_FIELDS = "id,name,slug,sort_order,active";
 const PRODUCT_FIELDS = "id,category_id,name,description,base_price,customer_price,image_url,active,sold_out,sort_order,product_type,created_at";

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { publicJson } from "@/lib/public-cache";
 import { getPublicCompanyData } from "@/lib/public-data";
 
-export const revalidate = 60;
+export const dynamic = "force-dynamic";
 
 export async function GET(
   _request: Request,
