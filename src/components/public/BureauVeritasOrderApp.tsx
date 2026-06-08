@@ -27,6 +27,7 @@ import {
   type PublicSection
 } from "@/lib/catalog";
 import { DELIVERY_WINDOW } from "@/lib/constants";
+import { validateCompanyOrderEmail } from "@/lib/email-rules";
 import { formatCurrency } from "@/lib/format";
 import { calculateCartTotals, getSubsidyAmount } from "@/lib/pricing";
 import type { CartItem, CompanyBranch, CustomerForm, DailyMenu, DailyMenuCourse, PaymentMethod, Product, PublicData } from "@/lib/types";
@@ -739,9 +740,11 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
   const companyName = data?.company.name ?? "tu empresa";
   const deliveryWindow = data?.company.delivery_window ?? DELIVERY_WINDOW;
   const selectedBranch = data?.branches.find((branch) => branch.id === customer.company_branch_id) ?? null;
+  const emailValidation = validateCompanyOrderEmail(companySlug, customer.email);
   const canConfirmOrder =
     Boolean(customer.name.trim()) &&
     Boolean(customer.email.trim()) &&
+    emailValidation.valid &&
     Boolean(customer.phone.trim()) &&
     Boolean(selectedBranch) &&
     paymentOptions.some((option) => option.method === paymentMethod) &&
@@ -786,6 +789,11 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
 
     if (!customer.name.trim() || !customer.email.trim() || !customer.phone.trim() || !selectedBranch) {
       setSubmitState({ status: "error", message: "Completa tus datos antes de confirmar." });
+      return;
+    }
+
+    if (!emailValidation.valid) {
+      setSubmitState({ status: "error", message: emailValidation.message });
       return;
     }
 
@@ -977,6 +985,7 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
           paymentOptions={paymentOptions}
           paymentMethod={paymentMethod}
           setPaymentMethod={setPaymentMethod}
+          emailValidationMessage={emailValidation.valid ? "" : emailValidation.message}
           submitState={submitState}
           canConfirmOrder={canConfirmOrder}
           hasSubsidizedItem={hasSubsidizedItem}
@@ -1484,6 +1493,7 @@ function CheckoutPanel({
   paymentOptions,
   paymentMethod,
   setPaymentMethod,
+  emailValidationMessage,
   submitState,
   canConfirmOrder,
   hasSubsidizedItem,
@@ -1505,6 +1515,7 @@ function CheckoutPanel({
   paymentOptions: PublicPaymentOption[];
   paymentMethod: PaymentMethod;
   setPaymentMethod: (method: PaymentMethod) => void;
+  emailValidationMessage: string;
   submitState: SubmitState;
   canConfirmOrder: boolean;
   hasSubsidizedItem: boolean;
@@ -1625,6 +1636,11 @@ function CheckoutPanel({
                 type="email"
                 required
               />
+              {emailValidationMessage ? (
+                <div className="-mt-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-bold text-red-700 md:col-span-2">
+                  {emailValidationMessage}
+                </div>
+              ) : null}
               <InputField label="Teléfono" value={customer.phone} onChange={(value) => updateCustomer("phone", value)} placeholder="600 000 000" required />
               <label className="space-y-1">
                 <span className="text-sm font-bold text-matica-ink/70">Empresa</span>

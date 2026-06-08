@@ -17,31 +17,67 @@ export const BUREAU_VERITAS_BRANCHES: CompanyBranch[] = [
   {
     id: "28126727-f1b6-47cd-aad3-9785694b0937",
     company_id: BUREAU_VERITAS_COMPANY_ID,
-    name: "Bureau Veritas Iberia",
-    active: true
-  },
-  {
-    id: "530a03e0-2058-414d-85c7-baf168fd84a3",
-    company_id: BUREAU_VERITAS_COMPANY_ID,
-    name: "Bureau Veritas Inversiones",
-    active: true
-  },
-  {
-    id: "df58207d-23c4-4635-a05f-af568096d495",
-    company_id: BUREAU_VERITAS_COMPANY_ID,
-    name: "Bureau Veritas Solutions",
+    name: "BUREAU VERITAS IBERIA",
     active: true
   },
   {
     id: "6b9d7adf-73da-481b-80d7-e89732e3023b",
     company_id: BUREAU_VERITAS_COMPANY_ID,
-    name: "Bureau Veritas Insp. y Test.",
+    name: "BUREAU VERITAS INSP Y TEST.",
+    active: true
+  },
+  {
+    id: "530a03e0-2058-414d-85c7-baf168fd84a3",
+    company_id: BUREAU_VERITAS_COMPANY_ID,
+    name: "BUREAU VERITAS INVERSIONES",
+    active: true
+  },
+  {
+    id: "df58207d-23c4-4635-a05f-af568096d495",
+    company_id: BUREAU_VERITAS_COMPANY_ID,
+    name: "BUREAU VERITAS SOLUTIONS",
     active: true
   },
   {
     id: "9e99d394-cd7c-4c13-95ae-25da310469dd",
     company_id: BUREAU_VERITAS_COMPANY_ID,
-    name: "Bureau Veritas Sus. Fuels",
+    name: "BUREAU VERITAS SUST.FUELS",
+    active: true
+  },
+  {
+    id: "dbe6b0b2-fce1-40b2-926e-d4ce281c49af",
+    company_id: BUREAU_VERITAS_COMPANY_ID,
+    name: "ECOINTEGRAL",
+    active: true
+  },
+  {
+    id: "67f0bf94-fe51-44ee-95f3-3ebdb047b5b8",
+    company_id: BUREAU_VERITAS_COMPANY_ID,
+    name: "IDP GLOBAL ENGINEERING",
+    active: true
+  },
+  {
+    id: "6ea56323-04c9-4060-88ff-50c487b184ac",
+    company_id: BUREAU_VERITAS_COMPANY_ID,
+    name: "IDP ING.Y ARQUITECTURA",
+    active: true
+  },
+  {
+    id: "27584bb3-403b-4ad3-aa57-7349b1c8cd1d",
+    company_id: BUREAU_VERITAS_COMPANY_ID,
+    name: "INDUTEC",
+    active: true
+  },
+  {
+    id: "121dd82f-7399-48ac-83bc-b4121f074fb4",
+    company_id: BUREAU_VERITAS_COMPANY_ID,
+    name: "PBV INVESTMENT",
+    active: true
+  },
+  {
+    id: "1ff17af8-5fcc-4093-be9a-d73dca0cf90b",
+    company_id: BUREAU_VERITAS_COMPANY_ID,
+    name: "SÓLIDA",
     active: true
   }
 ];

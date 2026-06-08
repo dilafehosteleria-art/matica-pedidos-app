@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { DELIVERY_WINDOW } from "@/lib/constants";
+import { validateCompanyOrderEmail } from "@/lib/email-rules";
 import { toDateInputValue } from "@/lib/format";
 import { sendOrderNotificationEmail } from "@/lib/order-email";
 import {
@@ -226,6 +227,12 @@ export async function POST(request: NextRequest) {
   }
 
   const selectedCompany = company as SupabaseCompany;
+  const emailValidation = validateCompanyOrderEmail(companySlug, customerEmail);
+
+  if (!emailValidation.valid) {
+    return badRequest(emailValidation.message);
+  }
+
   const paymentOptions = paymentOptionsForCompany(selectedCompany);
   const requestedPaymentMethod = body.payment_method ?? paymentOptions[0]?.method ?? "pay_on_delivery";
   const selectedPaymentOption = paymentOptions.find((option) => option.method === requestedPaymentMethod);
