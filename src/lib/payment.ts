@@ -33,11 +33,17 @@ export function publicStripePaymentsEnabled() {
   return Boolean(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY && process.env.STRIPE_SECRET_KEY);
 }
 
-function companyAllows(company: Pick<Company, "allow_pay_on_delivery" | "allow_card_payment" | "allow_bizum_payment">, key: keyof Pick<Company, "allow_pay_on_delivery" | "allow_card_payment" | "allow_bizum_payment">, defaultValue: boolean) {
+function companyAllows(
+  company: Pick<Company, "allow_pay_on_delivery" | "allow_card_payment" | "allow_bizum_payment">,
+  key: keyof Pick<Company, "allow_pay_on_delivery" | "allow_card_payment" | "allow_bizum_payment">,
+  defaultValue: boolean
+) {
   return company[key] ?? defaultValue;
 }
 
-export function paymentOptionsForCompany(company: Pick<Company, "allow_pay_on_delivery" | "allow_card_payment" | "allow_bizum_payment">): PaymentOption[] {
+export function paymentOptionsForCompany(
+  company: Pick<Company, "allow_pay_on_delivery" | "allow_card_payment" | "allow_bizum_payment">
+): PaymentOption[] {
   const stripeEnabled = isStripeConfigured();
   const options: PaymentOption[] = [];
 
@@ -54,16 +60,7 @@ export function paymentOptionsForCompany(company: Pick<Company, "allow_pay_on_de
     options.push({
       method: "stripe_card",
       label: getPaymentMethodLabel("stripe_card"),
-      description: "Stripe mostrarÃ¡ tarjeta y monederos disponibles.",
-      online: true
-    });
-  }
-
-  if (stripeEnabled && companyAllows(company, "allow_bizum_payment", false)) {
-    options.push({
-      method: "stripe_bizum",
-      label: getPaymentMethodLabel("stripe_bizum"),
-      description: "Disponible si Bizum estÃ¡ habilitado en Stripe.",
+      description: "Stripe mostrara tarjeta y monederos disponibles.",
       online: true
     });
   }
@@ -110,7 +107,7 @@ export async function createStripeCheckoutSession({
   const secretKey = process.env.STRIPE_SECRET_KEY;
 
   if (!secretKey) {
-    throw new Error("Stripe no estÃ¡ configurado.");
+    throw new Error("Stripe no esta configurado.");
   }
 
   const params = new URLSearchParams();
@@ -119,7 +116,7 @@ export async function createStripeCheckoutSession({
   params.set("cancel_url", checkoutUrlFromEnv("STRIPE_CANCEL_URL", origin, orderId, companySlug));
   params.set("client_reference_id", orderId);
   params.set("customer_email", customerEmail);
-  params.set("automatic_payment_methods[enabled]", "true");
+  params.set("payment_method_types[0]", "card");
   params.set("metadata[order_id]", orderId);
   params.set("metadata[payment_method]", paymentMethod);
   params.set("line_items[0][quantity]", "1");
@@ -138,7 +135,7 @@ export async function createStripeCheckoutSession({
   const payload = await response.json();
 
   if (!response.ok || typeof payload.url !== "string" || typeof payload.id !== "string") {
-    throw new Error(payload.error?.message ?? "No se pudo crear la sesiÃ³n de pago.");
+    throw new Error(payload.error?.message ?? "No se pudo crear la sesion de pago.");
   }
 
   return {

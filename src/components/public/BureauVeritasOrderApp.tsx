@@ -62,14 +62,6 @@ function publicPaymentOptions(company: PublicData["company"] | null | undefined)
     });
   }
 
-  if (stripeEnabled && (company?.allow_bizum_payment ?? false)) {
-    options.push({
-      method: "stripe_bizum",
-      label: "Bizum",
-      description: "Stripe lo mostrara si Bizum esta habilitado."
-    });
-  }
-
   return options.length ? options : [{
     method: "pay_on_delivery",
     label: "Pago a la entrega",
