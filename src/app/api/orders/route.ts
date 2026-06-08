@@ -6,7 +6,8 @@ import { sendOrderNotificationEmail } from "@/lib/order-email";
 import {
   createStripeCheckoutSession,
   isOnlinePaymentMethod,
-  paymentOptionsForCompany
+  paymentOptionsForCompany,
+  resolveStripeReturnBaseUrl
 } from "@/lib/payment";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import type { AdminOrder, OrderStatus, PaymentMethod, ProductType } from "@/lib/types";
@@ -119,6 +120,17 @@ const SALAD_PROTEIN_SUPPLEMENTS: Record<string, number> = {
 
 function badRequest(message: string, status = 400) {
   return NextResponse.json({ error: message }, { status });
+}
+
+function requestBaseUrl(request: NextRequest) {
+  const forwardedHost = request.headers.get("x-forwarded-host")?.split(",")[0]?.trim();
+  const forwardedProto = request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim() || "https";
+
+  if (forwardedHost) {
+    return `${forwardedProto}://${forwardedHost}`;
+  }
+
+  return request.nextUrl.origin;
 }
 
 function isMissingPaymentColumnError(message?: string) {
@@ -460,7 +472,7 @@ export async function POST(request: NextRequest) {
         companySlug,
         customerEmail,
         orderId: order.id,
-        origin: request.nextUrl.origin,
+        baseUrl: resolveStripeReturnBaseUrl(requestBaseUrl(request)),
         paymentMethod: requestedPaymentMethod
       });
 

@@ -22,8 +22,10 @@ type StripeCheckoutInput = {
   companyName: string;
   companySlug: string;
   paymentMethod: PaymentMethod;
-  origin: string;
+  baseUrl: string;
 };
+
+const PRODUCTION_APP_URL = "https://matica-pedidos-app-production.up.railway.app";
 
 export function isStripeConfigured() {
   return Boolean(process.env.STRIPE_SECRET_KEY);
@@ -81,18 +83,59 @@ function amountToCents(amount: number) {
   return Math.max(0, Math.round(amount * 100));
 }
 
-function checkoutUrlFromEnv(key: "STRIPE_SUCCESS_URL" | "STRIPE_CANCEL_URL", origin: string, orderId: string, companySlug: string) {
-  const configured = process.env[key];
+function isLocalAppUrl(value: string) {
+  try {
+    const hostname = new URL(value).hostname;
 
-  if (configured) {
-    return configured
-      .replaceAll("{ORDER_ID}", encodeURIComponent(orderId))
-      .replaceAll("{COMPANY_SLUG}", encodeURIComponent(companySlug));
+    return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
+  } catch {
+    return true;
+  }
+}
+
+function normalizeBaseUrl(value: string | undefined) {
+  if (!value) {
+    return null;
   }
 
-  const status = key === "STRIPE_SUCCESS_URL" ? "success" : "cancelled";
+  try {
+    const url = new URL(value);
 
-  return `${origin}/empresa/${encodeURIComponent(companySlug)}?payment=${status}&order=${encodeURIComponent(orderId)}`;
+    if (!["http:", "https:"].includes(url.protocol)) {
+      return null;
+    }
+
+    if (process.env.NODE_ENV === "production" && isLocalAppUrl(url.toString())) {
+      return null;
+    }
+
+    return url.origin;
+  } catch {
+    return null;
+  }
+}
+
+export function resolveStripeReturnBaseUrl(requestBaseUrl: string) {
+  return (
+    normalizeBaseUrl(process.env.APP_URL) ??
+    normalizeBaseUrl(process.env.NEXT_PUBLIC_APP_URL) ??
+    normalizeBaseUrl(requestBaseUrl) ??
+    PRODUCTION_APP_URL
+  );
+}
+
+function checkoutReturnUrl(baseUrl: string, status: "success" | "cancelled", orderId: string, companySlug: string) {
+  const safeBaseUrl = resolveStripeReturnBaseUrl(baseUrl);
+
+  return `${safeBaseUrl}/empresa/${encodeURIComponent(companySlug)}?payment=${status}&order=${encodeURIComponent(orderId)}`;
+}
+
+function checkoutSuccessUrl(baseUrl: string, orderId: string, companySlug: string) {
+  return checkoutReturnUrl(baseUrl, "success", orderId, companySlug);
+}
+
+function checkoutCancelUrl(baseUrl: string, orderId: string, companySlug: string) {
+  return checkoutReturnUrl(baseUrl, "cancelled", orderId, companySlug);
 }
 
 export async function createStripeCheckoutSession({
@@ -101,7 +144,7 @@ export async function createStripeCheckoutSession({
   companySlug,
   customerEmail,
   orderId,
-  origin,
+  baseUrl,
   paymentMethod
 }: StripeCheckoutInput): Promise<StripeCheckoutSession> {
   const secretKey = process.env.STRIPE_SECRET_KEY;
@@ -112,8 +155,8 @@ export async function createStripeCheckoutSession({
 
   const params = new URLSearchParams();
   params.set("mode", "payment");
-  params.set("success_url", checkoutUrlFromEnv("STRIPE_SUCCESS_URL", origin, orderId, companySlug));
-  params.set("cancel_url", checkoutUrlFromEnv("STRIPE_CANCEL_URL", origin, orderId, companySlug));
+  params.set("success_url", checkoutSuccessUrl(baseUrl, orderId, companySlug));
+  params.set("cancel_url", checkoutCancelUrl(baseUrl, orderId, companySlug));
   params.set("client_reference_id", orderId);
   params.set("customer_email", customerEmail);
   params.set("payment_method_types[0]", "card");
