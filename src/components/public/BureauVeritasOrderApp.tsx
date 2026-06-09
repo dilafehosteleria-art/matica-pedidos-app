@@ -57,7 +57,7 @@ function publicPaymentOptions(company: PublicData["company"] | null | undefined)
   if (stripeEnabled && (company?.allow_card_payment ?? false)) {
     options.push({
       method: "stripe_card",
-      label: "Tarjeta / Apple Pay / Google Pay",
+      label: "Tarjeta / Bizum / Apple Pay / Google Pay",
       description: "Pago seguro con Stripe Checkout."
     });
   }
