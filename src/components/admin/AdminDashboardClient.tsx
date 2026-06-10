@@ -815,6 +815,18 @@ function TotalRow({ label, value, highlight = false, strong = false }: { label: 
   );
 }
 
+function ticketText(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\u00a0/g, " ")
+    .replace(/€/g, "EUR");
+}
+
+function ticketCurrency(value: number) {
+  return ticketText(formatCurrency(value));
+}
+
 function ThermalTicket({ order }: { order: AdminOrder }) {
   const companyName = order.companies?.name ?? "Cliente principal";
   const branchName = order.company_branches?.name ?? "Sin empresa interna";
@@ -822,28 +834,28 @@ function ThermalTicket({ order }: { order: AdminOrder }) {
   return (
     <section className="hidden print:block thermal-ticket">
       <header className="ticket-center">
-        <h1 className="ticket-primary-client">{companyName.toUpperCase()}</h1>
+        <h1 className="ticket-primary-client">{ticketText(companyName).toUpperCase()}</h1>
       </header>
       <div className="ticket-separator" />
       <p className="ticket-highlight">REF: {orderReference(order.id)}</p>
       <p>FECHA: {formatOrderDateTime(order.created_at)}</p>
-      <p>CLIENTE: {order.customer_name}</p>
-      <p>EMPRESA: {branchName}</p>
+      <p>CLIENTE: {ticketText(order.customer_name)}</p>
+      <p>EMPRESA: {ticketText(branchName)}</p>
       <div className="ticket-separator" />
       <p className="ticket-section-title">PRODUCTOS</p>
       {order.order_items.map((item) => (
         <div key={item.id} className="ticket-item">
           <div className="ticket-item-main">
             <span>{item.quantity}x</span>
-            <span className="ticket-item-name">{item.name}</span>
+            <span className="ticket-item-name">{ticketText(item.name)}</span>
           </div>
           <div className="ticket-item-price">
-            <span>Unit: {formatCurrency(Number(item.unit_price))}</span>
-            <span>Total: {formatCurrency(Number(item.total_price))}</span>
+            <span>Unit: {ticketCurrency(Number(item.unit_price))}</span>
+            <span>Total: {ticketCurrency(Number(item.total_price))}</span>
           </div>
           {orderItemOptionLines(item.metadata).map((entry) => (
             <p key={`${item.id}-${entry.key}`} className="ticket-option">
-              &gt; {entry.label}: {entry.value}
+              &gt; {ticketText(entry.label)}: {ticketText(entry.value)}
             </p>
           ))}
         </div>
@@ -851,18 +863,18 @@ function ThermalTicket({ order }: { order: AdminOrder }) {
       {order.notes ? (
         <>
           <div className="ticket-separator" />
-          <p className="ticket-note">OBSERVACIONES: {order.notes}</p>
+          <p className="ticket-note">OBSERVACIONES: {ticketText(order.notes)}</p>
         </>
       ) : null}
       <div className="ticket-separator" />
-      <div className="ticket-total"><span>Subtotal</span><span>{formatCurrency(Number(order.subtotal))}</span></div>
-      <div className="ticket-total"><span>Subvención</span><span>-{formatCurrency(Number(order.subsidy_total))}</span></div>
-      <div className="ticket-total"><span>Factura empresa</span><span>{formatCurrency(Number(order.subsidy_total))}</span></div>
-      <div className="ticket-total ticket-total-strong"><span>Total empleado</span><span>{formatCurrency(Number(order.total))}</span></div>
+      <div className="ticket-total"><span>Subtotal</span><span>{ticketCurrency(Number(order.subtotal))}</span></div>
+      <div className="ticket-total"><span>Subvencion</span><span>-{ticketCurrency(Number(order.subsidy_total))}</span></div>
+      <div className="ticket-total"><span>Factura empresa</span><span>{ticketCurrency(Number(order.subsidy_total))}</span></div>
+      <div className="ticket-total ticket-total-strong"><span>Total empleado</span><span>{ticketCurrency(Number(order.total))}</span></div>
       <div className="ticket-separator" />
       <p className="ticket-highlight">ESTADO DE PAGO:</p>
-      <p className="ticket-payment-status">{operationalPaymentLabel(order).toUpperCase()}</p>
-      <p>ESTADO PEDIDO: {ORDER_STATUS_LABELS[order.status]}</p>
+      <p className="ticket-payment-status">{ticketText(operationalPaymentLabel(order)).toUpperCase()}</p>
+      <p>ESTADO PEDIDO: {ticketText(ORDER_STATUS_LABELS[order.status])}</p>
       <div className="ticket-separator" />
       <p className="ticket-center">Gracias por confiar en Matica.</p>
     </section>
