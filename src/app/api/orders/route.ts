@@ -6,7 +6,7 @@ import { sendOrderNotificationEmail } from "@/lib/order-email";
 import {
   createStripeCheckoutSession,
   isOnlinePaymentMethod,
-  paymentOptionsForCompany,
+  publicCheckoutPaymentOptions,
   resolveStripeReturnBaseUrl
 } from "@/lib/payment";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
@@ -245,8 +245,13 @@ export async function POST(request: NextRequest) {
     return badRequest(emailValidation.message);
   }
 
-  const paymentOptions = paymentOptionsForCompany(selectedCompany);
-  const requestedPaymentMethod = body.payment_method ?? paymentOptions[0]?.method ?? "pay_on_delivery";
+  const paymentOptions = publicCheckoutPaymentOptions();
+
+  if (!paymentOptions.length) {
+    return badRequest("El pago online con Stripe no esta disponible temporalmente.");
+  }
+
+  const requestedPaymentMethod = body.payment_method ?? paymentOptions[0].method;
   const selectedPaymentOption = paymentOptions.find((option) => option.method === requestedPaymentMethod);
 
   if (!selectedPaymentOption) {

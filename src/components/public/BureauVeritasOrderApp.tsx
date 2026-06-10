@@ -44,28 +44,15 @@ const EMPTY_CUSTOMER: CustomerForm = {
 
 function publicPaymentOptions(company: PublicData["company"] | null | undefined): PublicPaymentOption[] {
   const stripeEnabled = Boolean(company?.stripe_payments_enabled);
-  const options: PublicPaymentOption[] = [];
 
-  if ((company?.allow_pay_on_delivery ?? true) || !stripeEnabled) {
-    options.push({
-      method: "pay_on_delivery",
-      label: "Pago a la entrega",
-      description: "Confirmas el pedido ahora y pagas en el punto de entrega."
-    });
+  if (!stripeEnabled) {
+    return [];
   }
 
-  if (stripeEnabled && (company?.allow_card_payment ?? false)) {
-    options.push({
-      method: "stripe_card",
-      label: "Tarjeta / Bizum / Apple Pay / Google Pay",
-      description: "Pago seguro con Stripe Checkout."
-    });
-  }
-
-  return options.length ? options : [{
-    method: "pay_on_delivery",
-    label: "Pago a la entrega",
-    description: "Confirmas el pedido ahora y pagas en el punto de entrega."
+  return [{
+    method: "stripe_card",
+    label: "Pago online Stripe",
+    description: "Stripe Checkout mostrara tarjeta, Apple Pay, Google Pay y Bizum cuando esten disponibles."
   }];
 }
 
@@ -662,7 +649,7 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
   const [configuring, setConfiguring] = useState<{ product: Product; section: PublicSection } | null>(null);
   const [subsidyAlreadyUsed, setSubsidyAlreadyUsed] = useState(false);
   const [submitState, setSubmitState] = useState<SubmitState>({ status: "idle" });
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("pay_on_delivery");
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("stripe_card");
   const [customerLoaded, setCustomerLoaded] = useState(false);
   const [lastOrder, setLastOrder] = useState<{ id: string; total: number } | null>(null);
   const storageKey = `${STORAGE_KEY_PREFIX}:${companySlug}`;
@@ -754,7 +741,7 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
 
   useEffect(() => {
     if (!paymentOptions.some((option) => option.method === paymentMethod)) {
-      setPaymentMethod(paymentOptions[0]?.method ?? "pay_on_delivery");
+      setPaymentMethod(paymentOptions[0]?.method ?? "stripe_card");
     }
   }, [paymentMethod, paymentOptions]);
 
@@ -1709,31 +1696,37 @@ function CheckoutPanel({
               Forma de pago
             </div>
             <div className="mt-3 space-y-2">
-              {paymentOptions.map((option) => (
-                <label
-                  key={option.method}
-                  className={`block cursor-pointer rounded-lg border p-3 transition ${
-                    paymentMethod === option.method
-                      ? "border-matica-green bg-matica-mint text-matica-green"
-                      : "border-matica-line bg-white text-matica-ink"
-                  }`}
-                >
-                  <span className="flex items-start gap-2">
-                    <input
-                      className="mt-1 h-4 w-4 accent-matica-green"
-                      type="radio"
-                      name="payment_method"
-                      value={option.method}
-                      checked={paymentMethod === option.method}
-                      onChange={() => setPaymentMethod(option.method)}
-                    />
-                    <span>
-                      <span className="block text-sm font-black">{option.label}</span>
-                      <span className="mt-0.5 block text-xs font-bold text-matica-ink/55">{option.description}</span>
+              {paymentOptions.length ? (
+                paymentOptions.map((option) => (
+                  <label
+                    key={option.method}
+                    className={`block cursor-pointer rounded-lg border p-3 transition ${
+                      paymentMethod === option.method
+                        ? "border-matica-green bg-matica-mint text-matica-green"
+                        : "border-matica-line bg-white text-matica-ink"
+                    }`}
+                  >
+                    <span className="flex items-start gap-2">
+                      <input
+                        className="mt-1 h-4 w-4 accent-matica-green"
+                        type="radio"
+                        name="payment_method"
+                        value={option.method}
+                        checked={paymentMethod === option.method}
+                        onChange={() => setPaymentMethod(option.method)}
+                      />
+                      <span>
+                        <span className="block text-sm font-black">{option.label}</span>
+                        <span className="mt-0.5 block text-xs font-bold text-matica-ink/55">{option.description}</span>
+                      </span>
                     </span>
-                  </span>
-                </label>
-              ))}
+                  </label>
+                ))
+              ) : (
+                <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm font-bold text-red-700">
+                  El pago online con Stripe no esta disponible temporalmente.
+                </div>
+              )}
             </div>
           </div>
 

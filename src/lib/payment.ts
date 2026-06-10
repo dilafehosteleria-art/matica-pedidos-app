@@ -75,6 +75,19 @@ export function paymentOptionsForCompany(
   }];
 }
 
+export function publicCheckoutPaymentOptions(): PaymentOption[] {
+  if (!isStripeConfigured()) {
+    return [];
+  }
+
+  return [{
+    method: "stripe_card",
+    label: "Stripe Checkout",
+    description: "Stripe mostrara tarjeta, Apple Pay, Google Pay y Bizum cuando esten disponibles.",
+    online: true
+  }];
+}
+
 export function isOnlinePaymentMethod(method: PaymentMethod) {
   return method === "stripe_card" || method === "stripe_bizum";
 }
@@ -159,8 +172,6 @@ export async function createStripeCheckoutSession({
   params.set("cancel_url", checkoutCancelUrl(baseUrl, orderId, companySlug));
   params.set("client_reference_id", orderId);
   params.set("customer_email", customerEmail);
-  params.set("payment_method_types[0]", "card");
-  params.set("payment_method_types[1]", "bizum");
   params.set("metadata[order_id]", orderId);
   params.set("metadata[payment_method]", paymentMethod);
   params.set("line_items[0][quantity]", "1");

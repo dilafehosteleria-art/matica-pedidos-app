@@ -2,7 +2,7 @@ import type { PaymentMethod, PaymentStatus } from "@/lib/types";
 
 const PAYMENT_LABELS: Record<PaymentMethod, string> = {
   pay_on_delivery: "Pago a la entrega",
-  stripe_card: "Tarjeta / Bizum / Apple Pay / Google Pay",
+  stripe_card: "Pago online Stripe",
   stripe_bizum: "Bizum"
 };
 

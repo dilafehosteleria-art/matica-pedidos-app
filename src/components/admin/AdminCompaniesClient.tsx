@@ -165,7 +165,7 @@ function CompaniesEditor({ pin, clearPin }: { pin: string; clearPin: () => void 
                   <h3 className="text-sm font-black uppercase text-matica-ink/45">Metodos de pago</h3>
                   <div className="mt-3 grid gap-2 md:grid-cols-3">
                     <Toggle
-                      label="Pago a la entrega"
+                      label="Pago a la entrega interno"
                       checked={draft.allow_pay_on_delivery}
                       onChange={(value) => updateDraft(company.id, "allow_pay_on_delivery", value)}
                     />
@@ -181,7 +181,7 @@ function CompaniesEditor({ pin, clearPin }: { pin: string; clearPin: () => void 
                     />
                   </div>
                   <p className="mt-2 text-xs font-bold text-matica-ink/50">
-                    Si Stripe no esta configurado, la carta publica ocultara tarjeta y Bizum y dejara disponible el pago a la entrega.
+                    En produccion, la carta publica solo muestra Stripe Checkout. Pago a la entrega queda guardado para uso interno futuro.
                   </p>
                 </div>
 

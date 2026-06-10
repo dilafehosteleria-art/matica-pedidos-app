@@ -57,13 +57,13 @@ button {
 
 @media print {
   @page {
-    size: 80mm auto;
-    margin: 3mm;
+    size: 58mm auto;
+    margin: 2mm;
   }
 
   html,
   body {
-    width: 80mm;
+    width: 58mm;
     min-height: auto;
     background: #ffffff;
   }
@@ -81,14 +81,15 @@ button {
     position: absolute;
     inset: 0 auto auto 0;
     display: block !important;
-    width: 76mm;
+    width: 54mm;
     color: #000000;
     background: #ffffff;
     font-family: "Courier New", Courier, monospace;
-    font-size: 12px;
-    font-weight: 800;
-    line-height: 1.35;
+    font-size: 16px;
+    font-weight: 700;
+    line-height: 1.28;
     letter-spacing: 0;
+    overflow-wrap: anywhere;
   }
 
   .thermal-ticket h1,
@@ -97,9 +98,13 @@ button {
   }
 
   .thermal-ticket h1 {
-    font-size: 16px;
+    font-size: 20px;
     font-weight: 900;
     line-height: 1.15;
+  }
+
+  .ticket-primary-client {
+    text-transform: uppercase;
   }
 
   .ticket-center {
@@ -107,33 +112,52 @@ button {
   }
 
   .ticket-separator {
-    margin: 7px 0;
-    border-top: 2px dashed #000000;
+    margin: 6px 0;
+    border-top: 2px solid #000000;
   }
 
-  .ticket-grid {
+  .ticket-highlight {
+    font-weight: 900;
+  }
+
+  .ticket-section-title {
+    font-weight: 900;
+    text-align: center;
+  }
+
+  .ticket-item-main {
     display: grid;
-    grid-template-columns: 8mm 1fr 17mm 18mm;
+    grid-template-columns: 8mm minmax(0, 1fr);
     gap: 2mm;
     align-items: start;
+    font-weight: 900;
   }
 
-  .ticket-head {
-    font-size: 11px;
-    font-weight: 900;
+  .ticket-item-name {
+    word-break: break-word;
+  }
+
+  .ticket-item-price {
+    display: flex;
+    justify-content: space-between;
+    gap: 2mm;
+    margin-top: 3px;
+    padding-left: 10mm;
+    font-size: 14px;
+    font-weight: 800;
   }
 
   .ticket-item {
-    margin-top: 7px;
-    padding-top: 5px;
+    margin-top: 8px;
+    padding-top: 6px;
     border-top: 1px solid #000000;
-    font-weight: 900;
+    page-break-inside: avoid;
   }
 
   .ticket-option {
-    padding-left: 8mm;
-    margin-top: 2px;
-    font-size: 11px;
+    padding-left: 10mm;
+    margin-top: 3px;
+    font-size: 14px;
     font-weight: 800;
     color: #000000;
     word-break: break-word;
@@ -147,16 +171,21 @@ button {
   .ticket-total {
     display: flex;
     justify-content: space-between;
-    gap: 4mm;
-    font-size: 12px;
-    font-weight: 900;
+    gap: 3mm;
+    font-size: 16px;
+    font-weight: 800;
   }
 
   .ticket-total-strong {
     margin-top: 5px;
     padding-top: 5px;
     border-top: 2px solid #000000;
-    font-size: 15px;
+    font-size: 19px;
+    font-weight: 900;
+  }
+
+  .ticket-payment-status {
+    font-size: 18px;
     font-weight: 900;
   }
 }
