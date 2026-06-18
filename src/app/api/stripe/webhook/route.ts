@@ -90,6 +90,10 @@ async function markCheckoutCompleted(session: StripeEvent["data"]["object"]) {
     throw new Error("La sesion de Stripe no incluye order_id.");
   }
 
+  if (session.payment_status !== "paid") {
+    return;
+  }
+
   const { data: existingOrder, error: existingError } = await supabase
     .from("orders")
     .select("payment_status")
@@ -144,9 +148,12 @@ async function markCheckoutFailed(session: StripeEvent["data"]["object"]) {
   const { error } = await supabase
     .from("orders")
     .update({
+      status: "cancelado",
+      status_updated_at: new Date().toISOString(),
       payment_status: "failed"
     })
-    .eq("id", orderId);
+    .eq("id", orderId)
+    .neq("payment_status", "paid");
 
   if (error) {
     throw new Error(error.message);
@@ -173,11 +180,11 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    if (event.type === "checkout.session.completed") {
+    if (event.type === "checkout.session.completed" || event.type === "checkout.session.async_payment_succeeded") {
       await markCheckoutCompleted(event.data.object);
     }
 
-    if (event.type === "checkout.session.expired") {
+    if (event.type === "checkout.session.expired" || event.type === "checkout.session.async_payment_failed") {
       await markCheckoutFailed(event.data.object);
     }
   } catch (error) {

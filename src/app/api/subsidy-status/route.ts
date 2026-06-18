@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { toDateInputValue } from "@/lib/format";
+import { isSubsidyConsumingOrder } from "@/lib/order-validity";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -7,6 +8,8 @@ export const dynamic = "force-dynamic";
 type SubsidyOrder = {
   created_at: string;
   status: string;
+  payment_method?: string | null;
+  payment_status?: string | null;
   order_items: { subsidy_amount: number }[] | null;
 };
 
@@ -40,7 +43,7 @@ export async function GET(request: NextRequest) {
 
   const { data, error } = await supabase
     .from("orders")
-    .select("created_at,status,order_items(subsidy_amount)")
+    .select("created_at,status,payment_method,payment_status,order_items(subsidy_amount)")
     .eq("company_id", company.id)
     .eq("customer_email", email)
     .gte("created_at", recentLimit);
@@ -53,7 +56,7 @@ export async function GET(request: NextRequest) {
     const sameMadridDay = toDateInputValue(new Date(order.created_at)) === today;
     const hasSubsidy = (order.order_items ?? []).some((item) => Number(item.subsidy_amount) > 0);
 
-    return sameMadridDay && order.status !== "cancelado" && hasSubsidy;
+    return sameMadridDay && isSubsidyConsumingOrder(order) && hasSubsidy;
   });
 
   return NextResponse.json({ used });

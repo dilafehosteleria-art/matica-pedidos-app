@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { assertAdmin } from "@/lib/admin";
+import { isVisibleAdminOrder } from "@/lib/order-validity";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import type { AdminOrder, OrderStatus } from "@/lib/types";
 
@@ -144,8 +145,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 400 });
   }
 
-  const visibleOrders =
-    mode === "history" ? filterHistoryOrders((data as AdminOrder[] | null) ?? [], request) : (data as AdminOrder[] | null) ?? [];
+  const confirmedOrders = ((data as AdminOrder[] | null) ?? []).filter(isVisibleAdminOrder);
+  const visibleOrders = mode === "history" ? filterHistoryOrders(confirmedOrders, request) : confirmedOrders;
 
   return NextResponse.json({ orders: visibleOrders });
 }

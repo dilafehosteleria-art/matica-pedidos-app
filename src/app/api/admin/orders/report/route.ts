@@ -1,6 +1,7 @@
 import { deflateRawSync } from "node:zlib";
 import { NextRequest, NextResponse } from "next/server";
 import { operationalPaymentLabel, paymentMethodLabel, paymentStatusLabel } from "@/lib/payment-display";
+import { isBillableOrder } from "@/lib/order-validity";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import type { AdminOrder, CompanyBranch, OrderStatus, Company } from "@/lib/types";
 
@@ -8,7 +9,7 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 const TIME_ZONE = "Europe/Madrid";
-const VALID_STATUSES: OrderStatus[] = ["pendiente_pago", "nuevo", "preparando", "listo", "entregado", "cancelado"];
+const VALID_STATUSES: OrderStatus[] = ["nuevo", "preparando", "listo", "entregado"];
 
 const DETAIL_HEADERS = [
   "Fecha",
@@ -728,10 +729,12 @@ async function getReportOrders(supabase: NonNullable<ReturnType<typeof getSupaba
   const { data, error } = await query;
 
   return {
-    orders: ((data as ReportOrder[] | null) ?? []).map((order) => ({
-      ...order,
-      order_items: [...(order.order_items ?? [])].sort((a, b) => a.name.localeCompare(b.name, "es"))
-    })),
+    orders: ((data as ReportOrder[] | null) ?? [])
+      .filter(isBillableOrder)
+      .map((order) => ({
+        ...order,
+        order_items: [...(order.order_items ?? [])].sort((a, b) => a.name.localeCompare(b.name, "es"))
+      })),
     error
   };
 }

@@ -6,12 +6,10 @@ import { formatCurrency } from "@/lib/format";
 import type { OrderStatus } from "@/lib/types";
 
 const STATUS_OPTIONS: { status: OrderStatus; label: string }[] = [
-  { status: "pendiente_pago", label: "Pendiente pago" },
   { status: "nuevo", label: "Nuevo" },
   { status: "preparando", label: "En preparación" },
   { status: "listo", label: "Listo" },
   { status: "entregado", label: "Entregado" },
-  { status: "cancelado", label: "Cancelado" }
 ];
 
 type BillingType = "all" | "subsidized" | "non_subsidized";

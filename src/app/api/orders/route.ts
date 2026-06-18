@@ -3,6 +3,7 @@ import { DELIVERY_WINDOW } from "@/lib/constants";
 import { validateCompanyOrderEmail } from "@/lib/email-rules";
 import { toDateInputValue } from "@/lib/format";
 import { sendOrderNotificationEmail } from "@/lib/order-email";
+import { isSubsidyConsumingOrder } from "@/lib/order-validity";
 import {
   createStripeCheckoutSession,
   isOnlinePaymentMethod,
@@ -46,6 +47,8 @@ type SubsidyRule = {
 type ExistingSubsidyOrder = {
   created_at: string;
   status: string;
+  payment_method?: string | null;
+  payment_status?: string | null;
   order_items: { subsidy_amount: number | string }[] | null;
 };
 
@@ -330,7 +333,7 @@ export async function POST(request: NextRequest) {
   const today = toDateInputValue();
   const { data: existingOrders, error: subsidyUsageError } = await supabase
     .from("orders")
-    .select("created_at,status,order_items(subsidy_amount)")
+    .select("created_at,status,payment_method,payment_status,order_items(subsidy_amount)")
     .eq("company_id", selectedCompany.id)
     .eq("customer_email", customerEmail)
     .gte("created_at", recentLimit);
@@ -343,7 +346,7 @@ export async function POST(request: NextRequest) {
     const sameMadridDay = toDateInputValue(new Date(order.created_at)) === today;
     const hasSubsidy = (order.order_items ?? []).some((item) => Number(item.subsidy_amount) > 0);
 
-    return sameMadridDay && order.status !== "cancelado" && hasSubsidy;
+    return sameMadridDay && isSubsidyConsumingOrder(order) && hasSubsidy;
   });
 
   await supabase.from("customers").upsert(
@@ -493,6 +496,8 @@ export async function POST(request: NextRequest) {
       await supabase
         .from("orders")
         .update({
+          status: "cancelado",
+          status_updated_at: new Date().toISOString(),
           payment_status: "failed",
           notes: `${notes ? `${notes}\n` : ""}Error iniciando pago Stripe: ${message}`
         })
