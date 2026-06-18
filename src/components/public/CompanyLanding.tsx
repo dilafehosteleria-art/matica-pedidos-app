@@ -53,7 +53,7 @@ export function CompanyLanding({
             </div>
 
             <div className="mt-5 rounded-lg border border-matica-green/20 bg-matica-mint px-4 py-3 text-sm font-black leading-6 text-matica-green shadow-sm sm:text-base">
-              Pedidos de lunes a viernes de 09:30 a 12:30 · Entrega en tu empresa de 13:00 a 13:30
+              Pedidos de lunes a viernes de 09:30 a 12:40 · Entrega en tu empresa de 13:00 a 13:30
             </div>
 
             <div className="mt-6 flex flex-col gap-3 sm:flex-row">

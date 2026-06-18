@@ -22,7 +22,7 @@ function getDraft(company: AdminCompany): CompanyDraft {
     name: company.name,
     slug: company.slug,
     active: company.active,
-    order_window: company.order_window ?? "lunes a jueves de 09:30 a 12:30",
+    order_window: company.order_window ?? "lunes a viernes de 09:30 a 12:40",
     delivery_window: company.delivery_window ?? "13:00 a 13:30",
     daily_menu_subsidy: Number(dailyRule?.subsidy_amount ?? 0),
     half_menu_subsidy: Number(halfRule?.subsidy_amount ?? 0),

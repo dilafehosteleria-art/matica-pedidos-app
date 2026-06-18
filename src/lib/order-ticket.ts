@@ -27,6 +27,10 @@ const METADATA_LABELS: Record<string, string> = {
   sandwich: "Bocadillo",
   filling: "Relleno/base",
   sauce: "Salsa",
+  wrap_base: "Base",
+  wrap_protein: "Proteína",
+  wrap_toppings: "Toppings",
+  wrap_sauces: "Salsas",
   main_protein: "Proteína principal",
   drink: "Bebida",
   dessert: "Postre",
@@ -142,6 +146,11 @@ export function orderItemOptionLines(metadata?: Record<string, string> | null): 
     usedKeys.add("filling");
   }
 
+  if (hasValue(metadata, "wrap_base")) {
+    appendEntry(entries, metadata, "wrap_base", "Base");
+    usedKeys.add("wrap_base");
+  }
+
   if (hasValue(metadata, "toppings")) {
     appendEntry(entries, metadata, "toppings", "Toppings");
     usedKeys.add("toppings");
@@ -150,6 +159,16 @@ export function orderItemOptionLines(metadata?: Record<string, string> | null): 
   if (hasValue(metadata, "protein")) {
     appendEntry(entries, metadata, "protein", "Proteína");
     usedKeys.add("protein");
+  }
+
+  if (hasValue(metadata, "wrap_protein")) {
+    appendEntry(entries, metadata, "wrap_protein", "Proteína");
+    usedKeys.add("wrap_protein");
+  }
+
+  if (hasValue(metadata, "wrap_toppings")) {
+    appendEntry(entries, metadata, "wrap_toppings", "Toppings");
+    usedKeys.add("wrap_toppings");
   }
 
   if (hasValue(metadata, "main_protein")) {
@@ -165,6 +184,11 @@ export function orderItemOptionLines(metadata?: Record<string, string> | null): 
   if (hasValue(metadata, "sauce")) {
     appendEntry(entries, metadata, "sauce", "Salsa");
     usedKeys.add("sauce");
+  }
+
+  if (hasValue(metadata, "wrap_sauces")) {
+    appendEntry(entries, metadata, "wrap_sauces", "Salsas");
+    usedKeys.add("wrap_sauces");
   }
 
   if (hasValue(metadata, "dressing")) {

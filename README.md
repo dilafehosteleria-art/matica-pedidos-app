@@ -76,7 +76,7 @@ npm run start
 ## Horario y subvencion
 
 - La carta se puede ver siempre.
-- Solo se puede confirmar pedido de lunes a jueves de 09:30 a 12:30, hora de Madrid.
+- Solo se puede confirmar pedido de lunes a viernes de 09:30 a 12:40, hora de Madrid.
 - Entrega informativa: 13:00 a 13:30.
 - Bureau Veritas subvenciona 4 EUR en `Menu del dia` y 3,50 EUR en `Medio menu`.
 - La funcion de Supabase aplica solo una subvencion por email y dia. Si el email ya tiene una subvencion hoy, los siguientes menus se cobran a precio completo.

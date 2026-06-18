@@ -30,7 +30,14 @@ import { DELIVERY_WINDOW } from "@/lib/constants";
 import { validateCompanyOrderEmail } from "@/lib/email-rules";
 import { formatCurrency } from "@/lib/format";
 import { calculateCartTotals, getSubsidyAmount } from "@/lib/pricing";
+import { getOrderWindowState } from "@/lib/schedule";
 import type { CartItem, CompanyBranch, CustomerForm, DailyMenu, DailyMenuCourse, PaymentMethod, Product, PublicData } from "@/lib/types";
+import {
+  WRAP_BASE_OPTIONS,
+  WRAP_PROTEIN_OPTIONS,
+  WRAP_SAUCE_OPTIONS,
+  WRAP_TOPPING_OPTIONS
+} from "@/lib/wrap-config";
 
 const STORAGE_KEY_PREFIX = "matica:customer";
 const CUSTOMER_STORAGE_MAX_AGE_SECONDS = 60 * 60 * 24 * 180;
@@ -82,6 +89,7 @@ type ConfigGroup = {
   type: "single" | "multi" | "checkbox";
   min?: number;
   max?: number;
+  instruction?: string;
   options: Option[];
   dependsOn?: {
     key: string;
@@ -218,36 +226,6 @@ const DRESSING_OPTIONS: Option[] = [
   { label: "Vinagreta de queso Parmesano" }
 ];
 
-const WRAP_PROTEIN_OPTIONS: Option[] = [
-  { label: "Pollo asado" },
-  { label: "Atún" },
-  { label: "Falafel" },
-  { label: "Ternera grill" },
-  { label: "Heura" }
-];
-
-const WRAP_FILLING_OPTIONS: Option[] = [
-  { label: "Mezclum" },
-  { label: "Arroz especiado" },
-  { label: "Verduras grill" },
-  { label: "Queso fundido" }
-];
-
-const WRAP_TOPPING_OPTIONS: Option[] = [
-  { label: "Tomate" },
-  { label: "Cebolla morada" },
-  { label: "Maíz" },
-  { label: "Jalapeños" },
-  { label: "Aguacate" }
-];
-
-const WRAP_SAUCE_OPTIONS: Option[] = [
-  { label: "Chipotle suave" },
-  { label: "Yogur" },
-  { label: "Mostaza y miel" },
-  { label: "Sin salsa" }
-];
-
 const SANDWICH_OPTIONS: Option[] = [
   { label: "Pollo con queso de cabra y cebolla caramelizada" },
   { label: "Pollo con bacon, lechuga y cebolla plancha" },
@@ -357,6 +335,10 @@ function formatMetadataKey(key: string) {
     sandwich: "Bocadillo",
     filling: "Relleno/base",
     sauce: "Salsa",
+    wrap_base: "Base",
+    wrap_protein: "Proteína",
+    wrap_toppings: "Toppings",
+    wrap_sauces: "Salsas",
     main_protein: "Proteína principal",
     side: "Guarnición",
     sides: "Guarnición",
@@ -581,13 +563,43 @@ function getConfigSpec(product: Product, section: PublicSection, menu: DailyMenu
     return {
       title: "Diseña tu wrap",
       lead:
-        "Diseña tu wrap con tus ingredientes favoritos. Elige 2 bases, 1 proteína, 5 toppings y 2 salsas de tu preferencia.",
+        "Diseña tu wrap con tus ingredientes favoritos.",
       included: [],
       groups: [
-        { key: "protein", label: "Proteína", type: "single", options: WRAP_PROTEIN_OPTIONS },
-        { key: "filling", label: "Relleno/base", type: "multi", min: 1, max: 2, options: WRAP_FILLING_OPTIONS },
-        exactMultiGroup("toppings", "Toppings", 3, WRAP_TOPPING_OPTIONS),
-        { key: "sauce", label: "Salsa", type: "single", options: WRAP_SAUCE_OPTIONS }
+        {
+          key: "wrap_base",
+          label: "Base",
+          type: "multi",
+          min: 1,
+          max: 2,
+          instruction: "Escoge de 1 a 2",
+          options: WRAP_BASE_OPTIONS
+        },
+        {
+          key: "wrap_protein",
+          label: "Proteína",
+          type: "single",
+          instruction: "Escoge 1",
+          options: WRAP_PROTEIN_OPTIONS
+        },
+        {
+          key: "wrap_toppings",
+          label: "Toppings",
+          type: "multi",
+          min: 1,
+          max: 5,
+          instruction: "Escoge de 1 a 5",
+          options: WRAP_TOPPING_OPTIONS
+        },
+        {
+          key: "wrap_sauces",
+          label: "Salsas",
+          type: "multi",
+          min: 0,
+          max: 2,
+          instruction: "Escoge 2 (opcional)",
+          options: WRAP_SAUCE_OPTIONS
+        }
       ]
     };
   }
@@ -651,6 +663,7 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
   const [submitState, setSubmitState] = useState<SubmitState>({ status: "idle" });
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("stripe_card");
   const [customerLoaded, setCustomerLoaded] = useState(false);
+  const [orderWindow, setOrderWindow] = useState({ open: false, message: "" });
   const [lastOrder, setLastOrder] = useState<{ id: string; total: number } | null>(null);
   const storageKey = `${STORAGE_KEY_PREFIX}:${companySlug}`;
 
@@ -658,6 +671,15 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
     setCustomer(readStoredCustomer(storageKey));
     setCustomerLoaded(true);
   }, [storageKey]);
+
+  useEffect(() => {
+    const refreshOrderWindow = () => setOrderWindow(getOrderWindowState());
+
+    refreshOrderWindow();
+    const interval = window.setInterval(refreshOrderWindow, 30_000);
+
+    return () => window.clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     fetch(`/api/public/companies/${companySlug}`)
@@ -759,6 +781,7 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
     Boolean(customer.phone.trim()) &&
     Boolean(selectedBranch) &&
     paymentOptions.some((option) => option.method === paymentMethod) &&
+    orderWindow.open &&
     cart.length > 0;
 
   function updateCustomer(field: keyof CustomerForm, value: string) {
@@ -797,6 +820,11 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
 
   async function submitOrder() {
     setSubmitState({ status: "idle" });
+
+    if (!orderWindow.open) {
+      setSubmitState({ status: "error", message: orderWindow.message });
+      return;
+    }
 
     if (!customer.name.trim() || !customer.email.trim() || !customer.phone.trim() || !selectedBranch) {
       setSubmitState({ status: "error", message: "Completa tus datos antes de confirmar." });
@@ -999,6 +1027,7 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
           emailValidationMessage={emailValidation.valid ? "" : emailValidation.message}
           submitState={submitState}
           canConfirmOrder={canConfirmOrder}
+          orderWindow={orderWindow}
           hasSubsidizedItem={hasSubsidizedItem}
           subsidyAlreadyUsed={subsidyAlreadyUsed}
           changeQuantity={changeQuantity}
@@ -1291,9 +1320,13 @@ function ConfigModal({
       _supplement_total: Math.max(0, configuredUnitPrice - Number(product.base_price)).toFixed(2)
     };
 
-    for (const group of activeGroups.filter((activeGroup) => activeGroup.type !== "multi")) {
-      const value = singleValues[group.key];
+    for (const group of activeGroups) {
+      if (group.type === "multi") {
+        metadata[group.key] = (multiValues[group.key] ?? []).join(", ");
+        continue;
+      }
 
+      const value = singleValues[group.key];
       if (group.type === "checkbox" && group.key === "bread") {
         metadata[group.key] = value ? "Sí" : "No";
         continue;
@@ -1304,11 +1337,6 @@ function ConfigModal({
       }
 
       metadata[group.key] = value;
-    }
-
-    for (const group of activeGroups.filter((activeGroup) => activeGroup.type === "multi")) {
-      const value = multiValues[group.key] ?? [];
-      metadata[group.key] = value.join(", ");
     }
 
     const supplements = activeGroups.flatMap((group) => {
@@ -1384,15 +1412,16 @@ function ConfigModal({
                       Paso {stepIndex + 1} de {activeGroups.length}
                     </span>
                     <span className="mt-1 block text-2xl font-black">{currentGroup.label}</span>
-                    {currentGroup.type === "multi" && (currentGroup.min || currentGroup.max) ? (
+                    {currentGroup.instruction || (currentGroup.type === "multi" && (currentGroup.min || currentGroup.max)) ? (
                       <span className="mt-1 block text-sm font-semibold text-matica-ink/55">
-                        {currentGroup.min && currentGroup.max === currentGroup.min
+                        {currentGroup.instruction ??
+                        (currentGroup.min && currentGroup.max === currentGroup.min
                           ? `Escoge ${currentGroup.min}`
                           : currentGroup.min && currentGroup.max
                             ? `Escoge de ${currentGroup.min} a ${currentGroup.max}`
                             : currentGroup.max
                             ? `Escoge hasta ${currentGroup.max}`
-                            : `Escoge al menos ${currentGroup.min}`}
+                            : `Escoge al menos ${currentGroup.min}`)}
                       </span>
                     ) : null}
                   </legend>
@@ -1507,6 +1536,7 @@ function CheckoutPanel({
   emailValidationMessage,
   submitState,
   canConfirmOrder,
+  orderWindow,
   hasSubsidizedItem,
   subsidyAlreadyUsed,
   changeQuantity,
@@ -1529,6 +1559,7 @@ function CheckoutPanel({
   emailValidationMessage: string;
   submitState: SubmitState;
   canConfirmOrder: boolean;
+  orderWindow: { open: boolean; message: string };
   hasSubsidizedItem: boolean;
   subsidyAlreadyUsed: boolean;
   changeQuantity: (key: string, delta: number) => void;
@@ -1739,6 +1770,12 @@ function CheckoutPanel({
           {submitState.status === "error" ? (
             <div className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm font-bold text-red-700">
               {submitState.message}
+            </div>
+          ) : null}
+
+          {!orderWindow.open && orderWindow.message ? (
+            <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm font-bold text-amber-900">
+              {orderWindow.message}
             </div>
           ) : null}
 

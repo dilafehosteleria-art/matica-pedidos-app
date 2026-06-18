@@ -1,10 +1,10 @@
 alter table public.companies
-add column if not exists order_window text default 'lunes a jueves de 09:30 a 12:30',
+add column if not exists order_window text default 'lunes a viernes de 09:30 a 12:40',
 add column if not exists delivery_window text default '13:00 a 13:30';
 
 update public.companies
 set
-  order_window = coalesce(order_window, 'lunes a jueves de 09:30 a 12:30'),
+  order_window = coalesce(order_window, 'lunes a viernes de 09:30 a 12:40'),
   delivery_window = coalesce(delivery_window, '13:00 a 13:30')
 where slug = 'bureau-veritas';
 

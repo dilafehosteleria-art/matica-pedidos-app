@@ -433,7 +433,7 @@ export function buildPublicCatalogSections(categories: Category[], products: Pro
             {
               name: "Diseña tu wrap",
               description:
-                "Diseña tu wrap con tus ingredientes favoritos. Elige 2 bases, 1 proteína, 5 toppings y 2 salsas de tu preferencia.",
+                "Diseña tu wrap con 1 o 2 bases, 1 proteína, hasta 5 toppings y hasta 2 salsas.",
               base_price: 7.5,
               customer_price: 7.5,
               product_type: "standard"

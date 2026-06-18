@@ -4,6 +4,7 @@ import { validateCompanyOrderEmail } from "@/lib/email-rules";
 import { toDateInputValue } from "@/lib/format";
 import { sendOrderNotificationEmail } from "@/lib/order-email";
 import { isSubsidyConsumingOrder } from "@/lib/order-validity";
+import { isOrderWindowOpen, ORDER_WINDOW_MESSAGE } from "@/lib/schedule";
 import {
   createStripeCheckoutSession,
   isOnlinePaymentMethod,
@@ -12,6 +13,7 @@ import {
 } from "@/lib/payment";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import type { AdminOrder, OrderStatus, PaymentMethod, ProductType } from "@/lib/types";
+import { expectedCustomWrapUnitPrice } from "@/lib/wrap-config";
 
 export const dynamic = "force-dynamic";
 
@@ -176,6 +178,10 @@ function expectedConfiguredUnitPrice(metadata: Record<string, string>) {
     return expectedSaladConfiguredUnitPrice(7.5, metadata, true);
   }
 
+  if (displayName === "Diseña tu wrap") {
+    return expectedCustomWrapUnitPrice(7.5, metadata);
+  }
+
   if (displayName === "Menú ensalada pequeña + bocadillo") {
     return expectedSaladConfiguredUnitPrice(10, metadata, false);
   }
@@ -192,9 +198,10 @@ function expectedConfiguredUnitPrice(metadata: Record<string, string>) {
 function safeConfiguredUnitPrice(metadata: Record<string, string>) {
   const incomingUnitPrice = Number(metadata._configured_unit_price);
   const expectedUnitPrice = expectedConfiguredUnitPrice(metadata);
+  const requiresValidatedConfiguration = metadata.display_name?.trim() === "Diseña tu wrap";
 
   if (!Number.isFinite(incomingUnitPrice) || incomingUnitPrice <= 0) {
-    return { value: null, valid: true };
+    return { value: null, valid: !requiresValidatedConfiguration };
   }
 
   if (expectedUnitPrice === null || Math.abs(incomingUnitPrice - expectedUnitPrice) > 0.01) {
@@ -205,6 +212,10 @@ function safeConfiguredUnitPrice(metadata: Record<string, string>) {
 }
 
 export async function POST(request: NextRequest) {
+  if (!isOrderWindowOpen()) {
+    return badRequest(ORDER_WINDOW_MESSAGE, 403);
+  }
+
   const supabase = getSupabaseServerClient();
 
   if (!supabase) {

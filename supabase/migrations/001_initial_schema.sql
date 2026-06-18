@@ -142,9 +142,9 @@ returns boolean
 language sql
 stable
 as $$
-  select extract(isodow from (now() at time zone 'Europe/Madrid')) between 1 and 4
+  select extract(isodow from (now() at time zone 'Europe/Madrid')) between 1 and 5
     and ((now() at time zone 'Europe/Madrid')::time >= time '09:30')
-    and ((now() at time zone 'Europe/Madrid')::time <= time '12:30');
+    and ((now() at time zone 'Europe/Madrid')::time < time '12:40');
 $$;
 
 create or replace function public.submit_b2b_order(order_payload jsonb)
@@ -176,7 +176,7 @@ declare
   v_subsidy_applied boolean := false;
 begin
   if not public.is_b2b_order_window_open() then
-    raise exception 'Los pedidos están disponibles de lunes a jueves de 09:30 a 12:30.';
+    raise exception 'Los pedidos están disponibles de lunes a viernes de 09:30 a 12:40.';
   end if;
 
   if jsonb_typeof(coalesce(order_payload->'items', '[]'::jsonb)) <> 'array'

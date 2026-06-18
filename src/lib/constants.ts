@@ -6,7 +6,7 @@ export const BUREAU_VERITAS_COMPANY: Company = {
   id: BUREAU_VERITAS_COMPANY_ID,
   name: "Bureau Veritas",
   slug: "bureau-veritas",
-  order_window: "lunes a jueves de 09:30 a 12:30",
+  order_window: "lunes a viernes de 09:30 a 12:40",
   delivery_window: "13:00 a 13:30",
   active: true
 };
@@ -263,7 +263,7 @@ export const PRODUCTS: Product[] = [
     category_id: "218dfc4c-0897-428e-aa6b-0cc115ac04c2",
     name: "Diseña tu wrap",
     description:
-      "Diseña tu wrap con tus ingredientes favoritos. Elige 2 bases, 1 proteína, 5 toppings y 2 salsas de tu preferencia.",
+      "Diseña tu wrap con 1 o 2 bases, 1 proteína, hasta 5 toppings y hasta 2 salsas.",
     base_price: 7.5,
     customer_price: 7.5,
     image_url: null,
@@ -504,4 +504,3 @@ export const DEFAULT_DAILY_MENU: DailyMenu = {
 };
 
 export const DELIVERY_WINDOW = "13:00 a 13:30";
-export const ORDER_WINDOW_MESSAGE = "Los pedidos están disponibles de lunes a jueves de 09:30 a 12:30.";
