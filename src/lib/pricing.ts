@@ -1,4 +1,4 @@
-import type { CartItem, Company } from "./types";
+import type { CartItem, Company, PaymentMethod } from "./types";
 
 export function getSubsidyAmount(productType: string, company?: Pick<Company, "billing_type" | "subsidy_rules"> | null) {
   if (company?.billing_type !== "subsidized") {
@@ -13,7 +13,8 @@ export function getSubsidyAmount(productType: string, company?: Pick<Company, "b
 export function calculateCartTotals(
   items: CartItem[],
   company?: Pick<Company, "billing_type" | "subsidy_rules"> | null,
-  subsidyAlreadyUsed = false
+  subsidyAlreadyUsed = false,
+  paymentMethod?: PaymentMethod
 ) {
   let subsidyApplied = false;
   const subtotal = items.reduce((sum, item) => sum + item.base_price * item.quantity, 0);
@@ -28,7 +29,7 @@ export function calculateCartTotals(
     }
   }
 
-  const companyPaysAll = company?.billing_type === "company";
+  const companyPaysAll = company?.billing_type === "company" && paymentMethod !== "stripe_card" && paymentMethod !== "stripe_bizum";
   const employeeTotal = companyPaysAll ? 0 : Math.max(subtotal - subsidyTotal, 0);
   const companyInvoiceTotal = companyPaysAll ? subtotal : subsidyTotal;
 

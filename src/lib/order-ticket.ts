@@ -234,6 +234,10 @@ function companyName(order: AdminOrder) {
   return order.companies?.name ?? "Cliente principal";
 }
 
+function companyAddress(order: AdminOrder) {
+  return order.companies?.delivery_address?.trim() ?? "";
+}
+
 function branchName(order: AdminOrder) {
   return order.company_branches?.name ?? "Sin empresa interna";
 }
@@ -259,6 +263,7 @@ export function buildOrderPlainText(order: AdminOrder) {
     `Fecha/hora: ${formatOrderDateTime(order.created_at)}`,
     `Cliente principal: ${companyName(order)}`,
     `Empresa interna: ${branchName(order)}`,
+    ...(companyAddress(order) ? [`Dirección de entrega: ${companyAddress(order)}`] : []),
     "",
     "DATOS CLIENTE",
     `Nombre: ${order.customer_name}`,

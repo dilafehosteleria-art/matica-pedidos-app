@@ -82,7 +82,8 @@ export function AdminGate({
             <AdminLink href="/admin">Inicio</AdminLink>
             <AdminLink href="/admin/pedidos">Pedidos</AdminLink>
             <AdminLink href="/admin/informes">Informes</AdminLink>
-            <AdminLink href="/admin/companies">Empresas</AdminLink>
+            <AdminLink href="/admin/empresas">Empresas</AdminLink>
+            <AdminLink href="/admin/configuracion">Configuración</AdminLink>
             <AdminLink href="/admin/menu">Menú del día</AdminLink>
             <AdminLink href="/admin/products">Productos</AdminLink>
             <button

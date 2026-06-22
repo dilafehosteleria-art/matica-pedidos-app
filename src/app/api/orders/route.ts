@@ -2,9 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { DELIVERY_WINDOW } from "@/lib/constants";
 import { validateCompanyOrderEmail } from "@/lib/email-rules";
 import { toDateInputValue } from "@/lib/format";
+import { getGlobalSchedule } from "@/lib/global-settings";
 import { sendOrderNotificationEmail } from "@/lib/order-email";
 import { isSubsidyConsumingOrder } from "@/lib/order-validity";
-import { isOrderWindowOpen, ORDER_WINDOW_MESSAGE } from "@/lib/schedule";
+import { deliveryWindowLabel, isOrderWindowOpen, orderWindowMessage } from "@/lib/schedule";
 import {
   createStripeCheckoutSession,
   isOnlinePaymentMethod,
@@ -226,14 +227,16 @@ function safeConfiguredUnitPrice(metadata: Record<string, string>) {
 }
 
 export async function POST(request: NextRequest) {
-  if (!isOrderWindowOpen()) {
-    return badRequest(ORDER_WINDOW_MESSAGE, 403);
-  }
-
   const supabase = getSupabaseServerClient();
 
   if (!supabase) {
     return badRequest("Ahora mismo no podemos registrar pedidos. Inténtalo de nuevo en unos minutos.", 503);
+  }
+
+  const globalSchedule = await getGlobalSchedule(supabase);
+
+  if (!isOrderWindowOpen(new Date(), globalSchedule)) {
+    return badRequest(orderWindowMessage(globalSchedule), 403);
   }
 
   const body = (await request.json()) as IncomingOrder;
@@ -433,12 +436,13 @@ export async function POST(request: NextRequest) {
     };
   });
 
+  const companyPaysAll = billingType === "company" && !isOnlinePaymentMethod(requestedPaymentMethod);
   const employeeTotal =
-    billingType === "company"
+    companyPaysAll
       ? 0
       : Number((subtotal - subsidyTotal).toFixed(2));
   const companyInvoiceTotal =
-    billingType === "company"
+    companyPaysAll
       ? subtotal
       : billingType === "subsidized"
         ? subsidyTotal
@@ -464,7 +468,7 @@ export async function POST(request: NextRequest) {
     company_invoice_total: companyInvoiceTotal,
     total,
     notes,
-    delivery_window: selectedCompany.delivery_window || DELIVERY_WINDOW
+    delivery_window: deliveryWindowLabel(globalSchedule) || selectedCompany.delivery_window || DELIVERY_WINDOW
   };
 
   let { data: order, error: orderError } = await supabase
@@ -551,7 +555,7 @@ export async function POST(request: NextRequest) {
   } else {
     const { data: emailOrder, error: emailOrderError } = await supabase
       .from("orders")
-      .select("*,order_items(*),companies(name),company_branches(name)")
+      .select("*,order_items(*),companies(name,delivery_address),company_branches(name)")
       .eq("id", order.id)
       .single();
 

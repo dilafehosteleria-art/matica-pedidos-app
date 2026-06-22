@@ -10,7 +10,9 @@ import {
 } from "@/lib/constants";
 import { mergeCatalogDefaults } from "@/lib/catalog";
 import { toDateInputValue } from "@/lib/format";
+import { getGlobalSchedule } from "@/lib/global-settings";
 import { publicStripePaymentsEnabled } from "@/lib/payment";
+import { DEFAULT_GLOBAL_SCHEDULE } from "@/lib/schedule";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import type { DailyMenu, DailyMenuCourse, Product, PublicCompany, PublicData } from "@/lib/types";
 
@@ -21,7 +23,7 @@ export const LANDING_FEATURED_PRODUCT_IDS = [
   "508060cf-b36f-4ae5-92bd-989954034da3"
 ];
 
-const COMPANY_PUBLIC_FIELDS = "id,name,slug,active,order_window,delivery_window";
+const COMPANY_PUBLIC_FIELDS = "id,name,slug,active,delivery_address,order_window,delivery_window";
 const COMPANY_FIELDS = "*,subsidy_rules(product_type,subsidy_amount,active)";
 const BRANCH_FIELDS = "id,company_id,name,active";
 const CATEGORY_FIELDS = "id,name,slug,sort_order,active";
@@ -81,6 +83,7 @@ export function seedCompanyData(slug = "bureau-veritas"): PublicData | null {
       ...DEFAULT_DAILY_MENU,
       date: toDateInputValue()
     },
+    schedule: DEFAULT_GLOBAL_SCHEDULE,
     source: "seed"
   };
 }
@@ -147,6 +150,7 @@ export async function getPublicCompanyData(slug: string): Promise<PublicData | n
   }
 
   const today = toDateInputValue();
+  const scheduleQuery = getGlobalSchedule(supabase);
   const companyQuery = supabase
     .from("companies")
     .select(COMPANY_FIELDS)
@@ -168,11 +172,12 @@ export async function getPublicCompanyData(slug: string): Promise<PublicData | n
     .eq("active", true)
     .maybeSingle();
 
-  const [companyResult, categories, products, todaysMenu] = await Promise.all([
+  const [companyResult, categories, products, todaysMenu, schedule] = await Promise.all([
     companyQuery,
     categoriesQuery,
     productsQuery,
-    todaysMenuQuery
+    todaysMenuQuery,
+    scheduleQuery
   ]);
   const { data: company, error: companyError } = companyResult;
 
@@ -216,6 +221,7 @@ export async function getPublicCompanyData(slug: string): Promise<PublicData | n
     categories: catalog.categories.filter((category) => category.active),
     products: catalog.products.filter((product) => product.active),
     dailyMenu: normalizeMenu(dailyMenu) ?? fallback?.dailyMenu ?? null,
+    schedule,
     source: "supabase"
   } satisfies PublicData;
 }

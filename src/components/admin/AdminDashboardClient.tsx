@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertCircle, Building2, CalendarDays, ClipboardList, Clock, Eye, FileSpreadsheet, Loader2, Package, Printer, RefreshCw, X, Utensils } from "lucide-react";
+import { AlertCircle, Building2, CalendarDays, ClipboardList, Clock, Clock3, Eye, FileSpreadsheet, Loader2, Package, Printer, RefreshCw, X, Utensils } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AdminGate } from "./AdminGate";
@@ -122,10 +122,16 @@ const DASHBOARD_LINKS = [
     icon: FileSpreadsheet
   },
   {
-    href: "/admin/companies",
+    href: "/admin/empresas",
     title: "Empresas",
-    description: "Clientes principales y empresas internas.",
+    description: "Altas, direcciones y formas de pago.",
     icon: Building2
+  },
+  {
+    href: "/admin/configuracion",
+    title: "Configuración",
+    description: "Días y horario global de pedidos y entrega.",
+    icon: Clock3
   },
   {
     href: "/admin/menu",
@@ -709,6 +715,9 @@ function OrderDetailModal({
                 <InfoRow label="Fecha y hora" value={formatOrderDateTime(order.created_at)} />
                 <InfoRow label="Cliente principal" value={companyName} />
                 <InfoRow label="Empresa interna" value={branchName} />
+                {order.companies?.delivery_address ? (
+                  <InfoRow label="Dirección de entrega" value={order.companies.delivery_address} />
+                ) : null}
                 <InfoRow label="Nombre" value={order.customer_name} />
                 <InfoRow label="Teléfono" value={order.customer_phone} />
                 <InfoRow label="Email" value={order.customer_email} />
@@ -848,6 +857,9 @@ function ThermalTicket({ order }: { order: AdminOrder }) {
       <p>FECHA: {formatOrderDateTime(order.created_at)}</p>
       <p>CLIENTE: {ticketText(order.customer_name)}</p>
       <p>EMPRESA: {ticketText(branchName)}</p>
+      {order.companies?.delivery_address ? (
+        <p>DIRECCION: {ticketText(order.companies.delivery_address)}</p>
+      ) : null}
       <div className="ticket-separator" />
       <p className="ticket-section-title">PRODUCTOS</p>
       {order.order_items.map((item) => (

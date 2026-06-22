@@ -65,7 +65,7 @@ async function loadOrder(orderId: string) {
 
   const { data, error } = await supabase
     .from("orders")
-    .select("*,order_items(*),companies(name),company_branches(name)")
+    .select("*,order_items(*),companies(name,delivery_address),company_branches(name)")
     .eq("id", orderId)
     .single();
 

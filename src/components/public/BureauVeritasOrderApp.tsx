@@ -30,7 +30,7 @@ import { DELIVERY_WINDOW } from "@/lib/constants";
 import { validateCompanyOrderEmail } from "@/lib/email-rules";
 import { formatCurrency } from "@/lib/format";
 import { calculateCartTotals, getSubsidyAmount } from "@/lib/pricing";
-import { getOrderWindowState } from "@/lib/schedule";
+import { deliveryWindowLabel, getOrderWindowState } from "@/lib/schedule";
 import type { CartItem, CompanyBranch, CustomerForm, DailyMenu, DailyMenuCourse, PaymentMethod, Product, PublicData } from "@/lib/types";
 import {
   WRAP_BASE_OPTIONS,
@@ -59,7 +59,7 @@ function publicPaymentOptions(company: PublicData["company"] | null | undefined)
       label: company.billing_type === "company" ? "Pago a cargo de la empresa" : "Pago a la entrega",
       description:
         company.billing_type === "company"
-          ? "El pedido queda pendiente de facturación a la empresa. No pagas online."
+          ? `Este pedido será facturado a ${company.name}. No necesitas pagar online.`
           : "Confirmas ahora y pagas en el punto de entrega."
     });
   }
@@ -669,13 +669,13 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
   }, [storageKey]);
 
   useEffect(() => {
-    const refreshOrderWindow = () => setOrderWindow(getOrderWindowState());
+    const refreshOrderWindow = () => setOrderWindow(getOrderWindowState(new Date(), data?.schedule));
 
     refreshOrderWindow();
     const interval = window.setInterval(refreshOrderWindow, 30_000);
 
     return () => window.clearInterval(interval);
-  }, []);
+  }, [data?.schedule]);
 
   useEffect(() => {
     fetch(`/api/public/companies/${companySlug}`)
@@ -764,13 +764,16 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
   }, [paymentMethod, paymentOptions]);
 
   const totals = useMemo(
-    () => calculateCartTotals(cart, data?.company, subsidyAlreadyUsed),
-    [cart, data?.company, subsidyAlreadyUsed]
+    () => calculateCartTotals(cart, data?.company, subsidyAlreadyUsed, paymentMethod),
+    [cart, data?.company, paymentMethod, subsidyAlreadyUsed]
   );
+  const displayTotal = totals.employeeTotal === 0 && totals.companyInvoiceTotal > 0 ? totals.subtotal : totals.total;
   const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
   const hasSubsidizedItem = cart.some((item) => getSubsidyAmount(item.product_type, data?.company) > 0);
   const companyName = data?.company.name ?? "tu empresa";
-  const deliveryWindow = data?.company.delivery_window ?? DELIVERY_WINDOW;
+  const deliveryWindow = data?.schedule
+    ? deliveryWindowLabel(data.schedule)
+    : data?.company.delivery_window ?? DELIVERY_WINDOW;
   const selectedBranch = data?.branches.find((branch) => branch.id === customer.company_branch_id) ?? null;
   const emailValidation = validateCompanyOrderEmail(companySlug, customer.email);
   const canConfirmOrder =
@@ -877,14 +880,20 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
 
     setCart([]);
     setNotes("");
+    const confirmedDisplayTotal = Number(
+      payload.order?.employee_total === 0 && payload.order?.company_invoice_total > 0
+        ? payload.order?.subtotal
+        : payload.order?.total ?? displayTotal
+    );
+
     setLastOrder({
       id: payload.order?.id ?? "",
-      total: Number(payload.order?.total ?? totals.total)
+      total: confirmedDisplayTotal
     });
     setSubsidyAlreadyUsed(Boolean(payload.order?.prior_subsidy_used || payload.order?.subsidy_applied));
     setSubmitState({
       status: "success",
-      message: `Pedido confirmado. Total: ${formatCurrency(Number(payload.order?.total ?? totals.total))}.`
+      message: `Pedido confirmado. Importe: ${formatCurrency(confirmedDisplayTotal)}.`
     });
     goToStep("confirmation");
   }
@@ -931,12 +940,12 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
                   type="button"
                   className="matica-focus hidden h-10 shrink-0 items-center gap-1.5 rounded-full border border-matica-green bg-white px-2.5 text-xs font-black text-matica-green shadow-sm sm:flex sm:px-3"
                   onClick={() => goToStep("checkout")}
-                  aria-label={`Ver carrito, ${cartCount} productos, total ${formatCurrency(totals.total)}`}
+                  aria-label={`Ver carrito, ${cartCount} productos, total ${formatCurrency(displayTotal)}`}
                 >
                   <ShoppingBag className="h-4 w-4" />
                   <span>{cartCount}</span>
                   <span className="h-4 w-px bg-matica-line" aria-hidden="true" />
-                  <span>{formatCurrency(totals.total)}</span>
+                  <span>{formatCurrency(displayTotal)}</span>
                 </button>
               </div>
             </div>
@@ -998,14 +1007,14 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
           type="button"
           className="matica-focus fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] right-4 z-30 flex min-h-12 items-center gap-2 rounded-full border border-matica-green bg-white px-4 text-sm font-black text-matica-green shadow-soft sm:hidden"
           onClick={() => goToStep("checkout")}
-          aria-label={`Ver carrito, ${cartCount} productos, total ${formatCurrency(totals.total)}`}
+          aria-label={`Ver carrito, ${cartCount} productos, total ${formatCurrency(displayTotal)}`}
         >
           <ShoppingBag className="h-4 w-4" />
           <span>Cesta</span>
           <span className="h-4 w-px bg-matica-line" aria-hidden="true" />
           <span>{cartCount}</span>
           <span className="h-4 w-px bg-matica-line" aria-hidden="true" />
-          <span>{formatCurrency(totals.total)}</span>
+          <span>{formatCurrency(displayTotal)}</span>
         </button>
       ) : null}
 
@@ -1018,6 +1027,7 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
           customer={customer}
           companyName={companyName}
           deliveryWindow={deliveryWindow}
+          deliveryAddress={data?.company.delivery_address ?? ""}
           totals={totals}
           notes={notes}
           setNotes={setNotes}
@@ -1111,7 +1121,7 @@ function ProductCard({
 }) {
   const canAdd = !product.sold_out && hasMenuChoices(product, menu);
   const subsidy = getSubsidyAmount(product.product_type, company);
-  const employeePrice = company.billing_type === "company" ? 0 : Number(product.customer_price);
+  const employeePrice = subsidy > 0 ? Number(product.customer_price) : Number(product.base_price);
   const displayName = getDisplayName(product, section.kind);
   const imageUrl = getProductImageUrl(product);
   const [imageFailed, setImageFailed] = useState(false);
@@ -1163,7 +1173,7 @@ function ProductCard({
           </div>
           <div className="shrink-0 text-right">
             <p className="text-left text-base font-black sm:text-right">
-              {company.billing_type === "company" ? "Paga empresa" : `${pricePrefix}${formatCurrency(employeePrice)}`}
+              {pricePrefix}{formatCurrency(employeePrice)}
             </p>
             {subsidy > 0 ? (
               <p className="text-left text-xs font-bold text-matica-ink/45 line-through sm:text-right">
@@ -1246,11 +1256,9 @@ function ConfigModal({
   }, Number(product.base_price));
   const subsidy = getSubsidyAmount(product.product_type, company);
   const customerUnitPrice =
-    company?.billing_type === "company"
-      ? 0
-      : !subsidyAlreadyUsed && subsidy > 0
-        ? Math.max(configuredUnitPrice - subsidy, 0)
-        : configuredUnitPrice;
+    !subsidyAlreadyUsed && subsidy > 0
+      ? Math.max(configuredUnitPrice - subsidy, 0)
+      : configuredUnitPrice;
   const canSubmitConfig = activeGroups.every((group) => isGroupComplete(group));
   const canGoNext = currentGroup ? isGroupComplete(currentGroup) && stepIndex < activeGroups.length - 1 : false;
 
@@ -1545,6 +1553,7 @@ function CheckoutPanel({
   customer,
   companyName,
   deliveryWindow,
+  deliveryAddress,
   totals,
   notes,
   setNotes,
@@ -1569,6 +1578,7 @@ function CheckoutPanel({
   customer: CustomerForm;
   companyName: string;
   deliveryWindow: string;
+  deliveryAddress: string;
   totals: ReturnType<typeof calculateCartTotals>;
   notes: string;
   setNotes: (value: string) => void;
@@ -1586,6 +1596,11 @@ function CheckoutPanel({
   submitOrder: () => void;
   onBack: () => void;
 }) {
+  const companyPaidOrder =
+    company?.billing_type === "company" &&
+    paymentMethod === "pay_on_delivery";
+  const displayTotal = companyPaidOrder ? totals.subtotal : totals.total;
+
   return (
     <section id="checkout" className="mx-auto max-w-6xl px-4 py-5 sm:px-6 lg:px-8">
       <button
@@ -1676,6 +1691,7 @@ function CheckoutPanel({
               <div>
                 <h2 className="text-2xl font-black">Datos del cliente</h2>
                 <p className="text-sm font-semibold text-matica-ink/55">Entrega {companyName}, {deliveryWindow}</p>
+                {deliveryAddress ? <p className="text-sm font-semibold text-matica-ink/55">{deliveryAddress}</p> : null}
               </div>
             </div>
 
@@ -1737,15 +1753,15 @@ function CheckoutPanel({
                 <span>-{formatCurrency(totals.subsidyTotal)}</span>
               </div>
             ) : null}
-            {totals.companyInvoiceTotal > 0 ? (
+            {totals.companyInvoiceTotal > 0 && !companyPaidOrder ? (
               <div className="flex justify-between text-sm font-bold text-matica-green">
                 <span>Factura empresa</span>
                 <span>{formatCurrency(totals.companyInvoiceTotal)}</span>
               </div>
             ) : null}
             <div className="flex justify-between border-t border-matica-line pt-2 text-lg font-black">
-              <span>{company?.billing_type === "company" ? "Total empleado" : "Total"}</span>
-              <span>{formatCurrency(totals.total)}</span>
+              <span>{companyPaidOrder ? "Importe del pedido" : "Total"}</span>
+              <span>{formatCurrency(displayTotal)}</span>
             </div>
           </div>
 

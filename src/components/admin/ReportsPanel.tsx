@@ -42,6 +42,8 @@ type ReportOptionCompany = {
   name: string;
   slug?: string;
   billing_type?: "employee" | "subsidized" | "company";
+  allow_pay_on_delivery?: boolean;
+  allow_card_payment?: boolean;
 };
 
 type ReportOptionBranch = {
@@ -153,6 +155,10 @@ function filenameFromDisposition(disposition: string | null) {
 }
 
 function companyDefaultBillingType(company?: ReportOptionCompany | null): BillingType {
+  if (company?.allow_pay_on_delivery && company.allow_card_payment) {
+    return "all";
+  }
+
   return company?.billing_type === "subsidized"
     ? "subsidized"
     : company?.billing_type === "company"

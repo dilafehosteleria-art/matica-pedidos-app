@@ -46,11 +46,27 @@ test("ICF factura el pedido completo a empresa y deja a cero el empleado", () =>
     subsidy_rules: []
   };
 
-  const totals = calculateCartTotals([menu], company);
+  const totals = calculateCartTotals([menu], company, false, "pay_on_delivery");
 
   assert.equal(totals.subsidyTotal, 0);
   assert.equal(totals.employeeTotal, 0);
   assert.equal(totals.companyInvoiceTotal, 13);
+});
+
+test("una empresa con ambas opciones cobra al empleado cuando elige Stripe", () => {
+  const company: Company = {
+    id: "both",
+    name: "Empresa mixta",
+    slug: "empresa-mixta",
+    active: true,
+    billing_type: "company",
+    subsidy_rules: []
+  };
+
+  const totals = calculateCartTotals([menu], company, false, "stripe_card");
+
+  assert.equal(totals.employeeTotal, 13);
+  assert.equal(totals.companyInvoiceTotal, 0);
 });
 
 test("una empresa estándar no aplica subvención ni factura a empresa", () => {

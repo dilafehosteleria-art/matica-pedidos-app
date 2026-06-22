@@ -38,7 +38,7 @@ export async function PATCH(
       status_updated_at: new Date().toISOString()
     })
     .eq("id", id)
-    .select("*,order_items(*),companies(name),company_branches(name)")
+    .select("*,order_items(*),companies(name,delivery_address),company_branches(name)")
     .single();
 
   if (error) {

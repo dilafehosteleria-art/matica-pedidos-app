@@ -124,7 +124,7 @@ export async function GET(request: NextRequest) {
 
   let query = supabase
     .from("orders")
-    .select("*,order_items(*),companies(name),company_branches(name)")
+    .select("*,order_items(*),companies(name,delivery_address),company_branches(name)")
     .gte("created_at", start)
     .lt("created_at", end)
     .order("created_at", { ascending: true });

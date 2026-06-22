@@ -191,7 +191,13 @@ function readFilters(request: NextRequest): ReportFilters {
   };
 }
 
-function defaultBillingType(company?: Pick<Company, "billing_type"> | null): BillingType {
+function defaultBillingType(
+  company?: Pick<Company, "billing_type" | "allow_pay_on_delivery" | "allow_card_payment"> | null
+): BillingType {
+  if (company?.allow_pay_on_delivery && company.allow_card_payment) {
+    return "all";
+  }
+
   return company?.billing_type === "subsidized"
     ? "subsidized"
     : company?.billing_type === "company"

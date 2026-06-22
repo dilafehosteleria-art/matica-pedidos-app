@@ -31,6 +31,7 @@ export type Company = {
   id: string;
   name: string;
   slug: string;
+  delivery_address?: string | null;
   order_window?: string | null;
   delivery_window?: string | null;
   allow_pay_on_delivery?: boolean | null;
@@ -47,7 +48,21 @@ export type Company = {
   created_at?: string;
 };
 
-export type PublicCompany = Pick<Company, "id" | "name" | "slug" | "active" | "order_window" | "delivery_window">;
+export type GlobalSchedule = {
+  id?: string;
+  active: boolean;
+  active_days: number[];
+  order_open_time: string;
+  order_close_time: string;
+  delivery_start_time: string;
+  delivery_end_time: string;
+  updated_at?: string;
+};
+
+export type PublicCompany = Pick<
+  Company,
+  "id" | "name" | "slug" | "active" | "delivery_address" | "order_window" | "delivery_window"
+>;
 
 export type CompanyBranch = {
   id: string;
@@ -120,6 +135,7 @@ export type PublicData = {
   categories: Category[];
   products: Product[];
   dailyMenu: DailyMenu | null;
+  schedule: GlobalSchedule;
   source: "supabase" | "seed";
 };
 
@@ -161,20 +177,31 @@ export type AdminOrder = {
   notes: string | null;
   delivery_window: string;
   order_items: OrderItem[];
-  companies?: { name: string } | null;
+  companies?: { name: string; delivery_address?: string | null } | null;
   company_branches?: { name: string } | null;
 };
 
 export type AdminCompany = Company & {
 };
 
-export type CompanyDraft = Pick<Company, "id" | "name" | "slug" | "active" | "order_window" | "delivery_window"> & {
+export type CompanyDraft = Pick<
+  Company,
+  "id" | "name" | "slug" | "active" | "delivery_address" | "order_window" | "delivery_window"
+> & {
   daily_menu_subsidy: number;
   half_menu_subsidy: number;
   allow_pay_on_delivery: boolean;
   allow_card_payment: boolean;
   allow_bizum_payment: boolean;
   billing_type: CompanyBillingType;
+};
+
+export type NewCompanyDraft = {
+  name: string;
+  slug: string;
+  delivery_address: string;
+  active: boolean;
+  payment_mode: "stripe" | "company" | "both";
 };
 
 export type ProductDraft = Pick<

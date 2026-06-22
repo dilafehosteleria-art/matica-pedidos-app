@@ -29,6 +29,10 @@ function branchName(order: AdminOrder) {
   return order.company_branches?.name ?? "Sin empresa interna";
 }
 
+function companyAddress(order: AdminOrder) {
+  return order.companies?.delivery_address?.trim() ?? "";
+}
+
 function buildItemHtml(order: AdminOrder) {
   return order.order_items
     .map((item) => {
@@ -99,6 +103,12 @@ function buildOrderHtml(order: AdminOrder) {
                     <td style="padding:10px 0;border-top:1px solid #e5eee8;color:#66736b;font-size:13px;">Empresa</td>
                     <td style="padding:10px 0;border-top:1px solid #e5eee8;text-align:right;font-weight:800;">${escapeHtml(branchName(order))}</td>
                   </tr>
+                  ${companyAddress(order) ? `
+                  <tr>
+                    <td style="padding:10px 0;border-top:1px solid #e5eee8;color:#66736b;font-size:13px;">Dirección de entrega</td>
+                    <td style="padding:10px 0;border-top:1px solid #e5eee8;text-align:right;font-weight:800;">${escapeHtml(companyAddress(order))}</td>
+                  </tr>
+                  ` : ""}
                   <tr>
                     <td style="padding:10px 0;border-top:1px solid #e5eee8;color:#66736b;font-size:13px;">Cliente</td>
                     <td style="padding:10px 0;border-top:1px solid #e5eee8;text-align:right;font-weight:800;">${escapeHtml(order.customer_name)}</td>
