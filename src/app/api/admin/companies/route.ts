@@ -11,7 +11,8 @@ function isMissingPaymentSettingsColumn(message?: string) {
       (
         message.includes("'allow_pay_on_delivery' column") ||
         message.includes("'allow_card_payment' column") ||
-        message.includes("'allow_bizum_payment' column")
+        message.includes("'allow_bizum_payment' column") ||
+        message.includes("'billing_type' column")
       )
   );
 }
@@ -68,7 +69,8 @@ export async function PATCH(request: NextRequest) {
     delivery_window: body.delivery_window?.trim() || null,
     allow_pay_on_delivery: Boolean(body.allow_pay_on_delivery),
     allow_card_payment: Boolean(body.allow_card_payment),
-    allow_bizum_payment: Boolean(body.allow_bizum_payment)
+    allow_bizum_payment: Boolean(body.allow_bizum_payment),
+    billing_type: body.billing_type ?? "employee"
   };
 
   let { error: companyError } = await supabase
@@ -81,6 +83,7 @@ export async function PATCH(request: NextRequest) {
       allow_pay_on_delivery: _allowPayOnDelivery,
       allow_card_payment: _allowCardPayment,
       allow_bizum_payment: _allowBizumPayment,
+      billing_type: _billingType,
       ...legacyCompanyUpdate
     } = companyUpdate;
 

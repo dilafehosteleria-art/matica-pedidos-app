@@ -51,16 +51,28 @@ const EMPTY_CUSTOMER: CustomerForm = {
 
 function publicPaymentOptions(company: PublicData["company"] | null | undefined): PublicPaymentOption[] {
   const stripeEnabled = Boolean(company?.stripe_payments_enabled);
+  const options: PublicPaymentOption[] = [];
 
-  if (!stripeEnabled) {
-    return [];
+  if (company?.allow_pay_on_delivery) {
+    options.push({
+      method: "pay_on_delivery",
+      label: company.billing_type === "company" ? "Pago a cargo de la empresa" : "Pago a la entrega",
+      description:
+        company.billing_type === "company"
+          ? "El pedido queda pendiente de facturación a la empresa. No pagas online."
+          : "Confirmas ahora y pagas en el punto de entrega."
+    });
   }
 
-  return [{
-    method: "stripe_card",
-    label: "Pago online Stripe",
-    description: "Stripe Checkout mostrara tarjeta, Apple Pay, Google Pay y Bizum cuando esten disponibles."
-  }];
+  if (stripeEnabled && company?.allow_card_payment) {
+    options.push({
+      method: "stripe_card",
+      label: "Pago online Stripe",
+      description: "Stripe Checkout mostrará tarjeta, Apple Pay, Google Pay y Bizum cuando estén disponibles."
+    });
+  }
+
+  return options;
 }
 
 type SubmitState =
@@ -269,10 +281,7 @@ const DESSERT_OPTIONS: Option[] = [
   { label: "Cookie", unitPrice: 2 }
 ];
 
-type MenuDishOption = Option & {
-  category?: "vacuno";
-  excludedFromHalfMenu?: boolean;
-};
+type MenuDishOption = Option;
 
 const FALLBACK_MENU_FIRST_COURSE_OPTIONS: MenuDishOption[] = [
   { label: "Ensalada arroz con queso fresco" },
@@ -283,8 +292,7 @@ const FALLBACK_MENU_FIRST_COURSE_OPTIONS: MenuDishOption[] = [
 
 const FALLBACK_MENU_SECOND_COURSE_OPTIONS: MenuDishOption[] = [
   { label: "Filete de pescado en salsa de soja y jengibre" },
-  { label: "Hamburguesa clásica con bacon y queso", category: "vacuno", excludedFromHalfMenu: true },
-  { label: "Lomo asado a la brasa con mojo picón" },
+  { label: "Hamburguesa clásica con bacon y queso" },
   { label: "Pollo asado" }
 ];
 
@@ -368,14 +376,6 @@ function courseName(course: DailyMenuCourse) {
   return typeof course === "string" ? course.trim() : course.name.trim();
 }
 
-function courseCategory(course: DailyMenuCourse) {
-  return typeof course === "string" ? "" : course.category?.trim() ?? "";
-}
-
-function isCourseExcludedFromHalfMenu(course: DailyMenuCourse) {
-  return typeof course === "string" ? false : Boolean(course.excluded_from_half_menu);
-}
-
 function menuFirstCourseOptions(menu: DailyMenu | null): MenuDishOption[] {
   const options = (menu?.first_courses ?? [])
     .map((label) => label.trim())
@@ -390,17 +390,11 @@ function menuSecondCourseOptions(menu: DailyMenu | null): MenuDishOption[] {
     .map((course): MenuDishOption | null => {
       const label = courseName(course);
 
-      return label
-        ? {
-            label,
-            category: normalize(courseCategory(course)) === "vacuno" ? ("vacuno" as const) : undefined,
-            excludedFromHalfMenu: isCourseExcludedFromHalfMenu(course)
-          }
-        : null;
+      return label ? { label } : null;
     })
     .filter((option): option is MenuDishOption => Boolean(option));
 
-  return options.length === 4 ? options : FALLBACK_MENU_SECOND_COURSE_OPTIONS;
+  return options.length === 3 ? options : FALLBACK_MENU_SECOND_COURSE_OPTIONS;
 }
 
 function hasMenuChoices(product: Product, menu: DailyMenu | null) {
@@ -423,27 +417,12 @@ function grillDrinkOrDessertOptions(_menu: DailyMenu | null) {
   return GRILL_DRINK_OR_DESSERT_OPTIONS;
 }
 
-function isVacunoDish(option: MenuDishOption) {
-  const label = normalize(option.label);
-
-  return (
-    option.category === "vacuno" ||
-    option.excludedFromHalfMenu ||
-    label.includes("[vacuno]") ||
-    label.includes("(vacuno)") ||
-    label.includes("tipo: vacuno") ||
-    label.includes("categoria: vacuno")
-  );
-}
-
 function menuPlateOptions(menu: DailyMenu | null): Option[] {
-  return [...menuFirstCourseOptions(menu), ...menuSecondCourseOptions(menu).filter((option) => !isVacunoDish(option))];
+  return [...menuFirstCourseOptions(menu), ...menuSecondCourseOptions(menu)];
 }
 
 function halfMenuSecondCourseLabels(menu: DailyMenu | null) {
-  return menuSecondCourseOptions(menu)
-    .filter((option) => !isVacunoDish(option))
-    .map((option) => option.label);
+  return menuSecondCourseOptions(menu).map((option) => option.label);
 }
 
 function exactMultiGroup(key: string, label: string, count: number, options: Option[]): ConfigGroup {
@@ -486,30 +465,46 @@ function getOptionUnitPrice(spec: ConfigSpec, groupKey: string, optionLabel: str
 function getSaladGroups({
   includeSize = false,
   exactCounts = false,
-  includeSandwich = false
+  includeSandwich = false,
+  dependsOn
 }: {
   includeSize?: boolean;
   exactCounts?: boolean;
   includeSandwich?: boolean;
+  dependsOn?: ConfigGroup["dependsOn"];
 } = {}): ConfigGroup[] {
   return [
-    ...(includeSize ? [{ key: "salad_size", label: "Tamaño", type: "single" as const, options: SALAD_SIZE_OPTIONS }] : []),
-    { key: "salad_base", label: "Base", type: "multi", min: 1, max: 2, options: SALAD_BASE_OPTIONS },
-    { key: "protein", label: "Proteína", type: "single", options: SALAD_PROTEIN_OPTIONS },
-    { key: "toppings", label: "Toppings", type: "multi", min: exactCounts ? 3 : 1, max: 3, options: SALAD_TOPPING_OPTIONS },
-    { key: "dressing", label: "Aliño", type: "single", options: DRESSING_OPTIONS },
-    ...(includeSandwich ? [{ key: "sandwich", label: "Bocadillo", type: "single" as const, options: SANDWICH_OPTIONS }] : [])
+    ...(includeSize ? [{ key: "salad_size", label: "Tamaño", type: "single" as const, options: SALAD_SIZE_OPTIONS, dependsOn }] : []),
+    { key: "salad_base", label: "Base", type: "multi", min: 1, max: 2, options: SALAD_BASE_OPTIONS, dependsOn },
+    { key: "protein", label: "Proteína", type: "single", options: SALAD_PROTEIN_OPTIONS, dependsOn },
+    { key: "toppings", label: "Toppings", type: "multi", min: exactCounts ? 3 : 1, max: 3, options: SALAD_TOPPING_OPTIONS, dependsOn },
+    { key: "dressing", label: "Aliño", type: "single", options: DRESSING_OPTIONS, dependsOn },
+    ...(includeSandwich ? [{ key: "sandwich", label: "Bocadillo", type: "single" as const, options: SANDWICH_OPTIONS, dependsOn }] : [])
   ];
 }
 
-function getConfigSpec(product: Product, section: PublicSection, menu: DailyMenu | null): ConfigSpec {
+function getConfigSpec(
+  product: Product,
+  section: PublicSection,
+  menu: DailyMenu | null,
+  company?: PublicData["company"] | null
+): ConfigSpec {
   if (product.product_type === "daily_menu") {
+    const saladFirstCourses = menuFirstCourseOptions(menu)
+      .filter((option) => normalize(option.label).includes("ensalada"))
+      .map((option) => option.label);
+    const subsidy = getSubsidyAmount(product.product_type, company);
+
     return {
       title: "Menú del día",
       lead: "Primer plato, segundo plato, guarnición, bebida o postre y pan opcional.",
-      included: ["Subvención -4,00 €"],
+      included: [
+        ...(subsidy > 0 ? [`Subvención -${formatCurrency(subsidy)}`] : []),
+        ...(saladFirstCourses.length ? [SMALL_SALAD_SIZE_LABEL] : [])
+      ],
       groups: [
         { key: "first_course", label: "Primer plato", type: "single", options: menuFirstCourseOptions(menu) },
+        ...getSaladGroups({ dependsOn: { key: "first_course", values: saladFirstCourses } }),
         { key: "second_course", label: "Segundo plato", type: "single", options: menuSecondCourseOptions(menu) },
         { key: "side", label: "Guarnición del segundo", type: "single", options: MENU_SIDE_OPTIONS },
         { key: "drink_or_dessert", label: "Bebida o postre", type: "single", options: menuDrinkOrDessertOptions(menu) },
@@ -520,11 +515,12 @@ function getConfigSpec(product: Product, section: PublicSection, menu: DailyMenu
 
   if (product.product_type === "half_menu") {
     const secondCourseLabels = halfMenuSecondCourseLabels(menu);
+    const subsidy = getSubsidyAmount(product.product_type, company);
 
     return {
       title: "Medio menú",
       lead: "Plato único y bebida o postre. Pan opcional.",
-      included: ["Subvención -3,50 €"],
+      included: subsidy > 0 ? [`Subvención -${formatCurrency(subsidy)}`] : [],
       groups: [
         { key: "plate", label: "Plato único", type: "single", options: menuPlateOptions(menu) },
         {
@@ -661,7 +657,7 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
   const [configuring, setConfiguring] = useState<{ product: Product; section: PublicSection } | null>(null);
   const [subsidyAlreadyUsed, setSubsidyAlreadyUsed] = useState(false);
   const [submitState, setSubmitState] = useState<SubmitState>({ status: "idle" });
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("stripe_card");
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("pay_on_delivery");
   const [customerLoaded, setCustomerLoaded] = useState(false);
   const [orderWindow, setOrderWindow] = useState({ open: false, message: "" });
   const [lastOrder, setLastOrder] = useState<{ id: string; total: number } | null>(null);
@@ -763,13 +759,16 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
 
   useEffect(() => {
     if (!paymentOptions.some((option) => option.method === paymentMethod)) {
-      setPaymentMethod(paymentOptions[0]?.method ?? "stripe_card");
+      setPaymentMethod(paymentOptions[0]?.method ?? "pay_on_delivery");
     }
   }, [paymentMethod, paymentOptions]);
 
-  const totals = useMemo(() => calculateCartTotals(cart, subsidyAlreadyUsed), [cart, subsidyAlreadyUsed]);
+  const totals = useMemo(
+    () => calculateCartTotals(cart, data?.company, subsidyAlreadyUsed),
+    [cart, data?.company, subsidyAlreadyUsed]
+  );
   const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
-  const hasSubsidizedItem = cart.some((item) => getSubsidyAmount(item.product_type) > 0);
+  const hasSubsidizedItem = cart.some((item) => getSubsidyAmount(item.product_type, data?.company) > 0);
   const companyName = data?.company.name ?? "tu empresa";
   const deliveryWindow = data?.company.delivery_window ?? DELIVERY_WINDOW;
   const selectedBranch = data?.branches.find((branch) => branch.id === customer.company_branch_id) ?? null;
@@ -974,6 +973,7 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
                         product={product}
                         section={section}
                         menu={data.dailyMenu}
+                        company={data.company}
                         eagerImage={index === 0 && productIndex < 3}
                         onOpen={() => setConfiguring({ product, section })}
                       />
@@ -1012,6 +1012,7 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
       {step === "checkout" ? (
         <CheckoutPanel
           branches={data?.branches ?? []}
+          company={data?.company}
           cart={cart}
           cartCount={cartCount}
           customer={customer}
@@ -1051,6 +1052,7 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
           section={configuring.section}
           onClose={() => setConfiguring(null)}
           menu={data?.dailyMenu ?? null}
+          company={data?.company}
           subsidyAlreadyUsed={subsidyAlreadyUsed}
           onAdd={(metadata, unitPrice) => {
             addProduct(configuring.product, configuring.section, metadata, unitPrice);
@@ -1096,17 +1098,20 @@ function ProductCard({
   product,
   section,
   menu,
+  company,
   eagerImage = false,
   onOpen
 }: {
   product: Product;
   section: PublicSection;
   menu: DailyMenu | null;
+  company: PublicData["company"];
   eagerImage?: boolean;
   onOpen: () => void;
 }) {
   const canAdd = !product.sold_out && hasMenuChoices(product, menu);
-  const subsidy = getSubsidyAmount(product.product_type);
+  const subsidy = getSubsidyAmount(product.product_type, company);
+  const employeePrice = company.billing_type === "company" ? 0 : Number(product.customer_price);
   const displayName = getDisplayName(product, section.kind);
   const imageUrl = getProductImageUrl(product);
   const [imageFailed, setImageFailed] = useState(false);
@@ -1157,7 +1162,9 @@ function ProductCard({
             ) : null}
           </div>
           <div className="shrink-0 text-right">
-            <p className="text-left text-base font-black sm:text-right">{pricePrefix}{formatCurrency(Number(product.customer_price))}</p>
+            <p className="text-left text-base font-black sm:text-right">
+              {company.billing_type === "company" ? "Paga empresa" : `${pricePrefix}${formatCurrency(employeePrice)}`}
+            </p>
             {subsidy > 0 ? (
               <p className="text-left text-xs font-bold text-matica-ink/45 line-through sm:text-right">
                 {formatCurrency(Number(product.base_price))}
@@ -1198,6 +1205,7 @@ function ConfigModal({
   product,
   section,
   menu,
+  company,
   subsidyAlreadyUsed,
   onClose,
   onAdd
@@ -1205,11 +1213,12 @@ function ConfigModal({
   product: Product;
   section: PublicSection;
   menu: DailyMenu | null;
+  company?: PublicData["company"];
   subsidyAlreadyUsed: boolean;
   onClose: () => void;
   onAdd: (metadata: Record<string, string>, unitPrice: number) => void;
 }) {
-  const spec = getConfigSpec(product, section, menu);
+  const spec = getConfigSpec(product, section, menu, company);
   const [stepIndex, setStepIndex] = useState(0);
   const [singleValues, setSingleValues] = useState<Record<string, string>>({});
   const [multiValues, setMultiValues] = useState<Record<string, string[]>>({});
@@ -1235,8 +1244,13 @@ function ConfigModal({
 
     return price + selected.reduce((sum, value) => sum + getOptionPrice(spec, group.key, value), 0);
   }, Number(product.base_price));
-  const subsidy = getSubsidyAmount(product.product_type);
-  const customerUnitPrice = !subsidyAlreadyUsed && subsidy > 0 ? Math.max(configuredUnitPrice - subsidy, 0) : configuredUnitPrice;
+  const subsidy = getSubsidyAmount(product.product_type, company);
+  const customerUnitPrice =
+    company?.billing_type === "company"
+      ? 0
+      : !subsidyAlreadyUsed && subsidy > 0
+        ? Math.max(configuredUnitPrice - subsidy, 0)
+        : configuredUnitPrice;
   const canSubmitConfig = activeGroups.every((group) => isGroupComplete(group));
   const canGoNext = currentGroup ? isGroupComplete(currentGroup) && stepIndex < activeGroups.length - 1 : false;
 
@@ -1319,6 +1333,10 @@ function ConfigModal({
       _configured_unit_price: configuredUnitPrice.toFixed(2),
       _supplement_total: Math.max(0, configuredUnitPrice - Number(product.base_price)).toFixed(2)
     };
+
+    if (product.product_type === "daily_menu" && activeGroups.some((group) => group.key === "salad_base")) {
+      metadata.salad_size = SMALL_SALAD_SIZE_LABEL;
+    }
 
     for (const group of activeGroups) {
       if (group.type === "multi") {
@@ -1521,6 +1539,7 @@ function ConfigModal({
 
 function CheckoutPanel({
   branches,
+  company,
   cart,
   cartCount,
   customer,
@@ -1544,6 +1563,7 @@ function CheckoutPanel({
   onBack
 }: {
   branches: CompanyBranch[];
+  company?: PublicData["company"];
   cart: CartItem[];
   cartCount: number;
   customer: CustomerForm;
@@ -1621,7 +1641,7 @@ function CheckoutPanel({
                           <Plus className="h-4 w-4" />
                         </button>
                       </div>
-                      {getSubsidyAmount(item.product_type) > 0 ? (
+                      {getSubsidyAmount(item.product_type, company) > 0 ? (
                         <span className="rounded-lg bg-matica-mint px-2 py-1 text-xs font-black text-matica-green">
                           Subvencionable
                         </span>
@@ -1674,7 +1694,7 @@ function CheckoutPanel({
                 label="Email corporativo"
                 value={customer.email}
                 onChange={(value) => updateCustomer("email", value)}
-                placeholder="nombre@bureauveritas.com"
+                placeholder="nombre@empresa.com"
                 type="email"
                 required
               />
@@ -1711,12 +1731,20 @@ function CheckoutPanel({
               <span>Subtotal</span>
               <span>{formatCurrency(totals.subtotal)}</span>
             </div>
-            <div className="flex justify-between text-sm font-bold text-matica-green">
-              <span>Subvención {companyName}</span>
-              <span>-{formatCurrency(totals.subsidyTotal)}</span>
-            </div>
+            {totals.subsidyTotal > 0 ? (
+              <div className="flex justify-between text-sm font-bold text-matica-green">
+                <span>Subvención {companyName}</span>
+                <span>-{formatCurrency(totals.subsidyTotal)}</span>
+              </div>
+            ) : null}
+            {totals.companyInvoiceTotal > 0 ? (
+              <div className="flex justify-between text-sm font-bold text-matica-green">
+                <span>Factura empresa</span>
+                <span>{formatCurrency(totals.companyInvoiceTotal)}</span>
+              </div>
+            ) : null}
             <div className="flex justify-between border-t border-matica-line pt-2 text-lg font-black">
-              <span>Total</span>
+              <span>{company?.billing_type === "company" ? "Total empleado" : "Total"}</span>
               <span>{formatCurrency(totals.total)}</span>
             </div>
           </div>

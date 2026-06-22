@@ -12,12 +12,14 @@ const STATUS_OPTIONS: { status: OrderStatus; label: string }[] = [
   { status: "entregado", label: "Entregado" },
 ];
 
-type BillingType = "all" | "subsidized" | "non_subsidized";
+type BillingType = "all" | "subsidized" | "non_subsidized" | "company_billed" | "employee_billed";
 
 const BILLING_TYPE_OPTIONS: { value: BillingType; label: string }[] = [
   { value: "all", label: "Todos los pedidos" },
   { value: "subsidized", label: "Solo pedidos subvencionados" },
-  { value: "non_subsidized", label: "Solo pedidos no subvencionados" }
+  { value: "non_subsidized", label: "Solo pedidos no subvencionados" },
+  { value: "company_billed", label: "Con importe a facturar a empresa" },
+  { value: "employee_billed", label: "Con importe a cobrar al empleado" }
 ];
 
 const EMPTY_REPORT_FILTERS = {
@@ -26,7 +28,10 @@ const EMPTY_REPORT_FILTERS = {
   company_id: "",
   company_branch_id: "",
   status: "",
+  payment_method: "",
+  payment_status: "",
   billing_type: "all" as BillingType,
+  only_company_billable: false,
   exclude_cancelled: true
 };
 
@@ -36,6 +41,7 @@ type ReportOptionCompany = {
   id: string;
   name: string;
   slug?: string;
+  billing_type?: "employee" | "subsidized" | "company";
 };
 
 type ReportOptionBranch = {
@@ -103,6 +109,7 @@ function buildReportParams(filters: ReportFilters, mode: "summary" | "xlsx") {
     date_from: filters.date_from,
     date_to: filters.date_to,
     billing_type: filters.billing_type,
+    only_company_billable: String(filters.only_company_billable),
     exclude_cancelled: String(filters.exclude_cancelled)
   });
 
@@ -116,6 +123,14 @@ function buildReportParams(filters: ReportFilters, mode: "summary" | "xlsx") {
 
   if (filters.status) {
     params.set("status", filters.status);
+  }
+
+  if (filters.payment_method) {
+    params.set("payment_method", filters.payment_method);
+  }
+
+  if (filters.payment_status) {
+    params.set("payment_status", filters.payment_status);
   }
 
   return params;
@@ -137,11 +152,12 @@ function filenameFromDisposition(disposition: string | null) {
   return match?.[1] ?? `informe-${new Date().toISOString().slice(0, 10)}.xlsx`;
 }
 
-function isBureauVeritasCompany(company?: ReportOptionCompany | null) {
-  const slug = company?.slug?.trim().toLowerCase() ?? "";
-  const name = company?.name?.trim().toLowerCase() ?? "";
-
-  return slug === "bureau-veritas" || name === "bureau veritas";
+function companyDefaultBillingType(company?: ReportOptionCompany | null): BillingType {
+  return company?.billing_type === "subsidized"
+    ? "subsidized"
+    : company?.billing_type === "company"
+      ? "company_billed"
+      : "all";
 }
 
 function billingSummaryLabels(type: BillingType) {
@@ -157,6 +173,14 @@ function billingSummaryLabels(type: BillingType) {
       orders: "Pedidos no subvencionados",
       subtotal: "Subtotal no subvencionado"
     };
+  }
+
+  if (type === "company_billed") {
+    return { orders: "Pedidos facturables a empresa", subtotal: "Subtotal facturable" };
+  }
+
+  if (type === "employee_billed") {
+    return { orders: "Pedidos cobrados a empleados", subtotal: "Subtotal" };
   }
 
   return {
@@ -230,7 +254,9 @@ export function ReportsPanel({
       if (key === "company_id") {
         const selectedCompanyId = typeof value === "string" ? value : "";
         next.company_branch_id = "";
-        next.billing_type = isBureauVeritasCompany(reportOptions.companies.find((company) => company.id === selectedCompanyId)) ? "subsidized" : "all";
+        next.billing_type = companyDefaultBillingType(
+          reportOptions.companies.find((company) => company.id === selectedCompanyId)
+        );
       }
 
       return next;
@@ -322,7 +348,7 @@ export function ReportsPanel({
         </div>
       ) : null}
 
-      <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+      <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         <label className="space-y-1">
           <span className="text-xs font-black uppercase text-matica-ink/45">Fecha desde</span>
           <input
@@ -415,19 +441,59 @@ export function ReportsPanel({
             ))}
           </select>
         </label>
+        <label className="space-y-1">
+          <span className="text-xs font-black uppercase text-matica-ink/45">Método de pago</span>
+          <select
+            className="matica-focus min-h-11 w-full rounded-lg border border-matica-line bg-white px-3 text-sm font-bold text-matica-ink"
+            value={reportFilters.payment_method}
+            onChange={(event) => updateReportFilter("payment_method", event.target.value)}
+            disabled={loadingOptions}
+          >
+            <option value="">Todos</option>
+            <option value="stripe_card">Stripe</option>
+            <option value="pay_on_delivery">Pago empresa / entrega</option>
+          </select>
+        </label>
+        <label className="space-y-1">
+          <span className="text-xs font-black uppercase text-matica-ink/45">Estado de pago</span>
+          <select
+            className="matica-focus min-h-11 w-full rounded-lg border border-matica-line bg-white px-3 text-sm font-bold text-matica-ink"
+            value={reportFilters.payment_status}
+            onChange={(event) => updateReportFilter("payment_status", event.target.value)}
+            disabled={loadingOptions}
+          >
+            <option value="">Todos</option>
+            <option value="pending">Pendiente</option>
+            <option value="paid">Pagado</option>
+            <option value="failed">Fallido</option>
+            <option value="cancelled">Cancelado</option>
+          </select>
+        </label>
       </div>
 
       <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <label className="flex items-center gap-2 text-sm font-bold text-matica-ink/65">
-          <input
-            className="h-4 w-4 accent-matica-green"
-            type="checkbox"
-            checked={reportFilters.exclude_cancelled}
-            onChange={(event) => updateReportFilter("exclude_cancelled", event.target.checked)}
-            disabled={Boolean(reportFilters.status) || loadingOptions}
-          />
-          Excluir cancelados para facturación
-        </label>
+        <div className="flex flex-col gap-2">
+          <label className="flex items-center gap-2 text-sm font-bold text-matica-ink/65">
+            <input
+              className="h-4 w-4 accent-matica-green"
+              type="checkbox"
+              checked={reportFilters.exclude_cancelled}
+              onChange={(event) => updateReportFilter("exclude_cancelled", event.target.checked)}
+              disabled={Boolean(reportFilters.status) || loadingOptions}
+            />
+            Excluir cancelados para facturación
+          </label>
+          <label className="flex items-center gap-2 text-sm font-bold text-matica-ink/65">
+            <input
+              className="h-4 w-4 accent-matica-green"
+              type="checkbox"
+              checked={reportFilters.only_company_billable}
+              onChange={(event) => updateReportFilter("only_company_billable", event.target.checked)}
+              disabled={loadingOptions}
+            />
+            Solo facturable a empresa
+          </label>
+        </div>
         <div className="flex flex-col gap-2 sm:flex-row">
           <button
             className="matica-focus flex min-h-11 items-center justify-center gap-2 rounded-lg border border-matica-line bg-white px-4 font-black text-matica-ink disabled:cursor-not-allowed disabled:opacity-60"

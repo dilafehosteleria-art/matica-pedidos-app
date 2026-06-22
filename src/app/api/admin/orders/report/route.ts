@@ -1,6 +1,7 @@
 import { deflateRawSync } from "node:zlib";
 import { NextRequest, NextResponse } from "next/server";
 import { operationalPaymentLabel, paymentMethodLabel, paymentStatusLabel } from "@/lib/payment-display";
+import { orderCompanyInvoiceTotal, orderEmployeeTotal } from "@/lib/order-ticket";
 import { isBillableOrder } from "@/lib/order-validity";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import type { AdminOrder, CompanyBranch, OrderStatus, Company } from "@/lib/types";
@@ -49,7 +50,7 @@ const SUMMARY_HEADERS = [
   "Total facturar empresa"
 ];
 
-const BILLING_TYPES = ["all", "subsidized", "non_subsidized"] as const;
+const BILLING_TYPES = ["all", "subsidized", "non_subsidized", "company_billed", "employee_billed"] as const;
 
 type BillingType = (typeof BILLING_TYPES)[number];
 
@@ -59,7 +60,10 @@ type ReportFilters = {
   companyId: string;
   branchId: string;
   status: string;
+  paymentMethod: string;
+  paymentStatus: string;
   billingType: BillingType;
+  onlyCompanyBillable: boolean;
   excludeCancelled: boolean;
 };
 
@@ -91,7 +95,9 @@ type ReportLine = {
   lineSubtotal: number;
   lineSubsidy: number;
   lineTotal: number;
-  billingType: "Subvencionado" | "No subvencionado";
+  lineEmployeeTotal: number;
+  lineCompanyInvoiceTotal: number;
+  billingType: "Subvencionado" | "Paga empresa" | "Paga empleado";
   menuCount: number;
   halfMenuCount: number;
 };
@@ -177,16 +183,20 @@ function readFilters(request: NextRequest): ReportFilters {
     companyId: params.get("company_id")?.trim() ?? "",
     branchId: params.get("company_branch_id")?.trim() ?? "",
     status: VALID_STATUSES.includes(status as OrderStatus) ? status : "",
+    paymentMethod: params.get("payment_method")?.trim() ?? "",
+    paymentStatus: params.get("payment_status")?.trim() ?? "",
     billingType: BILLING_TYPES.includes(billingType as BillingType) ? (billingType as BillingType) : "all",
+    onlyCompanyBillable: params.get("only_company_billable") === "true",
     excludeCancelled: params.get("exclude_cancelled") !== "false"
   };
 }
 
-function defaultBillingType(company?: Pick<Company, "slug" | "name"> | null): BillingType {
-  const slug = company?.slug?.trim().toLowerCase() ?? "";
-  const name = company?.name?.trim().toLowerCase() ?? "";
-
-  return slug === "bureau-veritas" || name === "bureau veritas" ? "subsidized" : "all";
+function defaultBillingType(company?: Pick<Company, "billing_type"> | null): BillingType {
+  return company?.billing_type === "subsidized"
+    ? "subsidized"
+    : company?.billing_type === "company"
+      ? "company_billed"
+      : "all";
 }
 
 function reportPinEnvName(slug: string) {
@@ -316,12 +326,24 @@ function buildReportLines(orders: ReportOrder[], billingType: BillingType): Repo
       const lineTotal = item ? Number(item.total_price) : Number(order.total);
       const lineSubtotal = item ? roundMoney(Number(item.unit_price) * quantity) : Number(order.subtotal);
       const isSubsidized = lineSubsidy > 0;
+      const companyPaysAll = orderCompanyInvoiceTotal(order) >= Number(order.subtotal) - 0.01 && orderEmployeeTotal(order) === 0;
+      const lineEmployeeTotal = companyPaysAll ? 0 : lineTotal;
+      const lineCompanyInvoiceTotal = companyPaysAll ? lineSubtotal : lineSubsidy;
+      const lineBillingType = companyPaysAll ? "Paga empresa" : isSubsidized ? "Subvencionado" : "Paga empleado";
 
       if (billingType === "subsidized" && !isSubsidized) {
         return [];
       }
 
       if (billingType === "non_subsidized" && isSubsidized) {
+        return [];
+      }
+
+      if (billingType === "company_billed" && lineCompanyInvoiceTotal <= 0) {
+        return [];
+      }
+
+      if (billingType === "employee_billed" && lineEmployeeTotal <= 0) {
         return [];
       }
 
@@ -334,7 +356,9 @@ function buildReportLines(orders: ReportOrder[], billingType: BillingType): Repo
           lineSubtotal,
           lineSubsidy,
           lineTotal,
-          billingType: isSubsidized ? "Subvencionado" : "No subvencionado",
+          lineEmployeeTotal,
+          lineCompanyInvoiceTotal,
+          billingType: lineBillingType,
           ...counters
         }
       ];
@@ -383,16 +407,16 @@ function summarizeLines(lines: ReportLine[]): { summary: ReportSummary; byBranch
 
     summary.subtotal = addMoney(summary.subtotal, line.lineSubtotal);
     summary.subsidyTotal = addMoney(summary.subsidyTotal, line.lineSubsidy);
-    summary.employeeTotal = addMoney(summary.employeeTotal, line.lineTotal);
-    summary.companyInvoiceTotal = addMoney(summary.companyInvoiceTotal, line.lineSubsidy);
+    summary.employeeTotal = addMoney(summary.employeeTotal, line.lineEmployeeTotal);
+    summary.companyInvoiceTotal = addMoney(summary.companyInvoiceTotal, line.lineCompanyInvoiceTotal);
     summary.menuCount += line.menuCount;
     summary.halfMenuCount += line.halfMenuCount;
     summary.subsidizedAmountTotal = addMoney(summary.subsidizedAmountTotal, line.lineSubsidy > 0 ? line.lineSubtotal : 0);
 
     row.subtotal = addMoney(row.subtotal, line.lineSubtotal);
     row.subsidyTotal = addMoney(row.subsidyTotal, line.lineSubsidy);
-    row.employeeTotal = addMoney(row.employeeTotal, line.lineTotal);
-    row.companyInvoiceTotal = addMoney(row.companyInvoiceTotal, line.lineSubsidy);
+    row.employeeTotal = addMoney(row.employeeTotal, line.lineEmployeeTotal);
+    row.companyInvoiceTotal = addMoney(row.companyInvoiceTotal, line.lineCompanyInvoiceTotal);
     row.menuCount += line.menuCount;
     row.halfMenuCount += line.halfMenuCount;
     row.subsidizedAmountTotal = addMoney(row.subsidizedAmountTotal, line.lineSubsidy > 0 ? line.lineSubtotal : 0);
@@ -436,8 +460,8 @@ function detailRows(lines: ReportLine[]) {
       line.lineTotal,
       line.lineSubtotal,
       line.lineSubsidy,
-      line.lineTotal,
-      line.lineSubsidy,
+      line.lineEmployeeTotal,
+      line.lineCompanyInvoiceTotal,
       order.notes ?? ""
     ];
   });
@@ -726,6 +750,14 @@ async function getReportOrders(supabase: NonNullable<ReturnType<typeof getSupaba
     query = query.neq("status", "cancelado");
   }
 
+  if (filters.paymentMethod) {
+    query = query.eq("payment_method", filters.paymentMethod);
+  }
+
+  if (filters.paymentStatus) {
+    query = query.eq("payment_status", filters.paymentStatus);
+  }
+
   const { data, error } = await query;
 
   return {
@@ -788,7 +820,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 400 });
   }
 
-  const lines = buildReportLines(orders, filters.billingType);
+  const lines = buildReportLines(orders, filters.billingType)
+    .filter((line) => !filters.onlyCompanyBillable || line.lineCompanyInvoiceTotal > 0);
   const { summary, byBranch } = summarizeLines(lines);
 
   if (mode === "summary") {
@@ -805,6 +838,8 @@ export async function GET(request: NextRequest) {
         status: order.status,
         subtotal: Number(order.subtotal),
         subsidy_total: Number(order.subsidy_total),
+        employee_total: orderEmployeeTotal(order),
+        company_invoice_total: orderCompanyInvoiceTotal(order),
         total: Number(order.total)
       }))
     });

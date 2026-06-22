@@ -4,6 +4,8 @@ import {
   CATEGORIES,
   COMPANIES,
   DEFAULT_DAILY_MENU,
+  ICF_BRANCHES,
+  ICF_COMPANY,
   PRODUCTS
 } from "@/lib/constants";
 import { mergeCatalogDefaults } from "@/lib/catalog";
@@ -20,7 +22,7 @@ export const LANDING_FEATURED_PRODUCT_IDS = [
 ];
 
 const COMPANY_PUBLIC_FIELDS = "id,name,slug,active,order_window,delivery_window";
-const COMPANY_FIELDS = "*";
+const COMPANY_FIELDS = "*,subsidy_rules(product_type,subsidy_amount,active)";
 const BRANCH_FIELDS = "id,company_id,name,active";
 const CATEGORY_FIELDS = "id,name,slug,sort_order,active";
 const PRODUCT_FIELDS = "id,category_id,name,description,base_price,customer_price,image_url,active,sold_out,sort_order,product_type,created_at";
@@ -39,11 +41,7 @@ function normalizeCourse(course: DailyMenuCourse): DailyMenuCourse | null {
     return null;
   }
 
-  return {
-    name,
-    category: course.category?.trim() || null,
-    excluded_from_half_menu: Boolean(course.excluded_from_half_menu)
-  };
+  return { name };
 }
 
 function normalizeMenu(menu: DailyMenu | null): DailyMenu | null {
@@ -61,19 +59,22 @@ function normalizeMenu(menu: DailyMenu | null): DailyMenu | null {
 }
 
 export function seedCompanyData(slug = "bureau-veritas"): PublicData | null {
-  if (slug !== BUREAU_VERITAS_COMPANY.slug) {
+  const company = slug === BUREAU_VERITAS_COMPANY.slug
+    ? BUREAU_VERITAS_COMPANY
+    : slug === ICF_COMPANY.slug
+      ? ICF_COMPANY
+      : null;
+
+  if (!company) {
     return null;
   }
 
   return {
     company: {
-      ...BUREAU_VERITAS_COMPANY,
-      allow_pay_on_delivery: true,
-      allow_card_payment: false,
-      allow_bizum_payment: false,
+      ...company,
       stripe_payments_enabled: publicStripePaymentsEnabled()
     },
-    branches: BUREAU_VERITAS_BRANCHES,
+    branches: company.slug === ICF_COMPANY.slug ? ICF_BRANCHES : BUREAU_VERITAS_BRANCHES,
     categories: [...CATEGORIES].sort((a, b) => a.sort_order - b.sort_order),
     products: [...PRODUCTS].sort((a, b) => a.sort_order - b.sort_order),
     dailyMenu: {

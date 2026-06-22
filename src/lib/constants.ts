@@ -8,10 +8,34 @@ export const BUREAU_VERITAS_COMPANY: Company = {
   slug: "bureau-veritas",
   order_window: "lunes a viernes de 09:30 a 12:40",
   delivery_window: "13:00 a 13:30",
+  allow_pay_on_delivery: false,
+  allow_card_payment: true,
+  allow_bizum_payment: false,
+  billing_type: "subsidized",
+  subsidy_rules: [
+    { product_type: "daily_menu", subsidy_amount: 4, active: true },
+    { product_type: "half_menu", subsidy_amount: 3.5, active: true }
+  ],
   active: true
 };
 
-export const COMPANIES: Company[] = [BUREAU_VERITAS_COMPANY];
+export const ICF_COMPANY_ID = "1cf00000-0000-4000-8000-000000000001";
+
+export const ICF_COMPANY: Company = {
+  id: ICF_COMPANY_ID,
+  name: "ICF",
+  slug: "icf",
+  order_window: "lunes a viernes de 09:30 a 12:40",
+  delivery_window: "13:00 a 13:30",
+  allow_pay_on_delivery: true,
+  allow_card_payment: false,
+  allow_bizum_payment: false,
+  billing_type: "company",
+  subsidy_rules: [],
+  active: true
+};
+
+export const COMPANIES: Company[] = [BUREAU_VERITAS_COMPANY, ICF_COMPANY];
 
 export const BUREAU_VERITAS_BRANCHES: CompanyBranch[] = [
   {
@@ -78,6 +102,15 @@ export const BUREAU_VERITAS_BRANCHES: CompanyBranch[] = [
     id: "1ff17af8-5fcc-4093-be9a-d73dca0cf90b",
     company_id: BUREAU_VERITAS_COMPANY_ID,
     name: "SÓLIDA",
+    active: true
+  }
+];
+
+export const ICF_BRANCHES: CompanyBranch[] = [
+  {
+    id: "1cf00000-0000-4000-8000-000000000002",
+    company_id: ICF_COMPANY_ID,
+    name: "ICF",
     active: true
   }
 ];
@@ -494,8 +527,7 @@ export const DEFAULT_DAILY_MENU: DailyMenu = {
   ],
   second_courses: [
     { name: "Filete de pescado en salsa de soja y jengibre" },
-    { name: "Hamburguesa clásica con bacon y queso", category: "vacuno", excluded_from_half_menu: true },
-    { name: "Lomo asado a la brasa con mojo picón" },
+    { name: "Hamburguesa clásica con bacon y queso" },
     { name: "Pollo asado" }
   ],
   drinks: ["Agua mineral", "Agua con gas", "Coca Cola", "Coca Cola Zero", "Fanta Naranja", "Lipton Limón"],

@@ -6,7 +6,14 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { AdminGate } from "./AdminGate";
 import { ReportsPanel } from "./ReportsPanel";
 import { formatCurrency, formatTime } from "@/lib/format";
-import { formatOrderDateTime, ORDER_STATUS_LABELS, orderItemOptionLines, orderReference } from "@/lib/order-ticket";
+import {
+  formatOrderDateTime,
+  ORDER_STATUS_LABELS,
+  orderCompanyInvoiceTotal,
+  orderEmployeeTotal,
+  orderItemOptionLines,
+  orderReference
+} from "@/lib/order-ticket";
 import { operationalPaymentLabel } from "@/lib/payment-display";
 import type { AdminOrder, OrderStatus } from "@/lib/types";
 
@@ -123,7 +130,7 @@ const DASHBOARD_LINKS = [
   {
     href: "/admin/menu",
     title: "Menú del día",
-    description: "Platos diarios y exclusiones de medio menú.",
+    description: "4 primeros y 3 segundos para menú y medio menú.",
     icon: Utensils
   },
   {
@@ -617,11 +624,11 @@ function OrderCard({
         <div className="space-y-1 text-sm font-black">
           <div className="flex justify-between gap-3">
             <span>Total empleado</span>
-            <span>{formatCurrency(Number(order.total))}</span>
+            <span>{formatCurrency(orderEmployeeTotal(order))}</span>
           </div>
           <div className="flex justify-between gap-3 text-matica-green">
             <span>Factura empresa</span>
-            <span>{formatCurrency(Number(order.subsidy_total))}</span>
+            <span>{formatCurrency(orderCompanyInvoiceTotal(order))}</span>
           </div>
         </div>
       </div>
@@ -748,8 +755,8 @@ function OrderDetailModal({
               <div className="mt-3 space-y-2 text-sm font-bold">
                 <TotalRow label="Subtotal" value={Number(order.subtotal)} />
                 <TotalRow label="Subvención" value={-Number(order.subsidy_total)} highlight />
-                <TotalRow label="Factura empresa" value={Number(order.subsidy_total)} />
-                <TotalRow label="Total empleado" value={Number(order.total)} strong />
+                <TotalRow label="Factura empresa" value={orderCompanyInvoiceTotal(order)} />
+                <TotalRow label="Total empleado" value={orderEmployeeTotal(order)} strong />
               </div>
             </section>
 
@@ -869,8 +876,8 @@ function ThermalTicket({ order }: { order: AdminOrder }) {
       <div className="ticket-separator" />
       <div className="ticket-total"><span>Subtotal</span><span>{ticketCurrency(Number(order.subtotal))}</span></div>
       <div className="ticket-total"><span>Subvencion</span><span>-{ticketCurrency(Number(order.subsidy_total))}</span></div>
-      <div className="ticket-total"><span>Factura empresa</span><span>{ticketCurrency(Number(order.subsidy_total))}</span></div>
-      <div className="ticket-total ticket-total-strong"><span>Total empleado</span><span>{ticketCurrency(Number(order.total))}</span></div>
+      <div className="ticket-total"><span>Factura empresa</span><span>{ticketCurrency(orderCompanyInvoiceTotal(order))}</span></div>
+      <div className="ticket-total ticket-total-strong"><span>Total empleado</span><span>{ticketCurrency(orderEmployeeTotal(order))}</span></div>
       <div className="ticket-separator" />
       <p className="ticket-highlight">ESTADO DE PAGO:</p>
       <p className="ticket-payment-status">{ticketText(operationalPaymentLabel(order)).toUpperCase()}</p>

@@ -21,8 +21,17 @@ export function paymentStatusLabel(status?: PaymentStatus | null) {
   return status ? PAYMENT_STATUS_LABELS[status] ?? status : "Pendiente";
 }
 
-export function operationalPaymentLabel(order: { payment_method?: PaymentMethod | null; payment_status?: PaymentStatus | null }) {
+export function operationalPaymentLabel(order: {
+  payment_method?: PaymentMethod | null;
+  payment_status?: PaymentStatus | null;
+  employee_total?: number | null;
+  company_invoice_total?: number | null;
+}) {
   if (!order.payment_method || order.payment_method === "pay_on_delivery") {
+    if (Number(order.employee_total ?? 0) === 0 && Number(order.company_invoice_total ?? 0) > 0) {
+      return "Pendiente de facturación a empresa";
+    }
+
     return "Pago a la entrega";
   }
 

@@ -26,9 +26,10 @@ function getDraft(company: AdminCompany): CompanyDraft {
     delivery_window: company.delivery_window ?? "13:00 a 13:30",
     daily_menu_subsidy: Number(dailyRule?.subsidy_amount ?? 0),
     half_menu_subsidy: Number(halfRule?.subsidy_amount ?? 0),
-    allow_pay_on_delivery: company.allow_pay_on_delivery ?? true,
-    allow_card_payment: company.allow_card_payment ?? false,
-    allow_bizum_payment: company.allow_bizum_payment ?? false
+    allow_pay_on_delivery: company.allow_pay_on_delivery ?? false,
+    allow_card_payment: company.allow_card_payment ?? true,
+    allow_bizum_payment: company.allow_bizum_payment ?? false,
+    billing_type: company.billing_type ?? "employee"
   };
 }
 
@@ -159,6 +160,18 @@ function CompaniesEditor({ pin, clearPin }: { pin: string; clearPin: () => void 
                     value={draft.half_menu_subsidy}
                     onChange={(value) => updateDraft(company.id, "half_menu_subsidy", Number(value))}
                   />
+                  <label className="space-y-1">
+                    <span className="text-sm font-bold text-matica-ink/70">Tipo de facturación</span>
+                    <select
+                      className="matica-focus w-full rounded-lg border border-matica-line bg-white px-3 py-3 font-bold"
+                      value={draft.billing_type}
+                      onChange={(event) => updateDraft(company.id, "billing_type", event.target.value)}
+                    >
+                      <option value="employee">Paga empleado</option>
+                      <option value="subsidized">Subvención empresa</option>
+                      <option value="company">Paga empresa (100%)</option>
+                    </select>
+                  </label>
                 </div>
 
                 <div className="mt-4 rounded-lg border border-matica-line bg-matica-soft p-3">
@@ -181,7 +194,7 @@ function CompaniesEditor({ pin, clearPin }: { pin: string; clearPin: () => void 
                     />
                   </div>
                   <p className="mt-2 text-xs font-bold text-matica-ink/50">
-                    En produccion, la carta publica solo muestra Stripe Checkout. Pago a la entrega queda guardado para uso interno futuro.
+                    La forma de pago visible en la carta depende de esta configuración. Las nuevas empresas quedan preparadas para Stripe sin subvención.
                   </p>
                 </div>
 

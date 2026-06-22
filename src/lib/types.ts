@@ -25,6 +25,8 @@ export type PaymentStatus =
   | "failed"
   | "cancelled";
 
+export type CompanyBillingType = "employee" | "subsidized" | "company";
+
 export type Company = {
   id: string;
   name: string;
@@ -34,6 +36,12 @@ export type Company = {
   allow_pay_on_delivery?: boolean | null;
   allow_card_payment?: boolean | null;
   allow_bizum_payment?: boolean | null;
+  billing_type?: CompanyBillingType | null;
+  subsidy_rules?: {
+    product_type: "daily_menu" | "half_menu";
+    subsidy_amount: number;
+    active: boolean;
+  }[];
   stripe_payments_enabled?: boolean;
   active: boolean;
   created_at?: string;
@@ -75,8 +83,6 @@ export type DailyMenuCourse =
   | string
   | {
       name: string;
-      category?: string | null;
-      excluded_from_half_menu?: boolean | null;
     };
 
 export type DailyMenu = {
@@ -149,6 +155,8 @@ export type AdminOrder = {
   paid_at?: string | null;
   subtotal: number;
   subsidy_total: number;
+  employee_total?: number;
+  company_invoice_total?: number;
   total: number;
   notes: string | null;
   delivery_window: string;
@@ -158,11 +166,6 @@ export type AdminOrder = {
 };
 
 export type AdminCompany = Company & {
-  subsidy_rules?: {
-    product_type: "daily_menu" | "half_menu";
-    subsidy_amount: number;
-    active: boolean;
-  }[];
 };
 
 export type CompanyDraft = Pick<Company, "id" | "name" | "slug" | "active" | "order_window" | "delivery_window"> & {
@@ -171,6 +174,7 @@ export type CompanyDraft = Pick<Company, "id" | "name" | "slug" | "active" | "or
   allow_pay_on_delivery: boolean;
   allow_card_payment: boolean;
   allow_bizum_payment: boolean;
+  billing_type: CompanyBillingType;
 };
 
 export type ProductDraft = Pick<

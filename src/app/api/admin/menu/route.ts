@@ -11,36 +11,11 @@ function sanitizeList(value: unknown) {
 }
 
 function sanitizeSecondCourses(value: unknown): DailyMenuCourse[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-
-  return value
-    .map((item): DailyMenuCourse | null => {
-      if (typeof item === "string") {
-        const name = item.trim();
-
-        return name ? name : null;
-      }
-
-      if (item && typeof item === "object" && "name" in item) {
-        const course = item as { name?: unknown; category?: unknown; excluded_from_half_menu?: unknown };
-        const name = String(course.name ?? "").trim();
-
-        if (!name) {
-          return null;
-        }
-
-        return {
-          name,
-          category: typeof course.category === "string" && course.category.trim() ? course.category.trim() : null,
-          excluded_from_half_menu: Boolean(course.excluded_from_half_menu)
-        };
-      }
-
-      return null;
-    })
-    .filter((item): item is DailyMenuCourse => Boolean(item));
+  return Array.isArray(value)
+    ? value
+        .map((item) => typeof item === "string" ? item.trim() : String((item as { name?: unknown })?.name ?? "").trim())
+        .filter(Boolean)
+    : [];
 }
 
 export async function GET(request: NextRequest) {
@@ -110,8 +85,8 @@ export async function PUT(request: NextRequest) {
   const firstCourses = sanitizeList(body.first_courses);
   const secondCourses = sanitizeSecondCourses(body.second_courses);
 
-  if (firstCourses.length !== 4 || secondCourses.length !== 4) {
-    return NextResponse.json({ error: "Configura exactamente 4 primeros y 4 segundos." }, { status: 400 });
+  if (firstCourses.length !== 4 || secondCourses.length !== 3) {
+    return NextResponse.json({ error: "Configura exactamente 4 primeros y 3 segundos." }, { status: 400 });
   }
 
   const { data, error } = await supabase

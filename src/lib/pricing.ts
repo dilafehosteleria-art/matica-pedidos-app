@@ -1,21 +1,26 @@
-import type { CartItem } from "./types";
+import type { CartItem, Company } from "./types";
 
-const SUBSIDY_BY_TYPE: Record<string, number> = {
-  daily_menu: 4,
-  half_menu: 3.5
-};
+export function getSubsidyAmount(productType: string, company?: Pick<Company, "billing_type" | "subsidy_rules"> | null) {
+  if (company?.billing_type !== "subsidized") {
+    return 0;
+  }
 
-export function getSubsidyAmount(productType: string) {
-  return SUBSIDY_BY_TYPE[productType] ?? 0;
+  const rule = company.subsidy_rules?.find((candidate) => candidate.product_type === productType && candidate.active);
+
+  return Number(rule?.subsidy_amount ?? 0);
 }
 
-export function calculateCartTotals(items: CartItem[], subsidyAlreadyUsed = false) {
+export function calculateCartTotals(
+  items: CartItem[],
+  company?: Pick<Company, "billing_type" | "subsidy_rules"> | null,
+  subsidyAlreadyUsed = false
+) {
   let subsidyApplied = false;
   const subtotal = items.reduce((sum, item) => sum + item.base_price * item.quantity, 0);
   let subsidyTotal = 0;
 
   for (const item of items) {
-    const subsidy = getSubsidyAmount(item.product_type);
+    const subsidy = getSubsidyAmount(item.product_type, company);
 
     if (!subsidyAlreadyUsed && !subsidyApplied && subsidy > 0 && item.quantity > 0) {
       subsidyTotal += subsidy;
@@ -23,11 +28,18 @@ export function calculateCartTotals(items: CartItem[], subsidyAlreadyUsed = fals
     }
   }
 
+  const companyPaysAll = company?.billing_type === "company";
+  const employeeTotal = companyPaysAll ? 0 : Math.max(subtotal - subsidyTotal, 0);
+  const companyInvoiceTotal = companyPaysAll ? subtotal : subsidyTotal;
+
   return {
     subtotal,
     subsidyTotal,
-    total: Math.max(subtotal - subsidyTotal, 0),
+    total: employeeTotal,
+    employeeTotal,
+    companyInvoiceTotal,
     subsidyApplied,
-    fullPriceBecauseSubsidyUsed: subsidyAlreadyUsed && items.some((item) => getSubsidyAmount(item.product_type) > 0)
+    fullPriceBecauseSubsidyUsed:
+      subsidyAlreadyUsed && items.some((item) => getSubsidyAmount(item.product_type, company) > 0)
   };
 }

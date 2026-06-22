@@ -8,7 +8,7 @@ import { isOrderWindowOpen, ORDER_WINDOW_MESSAGE } from "@/lib/schedule";
 import {
   createStripeCheckoutSession,
   isOnlinePaymentMethod,
-  publicCheckoutPaymentOptions,
+  paymentOptionsForCompany,
   resolveStripeReturnBaseUrl
 } from "@/lib/payment";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
@@ -61,6 +61,7 @@ type SupabaseCompany = {
   allow_pay_on_delivery?: boolean | null;
   allow_card_payment?: boolean | null;
   allow_bizum_payment?: boolean | null;
+  billing_type?: "employee" | "subsidized" | "company" | null;
 };
 
 const FIXED_CONFIGURED_PRICES: Record<string, number> = {
@@ -147,7 +148,9 @@ function isMissingPaymentColumnError(message?: string) {
         message.includes("'payment_provider' column") ||
         message.includes("'stripe_checkout_session_id' column") ||
         message.includes("'stripe_payment_intent_id' column") ||
-        message.includes("'paid_at' column")
+        message.includes("'paid_at' column") ||
+        message.includes("'employee_total' column") ||
+        message.includes("'company_invoice_total' column")
       )
   );
 }
@@ -165,6 +168,17 @@ function expectedSaladConfiguredUnitPrice(basePrice: number, metadata: Record<st
 
 function expectedConfiguredUnitPrice(metadata: Record<string, string>) {
   const displayName = metadata.display_name?.trim();
+
+  if (
+    displayName === "Menú del día" &&
+    metadata.first_course?.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().includes("ensalada")
+  ) {
+    if (metadata.salad_size?.trim() !== "Tamaño Pequeño 750ML") {
+      return null;
+    }
+
+    return expectedSaladConfiguredUnitPrice(13, metadata, false);
+  }
 
   if (displayName === "Escoge tu bebida") {
     return DRINK_CONFIGURED_PRICES[metadata.drink?.trim() ?? ""] ?? null;
@@ -253,16 +267,17 @@ export async function POST(request: NextRequest) {
   }
 
   const selectedCompany = company as SupabaseCompany;
+  const billingType = selectedCompany.billing_type ?? (companySlug === "bureau-veritas" ? "subsidized" : "employee");
   const emailValidation = validateCompanyOrderEmail(companySlug, customerEmail);
 
   if (!emailValidation.valid) {
     return badRequest(emailValidation.message);
   }
 
-  const paymentOptions = publicCheckoutPaymentOptions();
+  const paymentOptions = paymentOptionsForCompany(selectedCompany);
 
   if (!paymentOptions.length) {
-    return badRequest("El pago online con Stripe no esta disponible temporalmente.");
+    return badRequest("No hay formas de pago disponibles para esta empresa.");
   }
 
   const requestedPaymentMethod = body.payment_method ?? paymentOptions[0].method;
@@ -385,7 +400,10 @@ export async function POST(request: NextRequest) {
     const basePrice = Number(product.base_price);
     const unitPrice = item.configured_unit_price ?? Number((basePrice + item.supplement_total).toFixed(2));
     const lineSubtotal = Number((unitPrice * item.quantity).toFixed(2));
-    const possibleSubsidy = subsidyByType.get(product.product_type) ?? 0;
+    const possibleSubsidy =
+      billingType === "subsidized"
+        ? subsidyByType.get(product.product_type) ?? 0
+        : 0;
     const displayName =
       item.metadata.display_name?.trim() && item.metadata.display_name.length <= 80
         ? item.metadata.display_name.trim()
@@ -415,7 +433,17 @@ export async function POST(request: NextRequest) {
     };
   });
 
-  const total = Number((subtotal - subsidyTotal).toFixed(2));
+  const employeeTotal =
+    billingType === "company"
+      ? 0
+      : Number((subtotal - subsidyTotal).toFixed(2));
+  const companyInvoiceTotal =
+    billingType === "company"
+      ? subtotal
+      : billingType === "subsidized"
+        ? subsidyTotal
+        : 0;
+  const total = employeeTotal;
   const isOnlinePayment = isOnlinePaymentMethod(requestedPaymentMethod);
   const initialStatus: OrderStatus = isOnlinePayment ? "pendiente_pago" : "nuevo";
 
@@ -432,6 +460,8 @@ export async function POST(request: NextRequest) {
     payment_provider: isOnlinePayment ? "stripe" : null,
     subtotal,
     subsidy_total: subsidyTotal,
+    employee_total: employeeTotal,
+    company_invoice_total: companyInvoiceTotal,
     total,
     notes,
     delivery_window: selectedCompany.delivery_window || DELIVERY_WINDOW
@@ -448,6 +478,8 @@ export async function POST(request: NextRequest) {
       payment_method: _paymentMethod,
       payment_status: _paymentStatus,
       payment_provider: _paymentProvider,
+      employee_total: _employeeTotal,
+      company_invoice_total: _companyInvoiceTotal,
       ...legacyOrderPayload
     } = orderPayload;
 
@@ -535,6 +567,8 @@ export async function POST(request: NextRequest) {
       id: order.id,
       subtotal,
       subsidy_total: subsidyTotal,
+      employee_total: employeeTotal,
+      company_invoice_total: companyInvoiceTotal,
       total,
       subsidy_applied: subsidyApplied,
       prior_subsidy_used: priorSubsidyUsed

@@ -242,6 +242,14 @@ function itemLine(item: OrderItem) {
   return `${item.quantity} x ${item.name} · ${formatCurrency(Number(item.unit_price))} · ${formatCurrency(Number(item.total_price))}`;
 }
 
+export function orderEmployeeTotal(order: Pick<AdminOrder, "employee_total" | "total">) {
+  return Number(order.employee_total ?? order.total);
+}
+
+export function orderCompanyInvoiceTotal(order: Pick<AdminOrder, "company_invoice_total" | "subsidy_total">) {
+  return Number(order.company_invoice_total ?? order.subsidy_total);
+}
+
 export function buildOrderPlainText(order: AdminOrder) {
   const lines = [
     "MATICA FRESH FOOD",
@@ -276,8 +284,8 @@ export function buildOrderPlainText(order: AdminOrder) {
     "TOTALES",
     `Subtotal: ${formatCurrency(Number(order.subtotal))}`,
     `Subvención: -${formatCurrency(Number(order.subsidy_total))}`,
-    `Factura empresa: ${formatCurrency(Number(order.subsidy_total))}`,
-    `Total empleado: ${formatCurrency(Number(order.total))}`,
+    `Factura empresa: ${formatCurrency(orderCompanyInvoiceTotal(order))}`,
+    `Total empleado: ${formatCurrency(orderEmployeeTotal(order))}`,
     "",
     "ESTADO DE PAGO",
     operationalPaymentLabel(order).toUpperCase(),

@@ -3,6 +3,8 @@ import { formatCurrency } from "@/lib/format";
 import { operationalPaymentLabel, paymentMethodLabel } from "@/lib/payment-display";
 import {
   formatOrderDateTime,
+  orderCompanyInvoiceTotal,
+  orderEmployeeTotal,
   orderItemOptionLines
 } from "@/lib/order-ticket";
 import type { AdminOrder } from "@/lib/types";
@@ -141,8 +143,12 @@ function buildOrderHtml(order: AdminOrder) {
                     <td style="padding:9px 0;border-top:1px solid #e5eee8;text-align:right;font-weight:800;">-${formatCurrency(Number(order.subsidy_total))}</td>
                   </tr>
                   <tr>
+                    <td style="padding:9px 0;border-top:1px solid #e5eee8;color:#66736b;">Factura empresa</td>
+                    <td style="padding:9px 0;border-top:1px solid #e5eee8;text-align:right;font-weight:800;">${formatCurrency(orderCompanyInvoiceTotal(order))}</td>
+                  </tr>
+                  <tr>
                     <td style="padding:12px 0;border-top:2px solid #174d32;font-size:18px;font-weight:900;color:#132018;">Total empleado</td>
-                    <td style="padding:12px 0;border-top:2px solid #174d32;text-align:right;font-size:20px;font-weight:900;color:#174d32;">${formatCurrency(Number(order.total))}</td>
+                    <td style="padding:12px 0;border-top:2px solid #174d32;text-align:right;font-size:20px;font-weight:900;color:#174d32;">${formatCurrency(orderEmployeeTotal(order))}</td>
                   </tr>
                 </table>
               </td>

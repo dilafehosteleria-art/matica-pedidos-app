@@ -10,38 +10,24 @@ type MenuForm = {
   date: string;
   first_courses: string[];
   second_courses: string[];
-  excluded_second_course_index: number | null;
   drinks: string;
   desserts: string;
   active: boolean;
 };
 
-const COURSE_FIELD_COUNT = 4;
+const FIRST_COURSE_FIELD_COUNT = 4;
+const SECOND_COURSE_FIELD_COUNT = 3;
 
 function courseName(course: DailyMenuCourse) {
   return typeof course === "string" ? course.trim() : course.name.trim();
 }
 
-function isExcludedSecondCourse(course: DailyMenuCourse) {
-  return typeof course === "string"
-    ? false
-    : Boolean(course.excluded_from_half_menu) || course.category?.trim().toLowerCase() === "vacuno";
-}
-
-function courseFields(courses: string[], count = COURSE_FIELD_COUNT) {
+function courseFields(courses: string[], count: number) {
   return Array.from({ length: count }, (_value, index) => courses[index] ?? "");
 }
 
 function cleanCourseFields(courses: string[]) {
   return courses.map((course) => course.trim());
-}
-
-function encodeSecondCourses(names: string[], excludedIndex: number | null): DailyMenuCourse[] {
-  return names.map((name, index) => ({
-    name,
-    category: excludedIndex === index ? "vacuno" : null,
-    excluded_from_half_menu: excludedIndex === index
-  }));
 }
 
 export function AdminMenuClient() {
@@ -55,9 +41,8 @@ export function AdminMenuClient() {
 function MenuEditor({ pin, clearPin }: { pin: string; clearPin: () => void }) {
   const [form, setForm] = useState<MenuForm>({
     date: toDateInputValue(),
-    first_courses: courseFields([]),
-    second_courses: courseFields([]),
-    excluded_second_course_index: null,
+    first_courses: courseFields([], FIRST_COURSE_FIELD_COUNT),
+    second_courses: courseFields([], SECOND_COURSE_FIELD_COUNT),
     drinks: "",
     desserts: "",
     active: true
@@ -88,13 +73,10 @@ function MenuEditor({ pin, clearPin }: { pin: string; clearPin: () => void }) {
 
     const menu = payload.menu as DailyMenu;
     const secondCourses = menu.second_courses ?? [];
-    const excludedSecondCourseIndex = secondCourses.findIndex(isExcludedSecondCourse);
-
     setForm({
       date: menu.date,
-      first_courses: courseFields(menu.first_courses ?? []),
-      second_courses: courseFields(secondCourses.map(courseName)),
-      excluded_second_course_index: excludedSecondCourseIndex >= 0 ? excludedSecondCourseIndex : null,
+      first_courses: courseFields(menu.first_courses ?? [], FIRST_COURSE_FIELD_COUNT),
+      second_courses: courseFields(secondCourses.map(courseName), SECOND_COURSE_FIELD_COUNT),
       drinks: arrayToLines(menu.drinks),
       desserts: arrayToLines(menu.desserts),
       active: menu.active
@@ -119,7 +101,7 @@ function MenuEditor({ pin, clearPin }: { pin: string; clearPin: () => void }) {
 
     if (firstCourses.some((course) => !course) || secondCourses.some((course) => !course)) {
       setSaving(false);
-      setError("Completa los 4 primeros platos y los 4 segundos platos.");
+      setError("Completa los 4 primeros platos y los 3 segundos platos.");
       return;
     }
 
@@ -132,7 +114,7 @@ function MenuEditor({ pin, clearPin }: { pin: string; clearPin: () => void }) {
       body: JSON.stringify({
         date: form.date,
         first_courses: firstCourses,
-        second_courses: encodeSecondCourses(secondCourses, form.excluded_second_course_index),
+        second_courses: secondCourses,
         drinks: linesToArray(form.drinks),
         desserts: linesToArray(form.desserts),
         active: form.active
@@ -148,13 +130,10 @@ function MenuEditor({ pin, clearPin }: { pin: string; clearPin: () => void }) {
 
     const menu = payload.menu as DailyMenu;
     const savedSecondCourses = menu.second_courses ?? [];
-    const excludedSecondCourseIndex = savedSecondCourses.findIndex(isExcludedSecondCourse);
-
     setForm({
       date: menu.date,
-      first_courses: courseFields(menu.first_courses ?? []),
-      second_courses: courseFields(savedSecondCourses.map(courseName)),
-      excluded_second_course_index: excludedSecondCourseIndex >= 0 ? excludedSecondCourseIndex : null,
+      first_courses: courseFields(menu.first_courses ?? [], FIRST_COURSE_FIELD_COUNT),
+      second_courses: courseFields(savedSecondCourses.map(courseName), SECOND_COURSE_FIELD_COUNT),
       drinks: arrayToLines(menu.drinks),
       desserts: arrayToLines(menu.desserts),
       active: menu.active
@@ -163,7 +142,7 @@ function MenuEditor({ pin, clearPin }: { pin: string; clearPin: () => void }) {
     setMessage("Menú guardado. Los cambios ya están disponibles en la app pública para esta fecha.");
   }
 
-  function update(field: keyof Pick<MenuForm, "date" | "active" | "excluded_second_course_index">, value: string | boolean | number | null) {
+  function update(field: keyof Pick<MenuForm, "date" | "active">, value: string | boolean) {
     setForm((current) => ({ ...current, [field]: value }));
   }
 
@@ -228,8 +207,8 @@ function MenuEditor({ pin, clearPin }: { pin: string; clearPin: () => void }) {
             <section className="mt-7 space-y-3">
               <SectionHeader
                 title="Segundos platos"
-                description="Edita los 4 segundos. Después marca cuál no entra en medio menú."
-                meta={`${secondCoursesComplete}/4 completos`}
+                description="Edita los 3 segundos. Todos estarán disponibles también en Medio menú."
+                meta={`${secondCoursesComplete}/3 completos`}
               />
               <div className="grid gap-3 md:grid-cols-2">
                 {form.second_courses.map((course, index) => (
@@ -240,49 +219,6 @@ function MenuEditor({ pin, clearPin }: { pin: string; clearPin: () => void }) {
                     onChange={(value) => updateCourse("second_courses", index, value)}
                   />
                 ))}
-              </div>
-            </section>
-
-            <section className="mt-7 rounded-lg border border-matica-line bg-matica-soft p-4">
-              <SectionHeader
-                title="Marcar segundo excluido de medio menú"
-                description="Selecciona el segundo de vacuno o el plato que no debe aparecer como plato único en Medio menú."
-              />
-              <div className="mt-3 grid gap-2">
-                <label className="flex items-center gap-3 rounded-lg border border-matica-line bg-white px-3 py-3 text-sm font-bold text-matica-ink">
-                  <input
-                    type="radio"
-                    name="excluded-second-course"
-                    checked={form.excluded_second_course_index === null}
-                    onChange={() => update("excluded_second_course_index", null)}
-                  />
-                  Ninguno
-                </label>
-                {form.second_courses.map((course, index) => {
-                  const trimmedCourse = course.trim();
-
-                  return (
-                    <label
-                      key={`excluded-${index}`}
-                      className="flex items-start gap-3 rounded-lg border border-matica-line bg-white px-3 py-3 text-sm font-bold text-matica-ink"
-                    >
-                      <input
-                        className="mt-1"
-                        type="radio"
-                        name="excluded-second-course"
-                        checked={form.excluded_second_course_index === index}
-                        disabled={!trimmedCourse}
-                        onChange={() => update("excluded_second_course_index", index)}
-                      />
-                      <span>
-                        <span className="block">{trimmedCourse || `Segundo plato ${index + 1}`}</span>
-                        <span className="block text-xs font-semibold text-matica-ink/55">
-                          Este segundo no entra en medio menú
-                        </span>
-                      </span>
-                    </label>
-                  );
-                })}
               </div>
             </section>
 
