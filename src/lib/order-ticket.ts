@@ -1,4 +1,5 @@
 import { formatCurrency } from "@/lib/format";
+import { buildOrderItemOptionLines } from "@/lib/order-metadata";
 import { operationalPaymentLabel } from "@/lib/payment-display";
 import type { AdminOrder, OrderItem, OrderStatus } from "@/lib/types";
 
@@ -97,7 +98,7 @@ export function formatMetadataInline(metadata?: Record<string, string> | null) {
     .join(" · ");
 }
 
-export function orderItemOptionLines(metadata?: Record<string, string> | null): MetadataEntry[] {
+function legacyOrderItemOptionLines(metadata?: Record<string, string> | null): MetadataEntry[] {
   if (!metadata) {
     return [];
   }
@@ -228,6 +229,10 @@ export function orderItemOptionLines(metadata?: Record<string, string> | null): 
   }
 
   return entries;
+}
+
+export function orderItemOptionLines(metadata?: Record<string, string> | null): MetadataEntry[] {
+  return buildOrderItemOptionLines(metadata);
 }
 
 function companyName(order: AdminOrder) {

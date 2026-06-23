@@ -14,6 +14,12 @@ import {
 } from "@/lib/payment";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import type { AdminOrder, OrderStatus, PaymentMethod, ProductType } from "@/lib/types";
+import {
+  expectedSaladUnitPrice,
+  isCustomSaladChoice,
+  MEDIUM_SALAD_SIZE_LABEL,
+  SMALL_SALAD_SIZE_LABEL
+} from "@/lib/salad-config";
 import { expectedCustomWrapUnitPrice } from "@/lib/wrap-config";
 
 export const dynamic = "force-dynamic";
@@ -112,19 +118,6 @@ const GRILL_PROTEIN_SUPPLEMENTS: Record<string, number> = {
   "Salmón a la plancha": 2
 };
 
-const SALAD_SIZE_SUPPLEMENTS: Record<string, number> = {
-  "Tamaño Mediano 1000ML": 0,
-  "Tamaño Grande 1500ML": 2
-};
-
-const SALAD_PROTEIN_SUPPLEMENTS: Record<string, number> = {
-  Atún: 0,
-  "Falafel vegetal de garbanzo y quinoa": 0,
-  "Lomo Asado": 0,
-  Pollo: 0,
-  "Salmón ahumado": 2.5
-};
-
 function badRequest(message: string, status = 400) {
   return NextResponse.json({ error: message }, { status });
 }
@@ -156,17 +149,6 @@ function isMissingPaymentColumnError(message?: string) {
   );
 }
 
-function expectedSaladConfiguredUnitPrice(basePrice: number, metadata: Record<string, string>, includeSize: boolean) {
-  const sizeSupplement = includeSize ? SALAD_SIZE_SUPPLEMENTS[metadata.salad_size?.trim() ?? ""] : 0;
-  const proteinSupplement = SALAD_PROTEIN_SUPPLEMENTS[metadata.protein?.trim() ?? ""];
-
-  if (typeof sizeSupplement !== "number" || typeof proteinSupplement !== "number") {
-    return null;
-  }
-
-  return Number((basePrice + sizeSupplement + proteinSupplement).toFixed(2));
-}
-
 function expectedConfiguredUnitPrice(metadata: Record<string, string>) {
   const displayName = metadata.display_name?.trim();
 
@@ -174,11 +156,11 @@ function expectedConfiguredUnitPrice(metadata: Record<string, string>) {
     displayName === "Menú del día" &&
     metadata.first_course?.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().includes("ensalada")
   ) {
-    if (metadata.salad_size?.trim() !== "Tamaño Pequeño 750ML") {
-      return null;
-    }
+    return expectedSaladUnitPrice(13, metadata, SMALL_SALAD_SIZE_LABEL);
+  }
 
-    return expectedSaladConfiguredUnitPrice(13, metadata, false);
+  if (displayName === "Medio menú" && isCustomSaladChoice(metadata.plate ?? "")) {
+    return expectedSaladUnitPrice(10, metadata, MEDIUM_SALAD_SIZE_LABEL);
   }
 
   if (displayName === "Escoge tu bebida") {
@@ -190,7 +172,7 @@ function expectedConfiguredUnitPrice(metadata: Record<string, string>) {
   }
 
   if (displayName === "Diseña tu ensalada") {
-    return expectedSaladConfiguredUnitPrice(7.5, metadata, true);
+    return expectedSaladUnitPrice(7.5, metadata);
   }
 
   if (displayName === "Diseña tu wrap") {
@@ -198,7 +180,7 @@ function expectedConfiguredUnitPrice(metadata: Record<string, string>) {
   }
 
   if (displayName === "Menú ensalada pequeña + bocadillo") {
-    return expectedSaladConfiguredUnitPrice(10, metadata, false);
+    return expectedSaladUnitPrice(10, metadata, SMALL_SALAD_SIZE_LABEL);
   }
 
   if (displayName === "Platos combinados Matica") {
@@ -213,7 +195,16 @@ function expectedConfiguredUnitPrice(metadata: Record<string, string>) {
 function safeConfiguredUnitPrice(metadata: Record<string, string>) {
   const incomingUnitPrice = Number(metadata._configured_unit_price);
   const expectedUnitPrice = expectedConfiguredUnitPrice(metadata);
-  const requiresValidatedConfiguration = metadata.display_name?.trim() === "Diseña tu wrap";
+  const displayName = metadata.display_name?.trim();
+  const requiresValidatedConfiguration =
+    displayName === "Diseña tu wrap" ||
+    displayName === "Diseña tu ensalada" ||
+    displayName === "Menú ensalada pequeña + bocadillo" ||
+    (
+      displayName === "Menú del día" &&
+      (metadata.first_course ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().includes("ensalada")
+    ) ||
+    (displayName === "Medio menú" && isCustomSaladChoice(metadata.plate ?? ""));
 
   if (!Number.isFinite(incomingUnitPrice) || incomingUnitPrice <= 0) {
     return { value: null, valid: !requiresValidatedConfiguration };

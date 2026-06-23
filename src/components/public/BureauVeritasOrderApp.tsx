@@ -30,6 +30,16 @@ import { DELIVERY_WINDOW } from "@/lib/constants";
 import { validateCompanyOrderEmail } from "@/lib/email-rules";
 import { formatCurrency } from "@/lib/format";
 import { calculateCartTotals, getSubsidyAmount } from "@/lib/pricing";
+import {
+  isCustomSaladChoice,
+  MEDIUM_SALAD_SIZE_LABEL,
+  SALAD_BASE_OPTIONS,
+  SALAD_DRESSING_OPTIONS,
+  SALAD_PROTEIN_OPTIONS,
+  SALAD_SIZE_OPTIONS,
+  SALAD_TOPPING_OPTIONS,
+  SMALL_SALAD_SIZE_LABEL
+} from "@/lib/salad-config";
 import { deliveryWindowLabel, getOrderWindowState } from "@/lib/schedule";
 import type { CartItem, CompanyBranch, CustomerForm, DailyMenu, DailyMenuCourse, PaymentMethod, Product, PublicData } from "@/lib/types";
 import {
@@ -190,53 +200,6 @@ function writeStoredCustomer(storageKey: string, customer: CustomerForm) {
 
   writeCustomerCookie(storageKey, value);
 }
-
-const SALAD_SIZE_OPTIONS: Option[] = [
-  { label: "Tamaño Mediano 1000ML" },
-  { label: "Tamaño Grande 1500ML", price: 2 }
-];
-
-const SMALL_SALAD_SIZE_LABEL = "Tamaño Pequeño 750ML";
-
-const SALAD_BASE_OPTIONS: Option[] = [
-  { label: "Arroz blanco" },
-  { label: "Arroz integral" },
-  { label: "Mézclum" },
-  { label: "Espinaca" },
-  { label: "Pasta" },
-  { label: "Quinoa" }
-];
-
-const SALAD_PROTEIN_OPTIONS: Option[] = [
-  { label: "Atún" },
-  { label: "Falafel vegetal de garbanzo y quinoa" },
-  { label: "Lomo Asado" },
-  { label: "Pollo" },
-  { label: "Salmón ahumado", price: 2.5 }
-];
-
-const SALAD_TOPPING_OPTIONS: Option[] = [
-  { label: "Aceituna negra" },
-  { label: "Cebolla andaluza" },
-  { label: "Garbanzos" },
-  { label: "Huevo" },
-  { label: "Jamón York" },
-  { label: "Maíz" },
-  { label: "Mix Frutos Secos" },
-  { label: "Pepino" },
-  { label: "Pimiento" },
-  { label: "Queso fresco" },
-  { label: "Tomate" },
-  { label: "Zanahoria" }
-];
-
-const DRESSING_OPTIONS: Option[] = [
-  { label: "Mahonesa de soja" },
-  { label: "Sal y Vinagre (sobres individuales)" },
-  { label: "Salsa Matica con mostaza y miel" },
-  { label: "Vinagreta balsámica" },
-  { label: "Vinagreta de queso Parmesano" }
-];
 
 const SANDWICH_OPTIONS: Option[] = [
   { label: "Pollo con queso de cabra y cebolla caramelizada" },
@@ -475,10 +438,10 @@ function getSaladGroups({
 } = {}): ConfigGroup[] {
   return [
     ...(includeSize ? [{ key: "salad_size", label: "Tamaño", type: "single" as const, options: SALAD_SIZE_OPTIONS, dependsOn }] : []),
-    { key: "salad_base", label: "Base", type: "multi", min: 1, max: 2, options: SALAD_BASE_OPTIONS, dependsOn },
+    { key: "salad_base", label: "Bases", type: "multi", min: 1, max: 2, options: SALAD_BASE_OPTIONS, dependsOn },
     { key: "protein", label: "Proteína", type: "single", options: SALAD_PROTEIN_OPTIONS, dependsOn },
     { key: "toppings", label: "Toppings", type: "multi", min: exactCounts ? 3 : 1, max: 3, options: SALAD_TOPPING_OPTIONS, dependsOn },
-    { key: "dressing", label: "Aliño", type: "single", options: DRESSING_OPTIONS, dependsOn },
+    { key: "dressing", label: "Salsa", type: "single", options: SALAD_DRESSING_OPTIONS, dependsOn },
     ...(includeSandwich ? [{ key: "sandwich", label: "Bocadillo", type: "single" as const, options: SANDWICH_OPTIONS, dependsOn }] : [])
   ];
 }
@@ -515,14 +478,21 @@ function getConfigSpec(
 
   if (product.product_type === "half_menu") {
     const secondCourseLabels = halfMenuSecondCourseLabels(menu);
+    const customSaladPlates = menuPlateOptions(menu)
+      .filter((option) => isCustomSaladChoice(option.label))
+      .map((option) => option.label);
     const subsidy = getSubsidyAmount(product.product_type, company);
 
     return {
       title: "Medio menú",
       lead: "Plato único y bebida o postre. Pan opcional.",
-      included: subsidy > 0 ? [`Subvención -${formatCurrency(subsidy)}`] : [],
+      included: [
+        ...(subsidy > 0 ? [`Subvención -${formatCurrency(subsidy)}`] : []),
+        ...(customSaladPlates.length ? [MEDIUM_SALAD_SIZE_LABEL] : [])
+      ],
       groups: [
         { key: "plate", label: "Plato único", type: "single", options: menuPlateOptions(menu) },
+        ...getSaladGroups({ dependsOn: { key: "plate", values: customSaladPlates } }),
         {
           key: "side",
           label: "Guarnición",
@@ -1342,8 +1312,14 @@ function ConfigModal({
       _supplement_total: Math.max(0, configuredUnitPrice - Number(product.base_price)).toFixed(2)
     };
 
-    if (product.product_type === "daily_menu" && activeGroups.some((group) => group.key === "salad_base")) {
-      metadata.salad_size = SMALL_SALAD_SIZE_LABEL;
+    if (activeGroups.some((group) => group.key === "salad_base")) {
+      if (product.product_type === "daily_menu") {
+        metadata.salad_size = SMALL_SALAD_SIZE_LABEL;
+      }
+
+      if (product.product_type === "half_menu") {
+        metadata.salad_size = MEDIUM_SALAD_SIZE_LABEL;
+      }
     }
 
     for (const group of activeGroups) {

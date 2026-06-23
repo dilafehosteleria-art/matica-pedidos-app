@@ -1,6 +1,7 @@
 import { deflateRawSync } from "node:zlib";
 import { NextRequest, NextResponse } from "next/server";
 import { operationalPaymentLabel, paymentMethodLabel, paymentStatusLabel } from "@/lib/payment-display";
+import { formatOrderMetadataForReport } from "@/lib/order-metadata";
 import { orderCompanyInvoiceTotal, orderEmployeeTotal } from "@/lib/order-ticket";
 import { isBillableOrder } from "@/lib/order-validity";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
@@ -283,14 +284,7 @@ function formatDateTime(value: string) {
 }
 
 function formatMetadata(metadata?: Record<string, string> | null) {
-  if (!metadata) {
-    return "";
-  }
-
-  return Object.entries(metadata)
-    .filter(([key, value]) => Boolean(value) && !key.startsWith("_") && key !== "display_name")
-    .map(([key, value]) => `${key}: ${value}`)
-    .join(" | ");
+  return formatOrderMetadataForReport(metadata);
 }
 
 function normalizeText(value: string) {
