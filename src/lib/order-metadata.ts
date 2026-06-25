@@ -2,6 +2,7 @@ export type OrderMetadataEntry = {
   key: string;
   label: string;
   value: string;
+  values: string[];
 };
 
 const LABELS: Record<string, string> = {
@@ -31,8 +32,73 @@ const LABELS: Record<string, string> = {
   suplementos: "Suplementos"
 };
 
+const MULTI_VALUE_KEYS = new Set([
+  "salad_base",
+  "toppings",
+  "wrap_base",
+  "wrap_toppings",
+  "wrap_sauces",
+  "sides",
+  "suplementos"
+]);
+
+const DESSERT_SELECTIONS = new Set([
+  "cookie",
+  "flan",
+  "flan de queso",
+  "gelatina",
+  "manzana",
+  "natillas",
+  "platano",
+  "yogur de frutas"
+]);
+
 function hasValue(metadata: Record<string, string>, key: string) {
   return Boolean(metadata[key]?.trim());
+}
+
+function fallbackLabel(key: string) {
+  return key.replaceAll("_", " ").replace(/^\w/, (letter) => letter.toUpperCase());
+}
+
+function normalizeSelection(value: string) {
+  return value
+    .trim()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
+
+function splitSelectionValues(key: string, value: string) {
+  const normalized = value.trim();
+
+  if (!normalized) {
+    return [];
+  }
+
+  if (MULTI_VALUE_KEYS.has(key)) {
+    return normalized
+      .split(/\s*,\s*|\r?\n/)
+      .map((part) => part.trim())
+      .filter(Boolean);
+  }
+
+  return normalized
+    .split(/\r?\n/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+function entryLabel(key: string, value: string, label = LABELS[key]) {
+  if (key === "drink_or_dessert") {
+    return DESSERT_SELECTIONS.has(normalizeSelection(value)) ? "Postre" : "Bebida";
+  }
+
+  if (key === "wrap_sauces") {
+    return splitSelectionValues(key, value).length === 1 ? "Salsa" : "Salsas";
+  }
+
+  return label ?? fallbackLabel(key);
 }
 
 function appendEntry(
@@ -41,13 +107,15 @@ function appendEntry(
   key: string,
   label = LABELS[key]
 ) {
-  const value = metadata[key]?.trim();
+  const rawValue = metadata[key]?.trim() ?? "";
+  const values = splitSelectionValues(key, rawValue);
 
-  if (value) {
+  if (rawValue && values.length) {
     entries.push({
       key,
-      label: label ?? key.replaceAll("_", " ").replace(/^\w/, (letter) => letter.toUpperCase()),
-      value
+      label: entryLabel(key, rawValue, label),
+      value: values.join("\n"),
+      values
     });
   }
 }
@@ -59,11 +127,16 @@ export function visibleMetadataEntries(metadata?: Record<string, string> | null)
 
   return Object.entries(metadata)
     .filter(([key, value]) => Boolean(value) && !key.startsWith("_") && key !== "display_name")
-    .map(([key, value]) => ({
-      key,
-      label: LABELS[key] ?? key.replaceAll("_", " ").replace(/^\w/, (letter) => letter.toUpperCase()),
-      value
-    }));
+    .map(([key, value]) => {
+      const values = splitSelectionValues(key, value);
+
+      return {
+        key,
+        label: entryLabel(key, value, LABELS[key]),
+        value: values.join("\n"),
+        values
+      };
+    });
 }
 
 export function buildOrderItemOptionLines(metadata?: Record<string, string> | null): OrderMetadataEntry[] {
@@ -81,23 +154,23 @@ export function buildOrderItemOptionLines(metadata?: Record<string, string> | nu
   }
 
   if (hasValue(metadata, "second_course")) {
-    entries.push({
-      key: "second_course",
-      label: "Segundo",
-      value: side ? `${metadata.second_course.trim()} · Guarnición: ${side}` : metadata.second_course.trim()
-    });
+    appendEntry(entries, metadata, "second_course", "Segundo");
     usedKeys.add("second_course");
-    usedKeys.add("side");
+
+    if (side) {
+      appendEntry(entries, metadata, "side", "Guarnición");
+      usedKeys.add("side");
+    }
   }
 
   if (hasValue(metadata, "plate")) {
-    entries.push({
-      key: "plate",
-      label: "Plato único",
-      value: side ? `${metadata.plate.trim()} · Guarnición: ${side}` : metadata.plate.trim()
-    });
+    appendEntry(entries, metadata, "plate", "Plato");
     usedKeys.add("plate");
-    usedKeys.add("side");
+
+    if (side) {
+      appendEntry(entries, metadata, "side", "Acompañamiento");
+      usedKeys.add("side");
+    }
   }
 
   const orderedKeys: Array<[string, string]> = [
@@ -105,16 +178,16 @@ export function buildOrderItemOptionLines(metadata?: Record<string, string> | nu
     ["salad_base", "Bases"],
     ["filling", "Base"],
     ["wrap_base", "Base"],
-    ["toppings", "Toppings"],
     ["protein", "Proteína"],
     ["wrap_protein", "Proteína"],
-    ["wrap_toppings", "Toppings"],
+    ["toppings", "Toppings"],
+    ["wrap_toppings", "Ingredientes"],
+    ["wrap_sauces", "Salsas"],
+    ["dressing", "Salsa"],
     ["main_protein", "Proteína principal"],
     ["sides", "Guarniciones"],
     ["sauce", "Salsa"],
-    ["wrap_sauces", "Salsas"],
-    ["dressing", "Aliño"],
-    ["drink_or_dessert", "Bebida o postre"],
+    ["drink_or_dessert", "Bebida"],
     ["drink", "Bebida"],
     ["dessert", "Postre"],
     ["sandwich", "Bocadillo"]

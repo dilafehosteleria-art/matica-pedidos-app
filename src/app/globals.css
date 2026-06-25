@@ -89,7 +89,7 @@ button {
     font-weight: 700;
     line-height: 1.28;
     letter-spacing: 0;
-    overflow-wrap: anywhere;
+    overflow-wrap: break-word;
   }
 
   .thermal-ticket h1,
@@ -120,6 +120,20 @@ button {
     font-weight: 900;
   }
 
+  .ticket-field-block {
+    margin-top: 6px;
+  }
+
+  .ticket-field-label {
+    font-weight: 900;
+  }
+
+  .ticket-field-value {
+    font-weight: 800;
+    overflow-wrap: break-word;
+    word-break: normal;
+  }
+
   .ticket-section-title {
     font-weight: 900;
     text-align: center;
@@ -127,7 +141,7 @@ button {
 
   .ticket-item-main {
     display: grid;
-    grid-template-columns: 8mm minmax(0, 1fr);
+    grid-template-columns: 8mm minmax(0, 1fr) auto;
     gap: 2mm;
     align-items: start;
     font-weight: 900;
@@ -138,11 +152,8 @@ button {
   }
 
   .ticket-item-price {
-    display: flex;
-    justify-content: space-between;
-    gap: 2mm;
-    margin-top: 3px;
-    padding-left: 10mm;
+    text-align: right;
+    white-space: nowrap;
     font-size: 14px;
     font-weight: 800;
   }
@@ -155,12 +166,21 @@ button {
   }
 
   .ticket-option {
-    padding-left: 10mm;
+    padding-left: 3mm;
     margin-top: 3px;
     font-size: 14px;
     font-weight: 800;
     color: #000000;
     word-break: break-word;
+  }
+
+  .ticket-option-block {
+    margin-top: 8px;
+  }
+
+  .ticket-option-label {
+    font-size: 15px;
+    font-weight: 900;
   }
 
   .ticket-note {

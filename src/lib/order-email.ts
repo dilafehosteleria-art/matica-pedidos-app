@@ -2,7 +2,9 @@ import { buildOrderPlainText, orderReference } from "@/lib/order-ticket";
 import { formatCurrency } from "@/lib/format";
 import { operationalPaymentLabel, paymentMethodLabel } from "@/lib/payment-display";
 import {
+  formatCompanyDisplayName,
   formatOrderDateTime,
+  metadataEntryValues,
   orderCompanyInvoiceTotal,
   orderEmployeeTotal,
   orderItemOptionLines
@@ -37,11 +39,22 @@ function buildItemHtml(order: AdminOrder) {
   return order.order_items
     .map((item) => {
       const optionLines = orderItemOptionLines(item.metadata)
-        .map((entry) => `
-          <div style="margin-top:4px;color:#506057;font-size:13px;line-height:1.45;">
-            &gt; <strong>${escapeHtml(entry.label)}:</strong> ${escapeHtml(entry.value)}
+        .map((entry) => {
+          const values = metadataEntryValues(entry)
+            .map(
+              (value) => `
+                <div style="margin-top:3px;">&gt; ${escapeHtml(value)}</div>
+              `
+            )
+            .join("");
+
+          return `
+          <div style="margin-top:10px;color:#506057;font-size:13px;line-height:1.45;">
+            <div style="font-weight:900;color:#132018;text-transform:uppercase;">${escapeHtml(entry.label)}</div>
+            ${values}
           </div>
-        `)
+        `;
+        })
         .join("");
 
       return `
@@ -101,7 +114,7 @@ function buildOrderHtml(order: AdminOrder) {
                   </tr>
                   <tr>
                     <td style="padding:10px 0;border-top:1px solid #e5eee8;color:#66736b;font-size:13px;">Empresa</td>
-                    <td style="padding:10px 0;border-top:1px solid #e5eee8;text-align:right;font-weight:800;">${escapeHtml(branchName(order))}</td>
+                    <td style="padding:10px 0;border-top:1px solid #e5eee8;text-align:right;font-weight:800;">${escapeHtml(formatCompanyDisplayName(branchName(order)))}</td>
                   </tr>
                   ${companyAddress(order) ? `
                   <tr>

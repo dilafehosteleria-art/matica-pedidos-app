@@ -7,12 +7,17 @@ import { AdminGate } from "./AdminGate";
 import { ReportsPanel } from "./ReportsPanel";
 import { formatCurrency, formatTime } from "@/lib/format";
 import {
+  formatCompanyDisplayName,
   formatOrderDateTime,
+  formatThermalCurrency,
+  metadataEntryValues,
   ORDER_STATUS_LABELS,
   orderCompanyInvoiceTotal,
   orderEmployeeTotal,
   orderItemOptionLines,
-  orderReference
+  orderReference,
+  thermalPaymentLabel,
+  thermalTicketText
 } from "@/lib/order-ticket";
 import { operationalPaymentLabel } from "@/lib/payment-display";
 import type { AdminOrder, OrderStatus } from "@/lib/types";
@@ -566,7 +571,7 @@ function OrderCard({
   onStatusChange: (status: OrderStatus) => void;
   onOpen: () => void;
 }) {
-  const branchName = order.company_branches?.name ?? "Sin empresa interna";
+  const branchName = formatCompanyDisplayName(order.company_branches?.name ?? "Sin empresa interna");
   const theme = STATUS_THEME[order.status] ?? STATUS_THEME.nuevo;
 
   return (
@@ -605,11 +610,14 @@ function OrderCard({
                 <span className="shrink-0">{formatCurrency(Number(item.total_price))}</span>
               </div>
               {entries.length ? (
-                <div className="mt-1 space-y-0.5">
+                <div className="mt-2 space-y-2">
                   {entries.map((entry) => (
-                    <p key={`${item.id}-${entry.key}`} className="pl-3 font-bold text-matica-ink/70">
-                      &gt; {entry.label}: {entry.value}
-                    </p>
+                    <div key={`${item.id}-${entry.key}`} className="pl-3 font-bold text-matica-ink/70">
+                      <p className="font-black uppercase text-matica-ink">{entry.label}</p>
+                      {metadataEntryValues(entry).map((value) => (
+                        <p key={`${item.id}-${entry.key}-${value}`}>&gt; {value}</p>
+                      ))}
+                    </div>
                   ))}
                 </div>
               ) : null}
@@ -685,7 +693,7 @@ function OrderDetailModal({
   onStatusChange: (status: OrderStatus) => void;
 }) {
   const companyName = order.companies?.name ?? "Cliente principal";
-  const branchName = order.company_branches?.name ?? "Sin empresa interna";
+  const branchName = formatCompanyDisplayName(order.company_branches?.name ?? "Sin empresa interna");
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-matica-ink/55 px-3 py-5 print:static print:bg-white print:p-0">
@@ -737,11 +745,16 @@ function OrderDetailModal({
                       <span>{formatCurrency(Number(item.total_price))}</span>
                     </div>
                     {orderItemOptionLines(item.metadata).length ? (
-                      <div className="mt-2 space-y-1 text-sm font-semibold text-matica-ink/65">
+                      <div className="mt-3 space-y-3 text-sm font-semibold text-matica-ink/65">
                         {orderItemOptionLines(item.metadata).map((entry) => (
-                          <p key={`${item.id}-${entry.key}`}>
-                            <span className="font-black">{entry.label}:</span> {entry.value}
-                          </p>
+                          <div key={`${item.id}-${entry.key}`}>
+                            <p className="font-black uppercase text-matica-ink">{entry.label}</p>
+                            <div className="mt-1 space-y-1">
+                              {metadataEntryValues(entry).map((value) => (
+                                <p key={`${item.id}-${entry.key}-${value}`}>&gt; {value}</p>
+                              ))}
+                            </div>
+                          </div>
                         ))}
                       </div>
                     ) : null}
@@ -831,34 +844,28 @@ function TotalRow({ label, value, highlight = false, strong = false }: { label: 
   );
 }
 
-function ticketText(value: string) {
-  return value
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/\u00a0/g, " ")
-    .replace(/€/g, "EUR");
-}
-
-function ticketCurrency(value: number) {
-  return ticketText(formatCurrency(value));
-}
-
 function ThermalTicket({ order }: { order: AdminOrder }) {
   const companyName = order.companies?.name ?? "Cliente principal";
-  const branchName = order.company_branches?.name ?? "Sin empresa interna";
+  const branchName = formatCompanyDisplayName(order.company_branches?.name ?? "Sin empresa interna");
 
   return (
     <section className="hidden print:block thermal-ticket">
       <header className="ticket-center">
-        <h1 className="ticket-primary-client">{ticketText(companyName).toUpperCase()}</h1>
+        <h1 className="ticket-primary-client">{thermalTicketText(companyName).toUpperCase()}</h1>
       </header>
       <div className="ticket-separator" />
       <p className="ticket-highlight">REF: {orderReference(order.id)}</p>
       <p>FECHA: {formatOrderDateTime(order.created_at)}</p>
-      <p>CLIENTE: {ticketText(order.customer_name)}</p>
-      <p>EMPRESA: {ticketText(branchName)}</p>
+      <p>CLIENTE: {thermalTicketText(order.customer_name)}</p>
+      <div className="ticket-field-block">
+        <p className="ticket-field-label">EMPRESA</p>
+        <p className="ticket-field-value">&gt; {thermalTicketText(branchName)}</p>
+      </div>
       {order.companies?.delivery_address ? (
-        <p>DIRECCION: {ticketText(order.companies.delivery_address)}</p>
+        <div className="ticket-field-block">
+          <p className="ticket-field-label">DIRECCION</p>
+          <p className="ticket-field-value">&gt; {thermalTicketText(order.companies.delivery_address)}</p>
+        </div>
       ) : null}
       <div className="ticket-separator" />
       <p className="ticket-section-title">PRODUCTOS</p>
@@ -866,34 +873,36 @@ function ThermalTicket({ order }: { order: AdminOrder }) {
         <div key={item.id} className="ticket-item">
           <div className="ticket-item-main">
             <span>{item.quantity}x</span>
-            <span className="ticket-item-name">{ticketText(item.name)}</span>
-          </div>
-          <div className="ticket-item-price">
-            <span>Unit: {ticketCurrency(Number(item.unit_price))}</span>
-            <span>Total: {ticketCurrency(Number(item.total_price))}</span>
+            <span className="ticket-item-name">{thermalTicketText(item.name)}</span>
+            <span className="ticket-item-price">{formatThermalCurrency(Number(item.total_price))}</span>
           </div>
           {orderItemOptionLines(item.metadata).map((entry) => (
-            <p key={`${item.id}-${entry.key}`} className="ticket-option">
-              &gt; {ticketText(entry.label)}: {ticketText(entry.value)}
-            </p>
+            <div key={`${item.id}-${entry.key}`} className="ticket-option-block">
+              <p className="ticket-option-label">{thermalTicketText(entry.label).toUpperCase()}</p>
+              {metadataEntryValues(entry).map((value) => (
+                <p key={`${item.id}-${entry.key}-${value}`} className="ticket-option">
+                  &gt; {thermalTicketText(value)}
+                </p>
+              ))}
+            </div>
           ))}
         </div>
       ))}
       {order.notes ? (
         <>
           <div className="ticket-separator" />
-          <p className="ticket-note">OBSERVACIONES: {ticketText(order.notes)}</p>
+          <p className="ticket-note">OBSERVACIONES: {thermalTicketText(order.notes)}</p>
         </>
       ) : null}
       <div className="ticket-separator" />
-      <div className="ticket-total"><span>Subtotal</span><span>{ticketCurrency(Number(order.subtotal))}</span></div>
-      <div className="ticket-total"><span>Subvencion</span><span>-{ticketCurrency(Number(order.subsidy_total))}</span></div>
-      <div className="ticket-total"><span>Factura empresa</span><span>{ticketCurrency(orderCompanyInvoiceTotal(order))}</span></div>
-      <div className="ticket-total ticket-total-strong"><span>Total empleado</span><span>{ticketCurrency(orderEmployeeTotal(order))}</span></div>
+      <div className="ticket-total"><span>Subtotal</span><span>{formatThermalCurrency(Number(order.subtotal))}</span></div>
+      <div className="ticket-total"><span>Subvencion</span><span>-{formatThermalCurrency(Number(order.subsidy_total))}</span></div>
+      <div className="ticket-total"><span>Factura empresa</span><span>{formatThermalCurrency(orderCompanyInvoiceTotal(order))}</span></div>
+      <div className="ticket-total ticket-total-strong"><span>Total empleado</span><span>{formatThermalCurrency(orderEmployeeTotal(order))}</span></div>
       <div className="ticket-separator" />
       <p className="ticket-highlight">ESTADO DE PAGO:</p>
-      <p className="ticket-payment-status">{ticketText(operationalPaymentLabel(order)).toUpperCase()}</p>
-      <p>ESTADO PEDIDO: {ticketText(ORDER_STATUS_LABELS[order.status])}</p>
+      <p className="ticket-payment-status">{thermalTicketText(thermalPaymentLabel(order)).toUpperCase()}</p>
+      <p>ESTADO PEDIDO: {thermalTicketText(ORDER_STATUS_LABELS[order.status])}</p>
       <div className="ticket-separator" />
       <p className="ticket-center">Gracias por confiar en Matica.</p>
     </section>

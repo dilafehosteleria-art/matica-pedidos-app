@@ -1,7 +1,7 @@
-import { formatCurrency } from "@/lib/format";
-import { buildOrderItemOptionLines } from "@/lib/order-metadata";
-import { operationalPaymentLabel } from "@/lib/payment-display";
-import type { AdminOrder, OrderItem, OrderStatus } from "@/lib/types";
+import { formatCurrency } from "./format.ts";
+import { buildOrderItemOptionLines } from "./order-metadata.ts";
+import { operationalPaymentLabel } from "./payment-display.ts";
+import type { AdminOrder, OrderItem, OrderStatus } from "./types.ts";
 
 export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
   pendiente_pago: "Pendiente pago",
@@ -43,23 +43,8 @@ export type MetadataEntry = {
   key: string;
   label: string;
   value: string;
+  values?: string[];
 };
-
-function hasValue(metadata: Record<string, string>, key: string) {
-  return Boolean(metadata[key]?.trim());
-}
-
-function appendEntry(entries: MetadataEntry[], metadata: Record<string, string>, key: string, label = METADATA_LABELS[key]) {
-  const value = metadata[key]?.trim();
-
-  if (value) {
-    entries.push({
-      key,
-      label: label ?? key.replaceAll("_", " ").replace(/^\w/, (letter) => letter.toUpperCase()),
-      value
-    });
-  }
-}
 
 export function orderReference(orderId: string) {
   return orderId.slice(0, 8).toUpperCase();
@@ -76,6 +61,19 @@ export function formatOrderDateTime(value: string | Date) {
     hour: "2-digit",
     minute: "2-digit"
   }).format(date);
+}
+
+export function thermalTicketText(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\u00a0/g, " ")
+    .replace(/\u20ac/g, "EUR")
+    .replace(/[^\x20-\x7E\r\n]/g, "");
+}
+
+export function formatThermalCurrency(value: number) {
+  return thermalTicketText(formatCurrency(value));
 }
 
 export function metadataEntries(metadata?: Record<string, string> | null): MetadataEntry[] {
@@ -98,137 +96,15 @@ export function formatMetadataInline(metadata?: Record<string, string> | null) {
     .join(" · ");
 }
 
-function legacyOrderItemOptionLines(metadata?: Record<string, string> | null): MetadataEntry[] {
-  if (!metadata) {
-    return [];
+export function metadataEntryValues(entry: Pick<MetadataEntry, "value" | "values">) {
+  if (entry.values?.length) {
+    return entry.values;
   }
 
-  const entries: MetadataEntry[] = [];
-  const usedKeys = new Set<string>(["bread", "categoria", "display_name"]);
-  const side = metadata.side?.trim();
-
-  if (hasValue(metadata, "first_course")) {
-    appendEntry(entries, metadata, "first_course", "Primero");
-    usedKeys.add("first_course");
-  }
-
-  if (hasValue(metadata, "second_course")) {
-    entries.push({
-      key: "second_course",
-      label: "Segundo",
-      value: side ? `${metadata.second_course.trim()} · Guarnición: ${side}` : metadata.second_course.trim()
-    });
-    usedKeys.add("second_course");
-    usedKeys.add("side");
-  }
-
-  if (hasValue(metadata, "plate")) {
-    entries.push({
-      key: "plate",
-      label: "Plato único",
-      value: side ? `${metadata.plate.trim()} · Guarnición: ${side}` : metadata.plate.trim()
-    });
-    usedKeys.add("plate");
-    usedKeys.add("side");
-  }
-
-  if (hasValue(metadata, "salad_size")) {
-    appendEntry(entries, metadata, "salad_size", "Tamaño");
-    usedKeys.add("salad_size");
-  }
-
-  if (hasValue(metadata, "salad_base")) {
-    appendEntry(entries, metadata, "salad_base", "Bases");
-    usedKeys.add("salad_base");
-  }
-
-  if (hasValue(metadata, "filling")) {
-    appendEntry(entries, metadata, "filling", "Base");
-    usedKeys.add("filling");
-  }
-
-  if (hasValue(metadata, "wrap_base")) {
-    appendEntry(entries, metadata, "wrap_base", "Base");
-    usedKeys.add("wrap_base");
-  }
-
-  if (hasValue(metadata, "toppings")) {
-    appendEntry(entries, metadata, "toppings", "Toppings");
-    usedKeys.add("toppings");
-  }
-
-  if (hasValue(metadata, "protein")) {
-    appendEntry(entries, metadata, "protein", "Proteína");
-    usedKeys.add("protein");
-  }
-
-  if (hasValue(metadata, "wrap_protein")) {
-    appendEntry(entries, metadata, "wrap_protein", "Proteína");
-    usedKeys.add("wrap_protein");
-  }
-
-  if (hasValue(metadata, "wrap_toppings")) {
-    appendEntry(entries, metadata, "wrap_toppings", "Toppings");
-    usedKeys.add("wrap_toppings");
-  }
-
-  if (hasValue(metadata, "main_protein")) {
-    appendEntry(entries, metadata, "main_protein", "Proteína principal");
-    usedKeys.add("main_protein");
-  }
-
-  if (hasValue(metadata, "sides")) {
-    appendEntry(entries, metadata, "sides", "Guarniciones");
-    usedKeys.add("sides");
-  }
-
-  if (hasValue(metadata, "sauce")) {
-    appendEntry(entries, metadata, "sauce", "Salsa");
-    usedKeys.add("sauce");
-  }
-
-  if (hasValue(metadata, "wrap_sauces")) {
-    appendEntry(entries, metadata, "wrap_sauces", "Salsas");
-    usedKeys.add("wrap_sauces");
-  }
-
-  if (hasValue(metadata, "dressing")) {
-    appendEntry(entries, metadata, "dressing", "Aliño");
-    usedKeys.add("dressing");
-  }
-
-  if (hasValue(metadata, "drink_or_dessert")) {
-    appendEntry(entries, metadata, "drink_or_dessert", "Bebida o postre");
-    usedKeys.add("drink_or_dessert");
-  }
-
-  if (hasValue(metadata, "drink")) {
-    appendEntry(entries, metadata, "drink", "Bebida");
-    usedKeys.add("drink");
-  }
-
-  if (hasValue(metadata, "dessert")) {
-    appendEntry(entries, metadata, "dessert", "Postre");
-    usedKeys.add("dessert");
-  }
-
-  if (hasValue(metadata, "sandwich")) {
-    appendEntry(entries, metadata, "sandwich", "Bocadillo");
-    usedKeys.add("sandwich");
-  }
-
-  for (const entry of metadataEntries(metadata)) {
-    if (!usedKeys.has(entry.key) && !entry.key.startsWith("_")) {
-      entries.push(entry);
-      usedKeys.add(entry.key);
-    }
-  }
-
-  if (hasValue(metadata, "bread")) {
-    appendEntry(entries, metadata, "bread", "Pan");
-  }
-
-  return entries;
+  return entry.value
+    .split(/\r?\n/)
+    .map((value) => value.trim())
+    .filter(Boolean);
 }
 
 export function orderItemOptionLines(metadata?: Record<string, string> | null): MetadataEntry[] {
@@ -248,7 +124,11 @@ function branchName(order: AdminOrder) {
 }
 
 function itemLine(item: OrderItem) {
-  return `${item.quantity} x ${item.name} · ${formatCurrency(Number(item.unit_price))} · ${formatCurrency(Number(item.total_price))}`;
+  return `${item.quantity} x ${item.name}`;
+}
+
+function thermalItemLine(item: OrderItem) {
+  return `${item.quantity}x ${thermalTicketText(item.name)} - ${formatThermalCurrency(Number(item.total_price))}`;
 }
 
 export function orderEmployeeTotal(order: Pick<AdminOrder, "employee_total" | "total">) {
@@ -259,6 +139,40 @@ export function orderCompanyInvoiceTotal(order: Pick<AdminOrder, "company_invoic
   return Number(order.company_invoice_total ?? order.subsidy_total);
 }
 
+export function thermalPaymentLabel(
+  order: Pick<AdminOrder, "payment_method" | "payment_status" | "employee_total" | "company_invoice_total">
+) {
+  if (Number(order.employee_total ?? 0) === 0 && Number(order.company_invoice_total ?? 0) > 0) {
+    return "Pago a cargo de empresa";
+  }
+
+  if (order.payment_method === "stripe_card" || order.payment_method === "stripe_bizum") {
+    return order.payment_status === "paid" ? "Pago online" : operationalPaymentLabel(order);
+  }
+
+  return "Pago a la entrega";
+}
+
+export function formatCompanyDisplayName(value: string) {
+  const normalized = value.trim().replace(/\s+/g, " ");
+
+  if (!normalized || normalized !== normalized.toUpperCase() || normalized.length <= 4) {
+    return normalized;
+  }
+
+  return normalized
+    .toLowerCase()
+    .split(" ")
+    .map((word) => {
+      if (word.length <= 2) {
+        return word.toUpperCase();
+      }
+
+      return word.charAt(0).toUpperCase() + word.slice(1);
+    })
+    .join(" ");
+}
+
 export function buildOrderPlainText(order: AdminOrder) {
   const lines = [
     "MATICA FRESH FOOD",
@@ -266,9 +180,13 @@ export function buildOrderPlainText(order: AdminOrder) {
     "",
     `Referencia: ${orderReference(order.id)}`,
     `Fecha/hora: ${formatOrderDateTime(order.created_at)}`,
-    `Cliente principal: ${companyName(order)}`,
-    `Empresa interna: ${branchName(order)}`,
-    ...(companyAddress(order) ? [`Dirección de entrega: ${companyAddress(order)}`] : []),
+    "",
+    "CLIENTE PRINCIPAL",
+    companyName(order),
+    "",
+    "EMPRESA",
+    formatCompanyDisplayName(branchName(order)),
+    ...(companyAddress(order) ? ["", "DIRECCIÓN DE ENTREGA", companyAddress(order)] : []),
     "",
     "DATOS CLIENTE",
     `Nombre: ${order.customer_name}`,
@@ -281,8 +199,12 @@ export function buildOrderPlainText(order: AdminOrder) {
   for (const item of order.order_items) {
     lines.push(itemLine(item));
     for (const entry of orderItemOptionLines(item.metadata)) {
-      lines.push(`> ${entry.label}: ${entry.value}`);
+      lines.push("", entry.label.toUpperCase());
+      for (const value of metadataEntryValues(entry)) {
+        lines.push(`> ${value}`);
+      }
     }
+    lines.push("");
   }
 
   if (order.notes) {
@@ -306,4 +228,51 @@ export function buildOrderPlainText(order: AdminOrder) {
   );
 
   return lines.join("\n");
+}
+
+export function buildThermalOrderPlainText(order: AdminOrder) {
+  const lines = [
+    thermalTicketText(companyName(order)).toUpperCase(),
+    "------------------------------",
+    `REF: ${orderReference(order.id)}`,
+    `FECHA: ${thermalTicketText(formatOrderDateTime(order.created_at))}`,
+    `CLIENTE: ${thermalTicketText(order.customer_name)}`,
+    "",
+    "EMPRESA",
+    `> ${thermalTicketText(formatCompanyDisplayName(branchName(order)))}`,
+    ...(companyAddress(order) ? ["", "DIRECCION", `> ${thermalTicketText(companyAddress(order))}`] : []),
+    "------------------------------",
+    "PRODUCTOS"
+  ];
+
+  for (const item of order.order_items) {
+    lines.push(thermalItemLine(item));
+    for (const entry of orderItemOptionLines(item.metadata)) {
+      lines.push(thermalTicketText(entry.label).toUpperCase());
+      for (const value of metadataEntryValues(entry)) {
+        lines.push(`> ${thermalTicketText(value)}`);
+      }
+    }
+    lines.push("");
+  }
+
+  if (order.notes) {
+    lines.push("------------------------------", `OBSERVACIONES: ${thermalTicketText(order.notes)}`);
+  }
+
+  lines.push(
+    "------------------------------",
+    `Subtotal: ${formatThermalCurrency(Number(order.subtotal))}`,
+    `Subvencion: -${formatThermalCurrency(Number(order.subsidy_total))}`,
+    `Factura empresa: ${formatThermalCurrency(orderCompanyInvoiceTotal(order))}`,
+    `Total empleado: ${formatThermalCurrency(orderEmployeeTotal(order))}`,
+    "------------------------------",
+    "ESTADO DE PAGO:",
+    thermalTicketText(thermalPaymentLabel(order)).toUpperCase(),
+    `ESTADO PEDIDO: ${thermalTicketText(ORDER_STATUS_LABELS[order.status])}`,
+    "------------------------------",
+    "Gracias por confiar en Matica."
+  );
+
+  return lines.join("\n").replace(/\n{3,}/g, "\n\n");
 }
