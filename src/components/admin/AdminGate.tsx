@@ -4,7 +4,7 @@ import { Lock, LogOut } from "lucide-react";
 import Link from "next/link";
 import { FormEvent, ReactNode, useEffect, useState } from "react";
 
-const ADMIN_PIN_KEY = "matica:admin:pin";
+export const ADMIN_PIN_KEY = "matica:admin:pin";
 
 export function AdminGate({
   title,
