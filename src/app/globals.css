@@ -57,14 +57,16 @@ button {
 
 @media print {
   @page {
-    size: 58mm auto;
-    margin: 2mm;
+    size: 58mm 1000mm;
+    margin: 0;
   }
 
   html,
   body {
-    width: 58mm;
+    width: 58mm !important;
     min-height: auto;
+    margin: 0 !important;
+    padding: 0 !important;
     background: #ffffff;
   }
 
@@ -81,7 +83,11 @@ button {
     position: absolute;
     inset: 0 auto auto 0;
     display: block !important;
-    width: 54mm;
+    width: 58mm !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    box-sizing: border-box;
     color: #000000;
     background: #ffffff;
     font-family: "Courier New", Courier, monospace;
