@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { isAdminPinValid } from "@/lib/admin-pin";
 
 export function getRequestPin(request: NextRequest) {
   return request.headers.get("x-admin-pin") ?? "";
@@ -14,7 +15,7 @@ export function assertAdmin(request: NextRequest) {
     );
   }
 
-  if (getRequestPin(request) !== configuredPin) {
+  if (!isAdminPinValid(getRequestPin(request), configuredPin)) {
     return NextResponse.json({ error: "PIN de administrador no válido." }, { status: 401 });
   }
 

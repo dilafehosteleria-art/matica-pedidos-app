@@ -14,6 +14,10 @@ import type { AdminOrder } from "@/lib/types";
 const RESEND_ENDPOINT = "https://api.resend.com/emails";
 const MATICA_TO = "pedidomatica@gmail.com";
 
+export function isResendEmailConfigured() {
+  return Boolean(process.env.RESEND_API_KEY && process.env.ORDER_NOTIFICATION_FROM);
+}
+
 function escapeHtml(value: string | number | null | undefined) {
   return String(value ?? "")
     .replaceAll("&", "&amp;")
@@ -207,7 +211,7 @@ async function sendResendEmail({
   const apiKey = process.env.RESEND_API_KEY;
   const from = process.env.ORDER_NOTIFICATION_FROM;
 
-  if (!apiKey || !from) {
+  if (!isResendEmailConfigured() || !apiKey || !from) {
     console.warn("[order-email] Email no enviado: configura RESEND_API_KEY y ORDER_NOTIFICATION_FROM.");
     return { sent: false, reason: "missing_config" };
   }
@@ -293,4 +297,106 @@ export async function sendOrderNotificationEmail(order: AdminOrder) {
     customer_subject: customerEnabled ? `Confirmación de pedido Matica #${reference}` : null,
     company: companyName
   };
+}
+
+function deliveryNoticeGreeting(order: AdminOrder) {
+  const name = order.customer_name?.trim();
+
+  return name ? `Hola ${name},` : "Hola,";
+}
+
+function buildDeliveryNoticePlainText(order: AdminOrder) {
+  const reference = orderReference(order.id);
+  const company = order.companies?.name?.trim() || "Cliente principal";
+  const branch = order.company_branches?.name?.trim();
+  const lines = [
+    deliveryNoticeGreeting(order),
+    "",
+    "Tu pedido de Matica Fresh Food acaba de salir del restaurante y ya va de camino a tu empresa.",
+    "",
+    "El plazo máximo estimado de entrega es de 30 minutos desde la recepción de este correo.",
+    "",
+    `Referencia del pedido: ${reference}`
+  ];
+
+  if (branch) {
+    lines.push(`Empresa: ${formatCompanyDisplayName(branch)}`);
+  }
+
+  lines.push(
+    `Cliente principal: ${company}`,
+    "",
+    "Gracias por confiar en Matica.",
+    "",
+    "Matica Fresh Food"
+  );
+
+  return lines.join("\n");
+}
+
+function buildDeliveryNoticeHtml(order: AdminOrder) {
+  const reference = orderReference(order.id);
+  const company = order.companies?.name?.trim() || "Cliente principal";
+  const branch = order.company_branches?.name?.trim();
+
+  return `<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Tu pedido de Matica ya va de camino</title>
+  </head>
+  <body style="margin:0;background:#f4f8f5;color:#132018;font-family:Arial,Helvetica,sans-serif;">
+    <div style="display:none;max-height:0;overflow:hidden;">Tu pedido de Matica Fresh Food acaba de salir del restaurante.</div>
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f4f8f5;margin:0;padding:24px 12px;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:620px;background:#ffffff;border:1px solid #dfeae3;border-radius:14px;overflow:hidden;">
+            <tr>
+              <td style="background:#174d32;color:#ffffff;padding:22px 24px;">
+                <div style="font-size:24px;font-weight:900;">MATICA FRESH FOOD</div>
+                <div style="margin-top:4px;font-size:13px;font-weight:700;text-transform:uppercase;opacity:.9;">Tu pedido ya va de camino</div>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:24px;">
+                <p style="margin:0 0 16px;font-size:17px;line-height:1.5;font-weight:800;">${escapeHtml(deliveryNoticeGreeting(order))}</p>
+                <p style="margin:0 0 14px;color:#506057;font-size:15px;line-height:1.55;">Tu pedido de Matica Fresh Food acaba de salir del restaurante y ya va de camino a tu empresa.</p>
+                <p style="margin:0 0 22px;color:#506057;font-size:15px;line-height:1.55;">El plazo máximo estimado de entrega es de 30 minutos desde la recepción de este correo.</p>
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;">
+                  <tr>
+                    <td style="padding:10px 0;border-top:1px solid #e5eee8;color:#66736b;font-size:13px;">Referencia del pedido</td>
+                    <td style="padding:10px 0;border-top:1px solid #e5eee8;text-align:right;font-weight:800;">${escapeHtml(reference)}</td>
+                  </tr>
+                  ${branch ? `
+                  <tr>
+                    <td style="padding:10px 0;border-top:1px solid #e5eee8;color:#66736b;font-size:13px;">Empresa</td>
+                    <td style="padding:10px 0;border-top:1px solid #e5eee8;text-align:right;font-weight:800;">${escapeHtml(formatCompanyDisplayName(branch))}</td>
+                  </tr>
+                  ` : ""}
+                  <tr>
+                    <td style="padding:10px 0;border-top:1px solid #e5eee8;color:#66736b;font-size:13px;">Cliente principal</td>
+                    <td style="padding:10px 0;border-top:1px solid #e5eee8;text-align:right;font-weight:800;">${escapeHtml(company)}</td>
+                  </tr>
+                </table>
+                <p style="margin:24px 0 0;color:#506057;font-size:15px;line-height:1.55;">Gracias por confiar en Matica.</p>
+                <p style="margin:8px 0 0;font-weight:900;color:#132018;">Matica Fresh Food</p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`;
+}
+
+export async function sendDeliveryNoticeEmail(order: AdminOrder) {
+  return sendResendEmail({
+    html: buildDeliveryNoticeHtml(order),
+    idempotencyKey: `matica-delivery-notice-${order.id}`,
+    subject: "Tu pedido de Matica ya va de camino",
+    text: buildDeliveryNoticePlainText(order),
+    to: order.customer_email
+  });
 }

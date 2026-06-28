@@ -1,12 +1,13 @@
 "use client";
 
-import { AlertCircle, Building2, CalendarDays, ClipboardList, Clock, Clock3, Eye, FileSpreadsheet, Loader2, Package, Printer, RefreshCw, X, Utensils } from "lucide-react";
+import { AlertCircle, Building2, CalendarDays, ClipboardList, Clock, Clock3, Eye, FileSpreadsheet, Loader2, Package, Printer, RefreshCw, Send, X, Utensils } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AdminGate } from "./AdminGate";
 import { ReportsPanel } from "./ReportsPanel";
 import { ThermalTicket } from "./ThermalTicket";
 import { formatCurrency, formatTime } from "@/lib/format";
+import { summarizeDeliveryNoticeCandidates, type DeliveryNoticeSummary } from "@/lib/delivery-notice";
 import {
   formatCompanyDisplayName,
   formatOrderDateTime,
@@ -44,6 +45,12 @@ type HistoryFilters = {
   customer: string;
   branch: string;
   reference: string;
+};
+
+type DeliveryNoticeAction = {
+  companyId: string;
+  label: string;
+  pending: number;
 };
 
 const STATUS_THEME: Record<OrderStatus, { card: string; panel: string; badge: string; count: string }> = {
@@ -236,6 +243,8 @@ function OrdersBoard({ pin, clearPin }: { pin: string; clearPin: () => void }) {
   const [historyOrders, setHistoryOrders] = useState<AdminOrder[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historySearched, setHistorySearched] = useState(false);
+  const [deliveryNoticeSending, setDeliveryNoticeSending] = useState("");
+  const [deliveryNoticeSummary, setDeliveryNoticeSummary] = useState<DeliveryNoticeSummary | null>(null);
 
   const loadOrders = useCallback(async () => {
     const response = await fetch("/api/admin/orders", {
@@ -329,6 +338,83 @@ function OrdersBoard({ pin, clearPin }: { pin: string; clearPin: () => void }) {
     }, {});
   }, [orders]);
 
+  const deliveryNoticeActions = useMemo(() => {
+    const byCompany = new Map<string, DeliveryNoticeAction>();
+
+    for (const order of orders) {
+      const { summary } = summarizeDeliveryNoticeCandidates([order]);
+
+      if (!summary.eligible) {
+        continue;
+      }
+
+      const current = byCompany.get(order.company_id);
+      const label = order.companies?.name?.trim() || "Cliente principal";
+
+      byCompany.set(order.company_id, {
+        companyId: order.company_id,
+        label: current?.label ?? label,
+        pending: (current?.pending ?? 0) + summary.eligible
+      });
+    }
+
+    return Array.from(byCompany.values()).sort((a, b) => a.label.localeCompare(b.label, "es"));
+  }, [orders]);
+
+  const totalDeliveryNoticePending = useMemo(
+    () => deliveryNoticeActions.reduce((total, action) => total + action.pending, 0),
+    [deliveryNoticeActions]
+  );
+
+  async function sendDeliveryNotice(scope: "all" | "company", company?: DeliveryNoticeAction) {
+    const pending = scope === "all" ? totalDeliveryNoticePending : company?.pending ?? 0;
+    const target = scope === "all" ? "todas las empresas con pedidos pendientes" : `empresa ${company?.label ?? "seleccionada"}`;
+
+    if (!pending) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Se enviarán emails reales de aviso de salida.\n\nÁmbito: ${target}\nPedidos afectados: ${pending}\n\n¿Continuar?`
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    const sendingKey = scope === "all" ? "all" : company?.companyId ?? "";
+    setDeliveryNoticeSending(sendingKey);
+    setDeliveryNoticeSummary(null);
+
+    const response = await fetch("/api/admin/orders/delivery-notice", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-admin-pin": pin
+      },
+      body: JSON.stringify(scope === "all" ? { scope: "all" } : { scope: "company", company_id: company?.companyId })
+    });
+    const payload = await response.json().catch(() => ({}));
+    setDeliveryNoticeSending("");
+
+    if (response.status === 401) {
+      clearPin();
+      return;
+    }
+
+    if (payload.summary) {
+      setDeliveryNoticeSummary(payload.summary);
+    }
+
+    if (!response.ok) {
+      setError(payload.error ?? "No se pudieron enviar los avisos de salida.");
+      return;
+    }
+
+    setError("");
+    await loadOrders();
+  }
+
   return (
     <div className="mx-auto max-w-7xl px-4 py-5 sm:px-6 lg:px-8">
       <div className="mb-4 flex flex-col gap-3 rounded-lg border border-matica-line bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
@@ -387,6 +473,53 @@ function OrdersBoard({ pin, clearPin }: { pin: string; clearPin: () => void }) {
 
       {view === "daily" && !loading ? (
         <div className="space-y-5">
+          <section className="rounded-lg border border-matica-line bg-white p-4 shadow-sm">
+            <div className="flex flex-col gap-1">
+              <h2 className="text-lg font-black text-matica-ink">Acciones de reparto</h2>
+              <p className="text-sm font-semibold text-matica-ink/55">
+                Envía un email a los clientes cuyos pedidos están en preparación para avisarles de que el pedido ha salido del restaurante.
+              </p>
+            </div>
+
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                className="matica-focus inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-matica-green px-4 text-sm font-black text-white disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={!totalDeliveryNoticePending || Boolean(deliveryNoticeSending)}
+                onClick={() => sendDeliveryNotice("all")}
+                type="button"
+              >
+                {deliveryNoticeSending === "all" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                Avisar salida a todos
+              </button>
+
+              {deliveryNoticeActions.map((action) => (
+                <button
+                  key={action.companyId}
+                  className="matica-focus inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-matica-line bg-white px-4 text-sm font-black text-matica-ink disabled:cursor-wait disabled:opacity-60"
+                  disabled={Boolean(deliveryNoticeSending)}
+                  onClick={() => sendDeliveryNotice("company", action)}
+                  type="button"
+                >
+                  {deliveryNoticeSending === action.companyId ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4 text-matica-green" />}
+                  {action.label}: {action.pending} pendientes
+                </button>
+              ))}
+            </div>
+
+            {!totalDeliveryNoticePending ? (
+              <p className="mt-3 text-sm font-bold text-matica-ink/45">No hay pedidos pendientes de aviso de salida.</p>
+            ) : null}
+
+            {deliveryNoticeSummary ? (
+              <div className="mt-3 grid gap-2 text-sm font-black text-matica-ink sm:grid-cols-4">
+                <div className="rounded-lg bg-matica-mint px-3 py-2 text-matica-green">Avisos enviados: {deliveryNoticeSummary.sent}</div>
+                <div className="rounded-lg bg-matica-soft px-3 py-2">Omitidos ya avisados: {deliveryNoticeSummary.omitted_already_notified}</div>
+                <div className="rounded-lg bg-matica-soft px-3 py-2">Sin email: {deliveryNoticeSummary.omitted_no_email}</div>
+                <div className="rounded-lg bg-matica-soft px-3 py-2">Errores: {deliveryNoticeSummary.errors}</div>
+              </div>
+            ) : null}
+          </section>
+
           {DAILY_COLUMNS.map((column) => (
             <section key={column.key} className="rounded-lg border border-matica-line bg-white p-3 sm:p-4">
               <div className="mb-3 flex items-center justify-between gap-2">

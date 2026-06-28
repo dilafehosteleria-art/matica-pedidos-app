@@ -162,6 +162,7 @@ export type AdminOrder = {
   customer_name: string;
   customer_email: string;
   customer_phone: string;
+  delivery_notice_sent_at?: string | null;
   status: OrderStatus;
   payment_method?: PaymentMethod | null;
   payment_status?: PaymentStatus | null;
