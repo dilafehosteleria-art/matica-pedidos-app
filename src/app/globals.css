@@ -85,7 +85,7 @@ button {
     color: #000000;
     background: #ffffff;
     font-family: "Courier New", Courier, monospace;
-    font-size: 16px;
+    font-size: 13px;
     font-weight: 700;
     line-height: 1.28;
     letter-spacing: 0;
@@ -98,7 +98,7 @@ button {
   }
 
   .thermal-ticket h1 {
-    font-size: 20px;
+    font-size: 16px;
     font-weight: 900;
     line-height: 1.15;
   }
@@ -154,7 +154,7 @@ button {
   .ticket-item-price {
     text-align: right;
     white-space: nowrap;
-    font-size: 14px;
+    font-size: 12px;
     font-weight: 800;
   }
 
@@ -168,7 +168,7 @@ button {
   .ticket-option {
     padding-left: 3mm;
     margin-top: 3px;
-    font-size: 14px;
+    font-size: 12px;
     font-weight: 800;
     color: #000000;
     word-break: break-word;
@@ -179,7 +179,7 @@ button {
   }
 
   .ticket-option-label {
-    font-size: 15px;
+    font-size: 12px;
     font-weight: 900;
   }
 
@@ -192,7 +192,7 @@ button {
     display: flex;
     justify-content: space-between;
     gap: 3mm;
-    font-size: 16px;
+    font-size: 13px;
     font-weight: 800;
   }
 
@@ -200,12 +200,12 @@ button {
     margin-top: 5px;
     padding-top: 5px;
     border-top: 2px solid #000000;
-    font-size: 19px;
+    font-size: 15px;
     font-weight: 900;
   }
 
   .ticket-payment-status {
-    font-size: 18px;
+    font-size: 14px;
     font-weight: 900;
   }
 }

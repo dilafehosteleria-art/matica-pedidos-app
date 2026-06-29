@@ -158,7 +158,7 @@ const ticketPrintStyles = `
     box-sizing: border-box;
     color: #000;
     font-family: "Courier New", Courier, monospace;
-    font-size: 16px;
+    font-size: 13px;
     font-weight: 700;
     line-height: 1.35;
     margin: 0 auto;
@@ -174,7 +174,7 @@ const ticketPrintStyles = `
   }
 
   .ticket-print-ticket h1 {
-    font-size: 20px;
+    font-size: 16px;
     line-height: 1.2;
   }
 

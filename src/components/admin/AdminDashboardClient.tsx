@@ -934,7 +934,7 @@ function OrderDetailModal({
             <div className="flex flex-col gap-2">
               <button
                 className="matica-focus flex min-h-12 items-center justify-center gap-2 rounded-lg bg-matica-green px-4 font-black text-white"
-                onClick={() => window.open(`/admin/pedidos/${order.id}/ticket`, "_blank", "noopener,noreferrer")}
+                onClick={() => window.print()}
                 type="button"
               >
                 <Printer className="h-5 w-5" />
