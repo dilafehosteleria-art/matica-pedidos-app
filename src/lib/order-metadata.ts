@@ -42,6 +42,14 @@ const MULTI_VALUE_KEYS = new Set([
   "suplementos"
 ]);
 
+const SALAD_OPTION_KEYS: Array<[string, string]> = [
+  ["salad_size", "Tamaño"],
+  ["salad_base", "Bases"],
+  ["protein", "Proteína"],
+  ["toppings", "Toppings"],
+  ["dressing", "Salsa"]
+];
+
 const DESSERT_SELECTIONS = new Set([
   "cookie",
   "flan",
@@ -67,6 +75,12 @@ function normalizeSelection(value: string) {
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase();
+}
+
+function isCustomSaladSelection(value?: string) {
+  const normalized = normalizeSelection(value ?? "");
+
+  return normalized.includes("ensalada a tu manera") || normalized.includes("disena tu ensalada");
 }
 
 function splitSelectionValues(key: string, value: string) {
@@ -120,6 +134,30 @@ function appendEntry(
   }
 }
 
+function hasConfiguredSalad(metadata: Record<string, string>) {
+  return (
+    hasValue(metadata, "salad_size") ||
+    hasValue(metadata, "salad_base") ||
+    hasValue(metadata, "dressing") ||
+    isCustomSaladSelection(metadata.first_course) ||
+    isCustomSaladSelection(metadata.plate) ||
+    isCustomSaladSelection(metadata.display_name)
+  );
+}
+
+function appendConfiguredSaladEntries(
+  entries: OrderMetadataEntry[],
+  metadata: Record<string, string>,
+  usedKeys: Set<string>
+) {
+  for (const [key, label] of SALAD_OPTION_KEYS) {
+    if (!usedKeys.has(key) && hasValue(metadata, key)) {
+      appendEntry(entries, metadata, key, label);
+      usedKeys.add(key);
+    }
+  }
+}
+
 export function visibleMetadataEntries(metadata?: Record<string, string> | null): OrderMetadataEntry[] {
   if (!metadata) {
     return [];
@@ -151,6 +189,10 @@ export function buildOrderItemOptionLines(metadata?: Record<string, string> | nu
   if (hasValue(metadata, "first_course")) {
     appendEntry(entries, metadata, "first_course", "Primero");
     usedKeys.add("first_course");
+
+    if (isCustomSaladSelection(metadata.first_course)) {
+      appendConfiguredSaladEntries(entries, metadata, usedKeys);
+    }
   }
 
   if (hasValue(metadata, "second_course")) {
@@ -167,6 +209,10 @@ export function buildOrderItemOptionLines(metadata?: Record<string, string> | nu
     appendEntry(entries, metadata, "plate", "Plato");
     usedKeys.add("plate");
 
+    if (isCustomSaladSelection(metadata.plate)) {
+      appendConfiguredSaladEntries(entries, metadata, usedKeys);
+    }
+
     if (side) {
       appendEntry(entries, metadata, "side", "Acompañamiento");
       usedKeys.add("side");
@@ -174,8 +220,6 @@ export function buildOrderItemOptionLines(metadata?: Record<string, string> | nu
   }
 
   const orderedKeys: Array<[string, string]> = [
-    ["salad_size", "Tamaño"],
-    ["salad_base", "Bases"],
     ["filling", "Base"],
     ["wrap_base", "Base"],
     ["protein", "Proteína"],
@@ -193,8 +237,12 @@ export function buildOrderItemOptionLines(metadata?: Record<string, string> | nu
     ["sandwich", "Bocadillo"]
   ];
 
+  if (hasConfiguredSalad(metadata)) {
+    appendConfiguredSaladEntries(entries, metadata, usedKeys);
+  }
+
   for (const [key, label] of orderedKeys) {
-    if (hasValue(metadata, key)) {
+    if (!usedKeys.has(key) && hasValue(metadata, key)) {
       appendEntry(entries, metadata, key, label);
       usedKeys.add(key);
     }

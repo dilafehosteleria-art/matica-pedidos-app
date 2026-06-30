@@ -138,6 +138,49 @@ test("el ticket termico mantiene guarnicion debajo del segundo plato", () => {
   assert.ok(ticket.indexOf("GUARNICION\n> Patatas panaderas") < ticket.indexOf("BEBIDA\n> Agua mineral"));
 });
 
+test("el ticket termico coloca ingredientes de ensalada debajo del primero en menu del dia", () => {
+  const ticket = buildThermalOrderPlainText(
+    baseOrder({
+      order_items: [
+        {
+          id: "daily-menu-salad-item",
+          order_id: "12345678-1234-4000-8000-123456789abc",
+          product_id: "daily-menu",
+          name: "Menú del día",
+          quantity: 1,
+          unit_price: 13,
+          base_price: 13,
+          subsidy_amount: 4,
+          total_price: 13,
+          metadata: {
+            display_name: "Menú del día",
+            first_course: "Ensalada a tu manera",
+            salad_size: "Tamaño Pequeño 750ML",
+            salad_base: "Quinoa",
+            protein: "Atún",
+            toppings: "Huevo, Maíz, Tomate",
+            dressing: "Sal y Vinagre",
+            second_course: "Pollo al teriyaki",
+            side: "Verduritas asadas",
+            drink_or_dessert: "Lipton Limón",
+            bread: "No"
+          }
+        }
+      ],
+      subtotal: 13,
+      subsidy_total: 4,
+      employee_total: 9,
+      company_invoice_total: 4,
+      total: 9
+    })
+  );
+
+  assert.ok(ticket.indexOf("PRIMERO\n> Ensalada a tu manera") < ticket.indexOf("TAMANO\n> Tamano Pequeno 750ML"));
+  assert.ok(ticket.indexOf("TAMANO\n> Tamano Pequeno 750ML") < ticket.indexOf("BASES\n> Quinoa"));
+  assert.ok(ticket.indexOf("TOPPINGS\n> Huevo\n> Maiz\n> Tomate") < ticket.indexOf("SEGUNDO\n> Pollo al teriyaki"));
+  assert.ok(ticket.indexOf("SEGUNDO\n> Pollo al teriyaki") < ticket.indexOf("GUARNICION\n> Verduritas asadas"));
+});
+
 test("el ticket termico de medio menu muestra ensalada 1000 ml por bloques", () => {
   const ticket = buildThermalOrderPlainText(
     baseOrder({

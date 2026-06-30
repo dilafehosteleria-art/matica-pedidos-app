@@ -250,13 +250,13 @@ const ticketPrintStyles = `
 
   @media print {
     @page {
-      size: 58mm auto;
+      size: 80mm auto;
       margin: 2mm;
     }
 
     html,
     body {
-      width: 58mm;
+      width: 80mm;
       margin: 0;
       padding: 0;
       background: #fff;

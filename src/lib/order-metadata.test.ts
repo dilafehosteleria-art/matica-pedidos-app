@@ -59,6 +59,36 @@ test("Menú del día separa segundo, guarnición, bebida y pan", () => {
   );
 });
 
+test("Menú del día muestra la ensalada configurada justo debajo del primero", () => {
+  assert.deepEqual(
+    renderedBlocks({
+      display_name: "Menú del día",
+      first_course: "Ensalada a tu manera",
+      salad_size: "Tamaño Pequeño 750ML",
+      salad_base: "Quinoa",
+      protein: "Atún",
+      toppings: "Huevo, Maíz, Tomate",
+      dressing: "Sal y Vinagre",
+      second_course: "Pollo al teriyaki",
+      side: "Verduritas asadas",
+      drink_or_dessert: "Lipton Limón",
+      bread: "No"
+    }),
+    [
+      { label: "Primero", values: ["Ensalada a tu manera"] },
+      { label: "Tamaño", values: ["Tamaño Pequeño 750ML"] },
+      { label: "Bases", values: ["Quinoa"] },
+      { label: "Proteína", values: ["Atún"] },
+      { label: "Toppings", values: ["Huevo", "Maíz", "Tomate"] },
+      { label: "Salsa", values: ["Sal y Vinagre"] },
+      { label: "Segundo", values: ["Pollo al teriyaki"] },
+      { label: "Guarnición", values: ["Verduritas asadas"] },
+      { label: "Bebida", values: ["Lipton Limón"] },
+      { label: "Pan", values: ["No"] }
+    ]
+  );
+});
+
 test("Medio menú muestra plato, bebida, acompañamiento y pan como bloques independientes", () => {
   assert.deepEqual(
     renderedBlocks({
