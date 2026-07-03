@@ -73,14 +73,15 @@ export function AdminGate({
     <main className="min-h-screen bg-matica-soft text-matica-ink">
       <header className="border-b border-matica-line bg-white">
         <div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-4 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-8">
-          <div>
+          <div className="min-w-0 lg:w-96 lg:flex-none">
             <p className="text-sm font-black uppercase text-matica-green">Matica Fresh Food</p>
             <h1 className="text-2xl font-black sm:text-3xl">{title}</h1>
             <p className="mt-1 text-sm font-semibold text-matica-ink/60">{subtitle}</p>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex min-w-0 flex-wrap items-center gap-2 lg:flex-1 lg:justify-end">
             <AdminLink href="/admin">Inicio</AdminLink>
             <AdminLink href="/admin/pedidos">Pedidos</AdminLink>
+            <AdminLink href="/admin/dashboard">Dashboard</AdminLink>
             <AdminLink href="/admin/informes">Informes</AdminLink>
             <AdminLink href="/admin/empresas">Empresas</AdminLink>
             <AdminLink href="/admin/configuracion">Configuración</AdminLink>

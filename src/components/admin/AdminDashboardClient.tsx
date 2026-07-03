@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertCircle, Building2, CalendarDays, ClipboardList, Clock, Clock3, Eye, FileSpreadsheet, Loader2, Package, Printer, RefreshCw, Send, X, Utensils } from "lucide-react";
+import { AlertCircle, BarChart3, Building2, CalendarDays, ClipboardList, Clock, Clock3, Eye, FileSpreadsheet, Loader2, Package, Printer, RefreshCw, Send, X, Utensils } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AdminGate } from "./AdminGate";
@@ -124,6 +124,12 @@ const DASHBOARD_LINKS = [
     title: "Pedidos",
     description: "Operativa diaria, estados y preparación.",
     icon: ClipboardList
+  },
+  {
+    href: "/admin/dashboard",
+    title: "Dashboard",
+    description: "KPIs, evolución y rankings globales.",
+    icon: BarChart3
   },
   {
     href: "/admin/informes",
