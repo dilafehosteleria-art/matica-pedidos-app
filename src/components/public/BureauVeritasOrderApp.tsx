@@ -291,8 +291,20 @@ const MENU_SIDE_OPTIONS: Option[] = [
   { label: "Verduritas asadas" }
 ];
 
+const BREAD_CUTLERY_GROUP_KEY = "bread_cutlery";
+const NO_BREAD_LABEL = "No enviar pan";
+const NO_CUTLERY_LABEL = "Sin cubiertos";
 const BREAD_OPTION: Option = { label: "Enviar pan" };
 const CUTLERY_OPTION: Option = { label: "Incluir cubiertos", price: CUTLERY_PRICE };
+
+function breadCutleryGroup(): ConfigGroup {
+  return {
+    key: BREAD_CUTLERY_GROUP_KEY,
+    label: "Pan y cubiertos",
+    type: "checkbox",
+    options: [BREAD_OPTION, CUTLERY_OPTION]
+  };
+}
 
 function cutleryGroup(): ConfigGroup {
   return {
@@ -429,14 +441,6 @@ function buildCartItem(
   };
 }
 
-function getOptionPrice(spec: ConfigSpec, groupKey: string, optionLabel: string) {
-  return spec.groups.find((group) => group.key === groupKey)?.options.find((option) => option.label === optionLabel)?.price ?? 0;
-}
-
-function getOptionUnitPrice(spec: ConfigSpec, groupKey: string, optionLabel: string) {
-  return spec.groups.find((group) => group.key === groupKey)?.options.find((option) => option.label === optionLabel)?.unitPrice;
-}
-
 function getSaladGroups({
   includeSize = false,
   exactCounts = false,
@@ -483,8 +487,7 @@ function getConfigSpec(
         { key: "second_course", label: "Segundo plato", type: "single", options: menuSecondCourseOptions(menu) },
         { key: "side", label: "Guarnición del segundo", type: "single", options: MENU_SIDE_OPTIONS },
         { key: "drink_or_dessert", label: "Bebida o postre", type: "single", options: menuDrinkOrDessertOptions(menu) },
-        { key: "bread", label: "Pan", type: "checkbox", options: [BREAD_OPTION] },
-        cutleryGroup()
+        breadCutleryGroup()
       ]
     };
   }
@@ -514,8 +517,7 @@ function getConfigSpec(
           dependsOn: { key: "plate", values: secondCourseLabels }
         },
         { key: "drink_or_dessert", label: "Bebida o postre", type: "single", options: menuDrinkOrDessertOptions(menu) },
-        { key: "bread", label: "Pan", type: "checkbox", options: [BREAD_OPTION] },
-        cutleryGroup()
+        breadCutleryGroup()
       ]
     };
   }
@@ -1225,18 +1227,33 @@ function ConfigModal({
     }
   }, [activeGroups.length, stepIndex]);
 
+  function selectedValuesForGroup(group: ConfigGroup) {
+    if (group.key === BREAD_CUTLERY_GROUP_KEY) {
+      return [singleValues.bread, singleValues[CUTLERY_METADATA_KEY]].filter(Boolean);
+    }
+
+    return group.type === "multi" ? multiValues[group.key] ?? [] : [singleValues[group.key]].filter(Boolean);
+  }
+
+  function optionPriceForGroup(group: ConfigGroup, optionLabel: string) {
+    return group.options.find((option) => option.label === optionLabel)?.price ?? 0;
+  }
+
+  function optionUnitPriceForGroup(group: ConfigGroup, optionLabel: string) {
+    return group.options.find((option) => option.label === optionLabel)?.unitPrice;
+  }
+
   const configuredUnitPrice = activeGroups.reduce((price, group) => {
-    const selected =
-      group.type === "multi" ? multiValues[group.key] ?? [] : [singleValues[group.key]].filter(Boolean);
+    const selected = selectedValuesForGroup(group);
     const unitOverride = selected
-      .map((value) => getOptionUnitPrice(spec, group.key, value))
+      .map((value) => optionUnitPriceForGroup(group, value))
       .find((value): value is number => typeof value === "number");
 
     if (typeof unitOverride === "number") {
       return unitOverride;
     }
 
-    return price + selected.reduce((sum, value) => sum + getOptionPrice(spec, group.key, value), 0);
+    return price + selected.reduce((sum, value) => sum + optionPriceForGroup(group, value), 0);
   }, Number(product.base_price));
   const subsidy = getSubsidyAmount(product.product_type, company);
   const customerUnitPrice =
@@ -1337,6 +1354,16 @@ function ConfigModal({
     }
 
     for (const group of activeGroups) {
+      if (group.key === BREAD_CUTLERY_GROUP_KEY) {
+        metadata.bread = singleValues.bread ? "SÃ­" : "No";
+
+        if (singleValues[CUTLERY_METADATA_KEY]) {
+          metadata[CUTLERY_METADATA_KEY] = CUTLERY_SELECTED_LABEL;
+        }
+
+        continue;
+      }
+
       if (group.type === "multi") {
         metadata[group.key] = (multiValues[group.key] ?? []).join(", ");
         continue;
@@ -1363,18 +1390,18 @@ function ConfigModal({
     }
 
     const supplements = activeGroups.flatMap((group) => {
-      if (group.key === CUTLERY_METADATA_KEY) {
+      if (group.key === CUTLERY_METADATA_KEY || group.key === BREAD_CUTLERY_GROUP_KEY) {
         return [];
       }
 
       if (group.type !== "multi") {
         const value = singleValues[group.key];
-        const price = getOptionPrice(spec, group.key, value);
+        const price = optionPriceForGroup(group, value);
         return price > 0 ? [`${value} +${formatCurrency(price)}`] : [];
       }
 
       return (multiValues[group.key] ?? []).flatMap((value) => {
-        const price = getOptionPrice(spec, group.key, value);
+        const price = optionPriceForGroup(group, value);
         return price > 0 ? [`${value} +${formatCurrency(price)}`] : [];
       });
     });
@@ -1384,6 +1411,38 @@ function ConfigModal({
     }
 
     onAdd(metadata, configuredUnitPrice);
+  }
+
+  function setCheckboxChoice(key: string, optionLabel: string, selected: boolean) {
+    setSingleValues((current) => ({
+      ...current,
+      [key]: selected ? optionLabel : ""
+    }));
+  }
+
+  function renderChoiceButton({
+    checked,
+    label,
+    onClick,
+    priceLabel
+  }: {
+    checked: boolean;
+    label: string;
+    onClick: () => void;
+    priceLabel?: string;
+  }) {
+    return (
+      <button
+        type="button"
+        className={`matica-focus flex min-h-12 cursor-pointer items-center justify-between gap-3 rounded-lg border px-3 py-3 text-left text-sm font-bold ${
+          checked ? "border-matica-green bg-matica-mint text-matica-green" : "border-matica-line bg-white text-matica-ink"
+        }`}
+        onClick={onClick}
+      >
+        <span>{label}</span>
+        {priceLabel ? <span className="text-xs font-black">{priceLabel}</span> : null}
+      </button>
+    );
   }
 
   return (
@@ -1453,43 +1512,80 @@ function ConfigModal({
                     ) : null}
                   </legend>
 
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    {currentGroup.options.map((option) => {
-                      const checked =
-                        currentGroup.type === "multi"
-                          ? (multiValues[currentGroup.key] ?? []).includes(option.label)
-                          : singleValues[currentGroup.key] === option.label;
+                  {currentGroup.key === BREAD_CUTLERY_GROUP_KEY ? (
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <p className="text-xs font-black uppercase text-matica-ink/45">Pan</p>
+                        <div className="grid gap-2 sm:grid-cols-2">
+                          {renderChoiceButton({
+                            checked: !singleValues.bread,
+                            label: NO_BREAD_LABEL,
+                            onClick: () => setCheckboxChoice("bread", BREAD_OPTION.label, false)
+                          })}
+                          {renderChoiceButton({
+                            checked: singleValues.bread === BREAD_OPTION.label,
+                            label: BREAD_OPTION.label,
+                            onClick: () => setCheckboxChoice("bread", BREAD_OPTION.label, true)
+                          })}
+                        </div>
+                      </div>
 
-                      return (
-                        <label
-                          key={`${currentGroup.key}-${option.label}`}
-                          className={`flex min-h-12 cursor-pointer items-center justify-between gap-3 rounded-lg border px-3 py-3 text-sm font-bold ${
-                            checked ? "border-matica-green bg-matica-mint text-matica-green" : "border-matica-line bg-white text-matica-ink"
-                          }`}
-                        >
-                          <span>{option.label}</span>
-                          {currentGroup.type !== "checkbox" || option.unitPrice || option.price ? (
-                            <span className="text-xs font-black">
-                              {option.unitPrice ? formatCurrency(option.unitPrice) : option.price ? `+${formatCurrency(option.price)}` : "incluido"}
-                            </span>
-                          ) : null}
-                          <input
-                            className="sr-only"
-                            type={currentGroup.type === "single" ? "radio" : "checkbox"}
-                            name={currentGroup.key}
-                            checked={checked}
-                            onChange={() =>
-                              currentGroup.type === "single"
-                                ? selectSingle(currentGroup, option.label)
-                                : currentGroup.type === "checkbox"
-                                  ? toggleCheckbox(currentGroup, option.label)
-                                  : toggleMulti(currentGroup, option.label)
-                            }
-                          />
-                        </label>
-                      );
-                    })}
-                  </div>
+                      <div className="space-y-2">
+                        <p className="text-xs font-black uppercase text-matica-ink/45">Cubiertos</p>
+                        <div className="grid gap-2 sm:grid-cols-2">
+                          {renderChoiceButton({
+                            checked: !singleValues[CUTLERY_METADATA_KEY],
+                            label: NO_CUTLERY_LABEL,
+                            onClick: () => setCheckboxChoice(CUTLERY_METADATA_KEY, CUTLERY_OPTION.label, false)
+                          })}
+                          {renderChoiceButton({
+                            checked: singleValues[CUTLERY_METADATA_KEY] === CUTLERY_OPTION.label,
+                            label: "Incluir cubiertos",
+                            onClick: () => setCheckboxChoice(CUTLERY_METADATA_KEY, CUTLERY_OPTION.label, true),
+                            priceLabel: `+${formatCurrency(CUTLERY_PRICE)}`
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      {currentGroup.options.map((option) => {
+                        const checked =
+                          currentGroup.type === "multi"
+                            ? (multiValues[currentGroup.key] ?? []).includes(option.label)
+                            : singleValues[currentGroup.key] === option.label;
+
+                        return (
+                          <label
+                            key={`${currentGroup.key}-${option.label}`}
+                            className={`flex min-h-12 cursor-pointer items-center justify-between gap-3 rounded-lg border px-3 py-3 text-sm font-bold ${
+                              checked ? "border-matica-green bg-matica-mint text-matica-green" : "border-matica-line bg-white text-matica-ink"
+                            }`}
+                          >
+                            <span>{option.label}</span>
+                            {currentGroup.type !== "checkbox" || option.unitPrice || option.price ? (
+                              <span className="text-xs font-black">
+                                {option.unitPrice ? formatCurrency(option.unitPrice) : option.price ? `+${formatCurrency(option.price)}` : "incluido"}
+                              </span>
+                            ) : null}
+                            <input
+                              className="sr-only"
+                              type={currentGroup.type === "single" ? "radio" : "checkbox"}
+                              name={currentGroup.key}
+                              checked={checked}
+                              onChange={() =>
+                                currentGroup.type === "single"
+                                  ? selectSingle(currentGroup, option.label)
+                                  : currentGroup.type === "checkbox"
+                                    ? toggleCheckbox(currentGroup, option.label)
+                                    : toggleMulti(currentGroup, option.label)
+                              }
+                            />
+                          </label>
+                        );
+                      })}
+                    </div>
+                  )}
                 </fieldset>
               ) : (
                 <div className="rounded-lg border border-matica-line bg-matica-soft p-4">
