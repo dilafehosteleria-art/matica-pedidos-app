@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { AdminGate } from "./AdminGate";
 import { ReportsPanel } from "./ReportsPanel";
 import { ThermalTicket } from "./ThermalTicket";
+import { hasCutlery } from "@/lib/cutlery";
 import { formatCurrency, formatTime } from "@/lib/format";
 import { summarizeDeliveryNoticeCandidates, type DeliveryNoticeSummary } from "@/lib/delivery-notice";
 import {
@@ -710,6 +711,7 @@ function OrderCard({
 }) {
   const branchName = formatCompanyDisplayName(order.company_branches?.name ?? "Sin empresa interna");
   const theme = STATUS_THEME[order.status] ?? STATUS_THEME.nuevo;
+  const orderHasCutlery = order.order_items.some((item) => hasCutlery(item.metadata));
 
   return (
     <article className={`rounded-lg border border-matica-line bg-white p-3 shadow-sm ${theme.card}`}>
@@ -731,6 +733,12 @@ function OrderCard({
         <p className="break-all">{order.customer_email}</p>
         <p className="font-black text-matica-ink">{operationalPaymentLabel(order)}</p>
       </div>
+
+      {orderHasCutlery ? (
+        <div className="mt-3 inline-flex rounded-lg bg-amber-100 px-3 py-1 text-xs font-black uppercase text-amber-900">
+          🍴 CUBIERTOS
+        </div>
+      ) : null}
 
       <div className="my-3 border-t border-dashed border-matica-line" />
 
@@ -831,6 +839,7 @@ function OrderDetailModal({
 }) {
   const companyName = order.companies?.name ?? "Cliente principal";
   const branchName = formatCompanyDisplayName(order.company_branches?.name ?? "Sin empresa interna");
+  const orderHasCutlery = order.order_items.some((item) => hasCutlery(item.metadata));
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-matica-ink/55 px-3 py-5 print:static print:bg-white print:p-0">
@@ -872,6 +881,12 @@ function OrderDetailModal({
 
             <section className="rounded-lg border border-matica-line p-4">
               <h3 className="text-lg font-black">Productos</h3>
+              {orderHasCutlery ? (
+                <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm font-black text-amber-950">
+                  <p className="uppercase">CUBIERTOS</p>
+                  <p className="mt-1">&gt; Sí</p>
+                </div>
+              ) : null}
               <div className="mt-3 space-y-3">
                 {order.order_items.map((item) => (
                   <div key={item.id} className="rounded-lg bg-matica-soft p-3">

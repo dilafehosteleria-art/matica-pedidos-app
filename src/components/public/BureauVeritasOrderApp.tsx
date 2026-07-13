@@ -27,6 +27,7 @@ import {
   type PublicSection
 } from "@/lib/catalog";
 import { DELIVERY_WINDOW } from "@/lib/constants";
+import { CUTLERY_METADATA_KEY, CUTLERY_PRICE, CUTLERY_SELECTED_LABEL } from "@/lib/cutlery";
 import { validateCompanyOrderEmail } from "@/lib/email-rules";
 import { formatCurrency } from "@/lib/format";
 import { calculateCartTotals, getSubsidyAmount } from "@/lib/pricing";
@@ -291,6 +292,16 @@ const MENU_SIDE_OPTIONS: Option[] = [
 ];
 
 const BREAD_OPTION: Option = { label: "Enviar pan" };
+const CUTLERY_OPTION: Option = { label: "Incluir cubiertos", price: CUTLERY_PRICE };
+
+function cutleryGroup(): ConfigGroup {
+  return {
+    key: CUTLERY_METADATA_KEY,
+    label: `Cubiertos (suplemento ${formatCurrency(CUTLERY_PRICE)})`,
+    type: "checkbox",
+    options: [CUTLERY_OPTION]
+  };
+}
 
 function formatMetadataKey(key: string) {
   const labels: Record<string, string> = {
@@ -316,6 +327,7 @@ function formatMetadataKey(key: string) {
     drink: "Bebida",
     dessert: "Postre",
     bread: "Pan",
+    cutlery: "Cubiertos",
     display_name: "",
     _configured_unit_price: "",
     _supplement_total: ""
@@ -471,7 +483,8 @@ function getConfigSpec(
         { key: "second_course", label: "Segundo plato", type: "single", options: menuSecondCourseOptions(menu) },
         { key: "side", label: "Guarnición del segundo", type: "single", options: MENU_SIDE_OPTIONS },
         { key: "drink_or_dessert", label: "Bebida o postre", type: "single", options: menuDrinkOrDessertOptions(menu) },
-        { key: "bread", label: "Pan", type: "checkbox", options: [BREAD_OPTION] }
+        { key: "bread", label: "Pan", type: "checkbox", options: [BREAD_OPTION] },
+        cutleryGroup()
       ]
     };
   }
@@ -501,7 +514,8 @@ function getConfigSpec(
           dependsOn: { key: "plate", values: secondCourseLabels }
         },
         { key: "drink_or_dessert", label: "Bebida o postre", type: "single", options: menuDrinkOrDessertOptions(menu) },
-        { key: "bread", label: "Pan", type: "checkbox", options: [BREAD_OPTION] }
+        { key: "bread", label: "Pan", type: "checkbox", options: [BREAD_OPTION] },
+        cutleryGroup()
       ]
     };
   }
@@ -512,7 +526,7 @@ function getConfigSpec(
       lead: "Configura la ensalada y elige un bocadillo.",
       included: [SMALL_SALAD_SIZE_LABEL],
       defaultMetadata: { salad_size: SMALL_SALAD_SIZE_LABEL },
-      groups: getSaladGroups({ exactCounts: true, includeSandwich: true })
+      groups: [...getSaladGroups({ exactCounts: true, includeSandwich: true }), cutleryGroup()]
     };
   }
 
@@ -1334,6 +1348,13 @@ function ConfigModal({
         continue;
       }
 
+      if (group.type === "checkbox" && group.key === CUTLERY_METADATA_KEY) {
+        if (value) {
+          metadata[group.key] = CUTLERY_SELECTED_LABEL;
+        }
+        continue;
+      }
+
       if (!value) {
         continue;
       }
@@ -1342,6 +1363,10 @@ function ConfigModal({
     }
 
     const supplements = activeGroups.flatMap((group) => {
+      if (group.key === CUTLERY_METADATA_KEY) {
+        return [];
+      }
+
       if (group.type !== "multi") {
         const value = singleValues[group.key];
         const price = getOptionPrice(spec, group.key, value);

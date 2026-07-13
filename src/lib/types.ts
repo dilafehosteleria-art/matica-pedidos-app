@@ -69,6 +69,11 @@ export type CompanyBranch = {
   company_id: string;
   name: string;
   active: boolean;
+  fiscal_name?: string | null;
+  tax_id?: string | null;
+  fiscal_address?: string | null;
+  fiscal_city?: string | null;
+  fiscal_postal_code?: string | null;
 };
 
 export type Category = {
@@ -179,7 +184,14 @@ export type AdminOrder = {
   delivery_window: string;
   order_items: OrderItem[];
   companies?: { name: string; delivery_address?: string | null } | null;
-  company_branches?: { name: string } | null;
+  company_branches?: {
+    name: string;
+    fiscal_name?: string | null;
+    tax_id?: string | null;
+    fiscal_address?: string | null;
+    fiscal_city?: string | null;
+    fiscal_postal_code?: string | null;
+  } | null;
 };
 
 export type AdminCompany = Company & {

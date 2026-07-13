@@ -55,7 +55,7 @@ export function ThermalTicket({ className = "hidden print:block thermal-ticket",
               <p className="ticket-option-label">{thermalTicketText(entry.label).toUpperCase()}</p>
               {metadataEntryValues(entry).map((value) => (
                 <p key={`${item.id}-${entry.key}-${value}`} className="ticket-option">
-                  &gt; {thermalTicketText(value)}
+                  &gt; {entry.key === "cutlery" ? thermalTicketText(value).toUpperCase() : thermalTicketText(value)}
                 </p>
               ))}
             </div>

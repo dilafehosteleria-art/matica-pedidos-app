@@ -36,6 +36,50 @@ test("Bureau Veritas aplica su subvención configurada", () => {
   });
 });
 
+test("Bureau Veritas cobra cubiertos al empleado sin cambiar la subvencion", () => {
+  const company: Company = {
+    id: "bv",
+    name: "Bureau Veritas",
+    slug: "bureau-veritas",
+    active: true,
+    billing_type: "subsidized",
+    subsidy_rules: [{ product_type: "daily_menu", subsidy_amount: 4, active: true }]
+  };
+  const menuWithCutlery = { ...menu, base_price: 13.2, customer_price: 13.2, metadata: { cutlery: "Si (+0,20 €)" } };
+
+  const totals = calculateCartTotals([menuWithCutlery], company);
+
+  assert.equal(totals.subtotal, 13.2);
+  assert.equal(totals.subsidyTotal, 4);
+  assert.equal(totals.employeeTotal, 9.2);
+  assert.equal(totals.companyInvoiceTotal, 4);
+});
+
+test("ICF incluye cubiertos en la factura a empresa", () => {
+  const company: Company = {
+    id: "icf",
+    name: "ICF",
+    slug: "icf",
+    active: true,
+    billing_type: "company",
+    subsidy_rules: []
+  };
+  const halfMenuWithCutlery = {
+    ...menu,
+    name: "Medio menÃº",
+    base_price: 10.2,
+    customer_price: 10.2,
+    product_type: "half_menu" as const,
+    metadata: { cutlery: "Si (+0,20 €)" }
+  };
+
+  const totals = calculateCartTotals([halfMenuWithCutlery], company, false, "pay_on_delivery");
+
+  assert.equal(totals.subsidyTotal, 0);
+  assert.equal(totals.employeeTotal, 0);
+  assert.equal(totals.companyInvoiceTotal, 10.2);
+});
+
 test("ICF factura el pedido completo a empresa y deja a cero el empleado", () => {
   const company: Company = {
     id: "icf",

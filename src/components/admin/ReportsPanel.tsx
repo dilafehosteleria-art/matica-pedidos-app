@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertCircle, Download, Loader2, RefreshCw } from "lucide-react";
+import { AlertCircle, Download, FileText, Loader2, ReceiptText, RefreshCw, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { formatCurrency } from "@/lib/format";
 import type { OrderStatus } from "@/lib/types";
@@ -102,10 +102,11 @@ type ReportsPanelProps = {
   authHeaders: Record<string, string>;
   onUnauthorized: () => void;
   showCompanyFilter?: boolean;
+  showAdminActions?: boolean;
   intro?: string;
 };
 
-function buildReportParams(filters: ReportFilters, mode: "summary" | "xlsx") {
+function buildReportParams(filters: ReportFilters, mode: "summary" | "xlsx" | "short_xlsx" | "invoices_xlsx") {
   const params = new URLSearchParams({
     mode,
     date_from: filters.date_from,
@@ -200,6 +201,7 @@ export function ReportsPanel({
   authHeaders,
   onUnauthorized,
   showCompanyFilter = true,
+  showAdminActions = true,
   intro = "Filtra los pedidos por rango, cliente, empresa interna y estado antes de descargar el Excel de facturación."
 }: ReportsPanelProps) {
   const [reportOptions, setReportOptions] = useState<ReportOptionsResponse>({
@@ -213,6 +215,11 @@ export function ReportsPanel({
   const [loadingOptions, setLoadingOptions] = useState(true);
   const [reportLoading, setReportLoading] = useState(false);
   const [reportDownloading, setReportDownloading] = useState(false);
+  const [shortReportDownloading, setShortReportDownloading] = useState(false);
+  const [invoiceDownloading, setInvoiceDownloading] = useState(false);
+  const [invoiceModalOpen, setInvoiceModalOpen] = useState(false);
+  const [invoiceDate, setInvoiceDate] = useState("");
+  const [invoiceNumber, setInvoiceNumber] = useState("");
   const [error, setError] = useState("");
 
   const loadReportOptions = useCallback(async () => {
@@ -295,23 +302,20 @@ export function ReportsPanel({
     setReportLoading(false);
   }
 
-  async function downloadReport() {
-    setReportDownloading(true);
-    const response = await fetch(reportUrl(endpoint, buildReportParams(reportFilters, "xlsx")), {
+  async function downloadBlob(params: URLSearchParams, fallbackError: string) {
+    const response = await fetch(reportUrl(endpoint, params), {
       headers: authHeaders
     });
 
     if (response.status === 401) {
-      setReportDownloading(false);
       onUnauthorized();
-      return;
+      return false;
     }
 
     if (!response.ok) {
       const payload = await response.json().catch(() => ({}));
-      setError(payload.error ?? "No se pudo descargar el informe.");
-      setReportDownloading(false);
-      return;
+      setError(payload.error ?? fallbackError);
+      return false;
     }
 
     const blob = await response.blob();
@@ -324,7 +328,39 @@ export function ReportsPanel({
     link.click();
     link.remove();
     window.URL.revokeObjectURL(url);
+    setError("");
+    return true;
+  }
+
+  async function downloadReport() {
+    setReportDownloading(true);
+    await downloadBlob(buildReportParams(reportFilters, "xlsx"), "No se pudo descargar el informe.");
     setReportDownloading(false);
+  }
+
+  async function downloadShortReport() {
+    setShortReportDownloading(true);
+    await downloadBlob(buildReportParams(reportFilters, "short_xlsx"), "No se pudo descargar el informe abreviado.");
+    setShortReportDownloading(false);
+  }
+
+  async function downloadInvoices() {
+    if (!invoiceDate || !invoiceNumber.trim()) {
+      setError("Indica fecha y numero de factura.");
+      return;
+    }
+
+    setInvoiceDownloading(true);
+    const params = buildReportParams(reportFilters, "invoices_xlsx");
+
+    params.set("invoice_date", invoiceDate);
+    params.set("invoice_number", invoiceNumber.trim());
+    const ok = await downloadBlob(params, "No se pudieron generar las facturas.");
+    setInvoiceDownloading(false);
+
+    if (ok) {
+      setInvoiceModalOpen(false);
+    }
   }
 
   const reportBranches = useMemo(
@@ -519,6 +555,28 @@ export function ReportsPanel({
             {reportDownloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
             Descargar Excel
           </button>
+          {showAdminActions ? (
+            <>
+              <button
+                className="matica-focus flex min-h-11 items-center justify-center gap-2 rounded-lg border border-matica-line bg-white px-4 font-black text-matica-ink disabled:cursor-not-allowed disabled:opacity-60"
+                onClick={downloadShortReport}
+                disabled={!reportCanRun || shortReportDownloading || loadingOptions}
+                type="button"
+              >
+                {shortReportDownloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4 text-matica-green" />}
+                Descargar informe abreviado
+              </button>
+              <button
+                className="matica-focus flex min-h-11 items-center justify-center gap-2 rounded-lg border border-matica-green bg-matica-mint px-4 font-black text-matica-green disabled:cursor-not-allowed disabled:opacity-60"
+                onClick={() => setInvoiceModalOpen(true)}
+                disabled={!reportCanRun || loadingOptions}
+                type="button"
+              >
+                <ReceiptText className="h-4 w-4" />
+                Generar facturas
+              </button>
+            </>
+          ) : null}
         </div>
       </div>
 
@@ -577,6 +635,64 @@ export function ReportsPanel({
                 ) : null}
               </tbody>
             </table>
+          </div>
+        </div>
+      ) : null}
+
+      {invoiceModalOpen ? (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-matica-ink/50 px-4">
+          <div className="w-full max-w-md rounded-lg bg-white p-5 shadow-2xl">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-xl font-black text-matica-ink">Generar facturas</h3>
+                <p className="mt-1 text-sm font-semibold text-matica-ink/55">Usa los filtros actuales del informe.</p>
+              </div>
+              <button
+                className="matica-focus grid h-10 w-10 place-items-center rounded-lg border border-matica-line bg-white"
+                type="button"
+                onClick={() => setInvoiceModalOpen(false)}
+                aria-label="Cerrar"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="mt-4 grid gap-3">
+              <label className="space-y-1">
+                <span className="text-xs font-black uppercase text-matica-ink/45">Fecha de factura</span>
+                <input
+                  className="matica-focus min-h-11 w-full rounded-lg border border-matica-line bg-white px-3 text-sm font-bold text-matica-ink"
+                  type="date"
+                  value={invoiceDate}
+                  onChange={(event) => setInvoiceDate(event.target.value)}
+                />
+              </label>
+              <label className="space-y-1">
+                <span className="text-xs font-black uppercase text-matica-ink/45">Numero de factura</span>
+                <input
+                  className="matica-focus min-h-11 w-full rounded-lg border border-matica-line bg-white px-3 text-sm font-bold text-matica-ink"
+                  value={invoiceNumber}
+                  onChange={(event) => setInvoiceNumber(event.target.value)}
+                />
+              </label>
+            </div>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                className="matica-focus min-h-11 rounded-lg border border-matica-line bg-white px-4 text-sm font-black text-matica-ink"
+                type="button"
+                onClick={() => setInvoiceModalOpen(false)}
+              >
+                Cancelar
+              </button>
+              <button
+                className="matica-focus inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-matica-green px-4 text-sm font-black text-white disabled:cursor-not-allowed disabled:opacity-60"
+                type="button"
+                disabled={invoiceDownloading}
+                onClick={downloadInvoices}
+              >
+                {invoiceDownloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                Descargar Excel
+              </button>
+            </div>
           </div>
         </div>
       ) : null}

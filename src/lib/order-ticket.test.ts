@@ -262,3 +262,41 @@ test("el ticket termico ICF muestra precio real y pago a cargo de empresa", () =
   assert.match(ticket, /Total empleado: 0,00 EUR/);
   assert.match(ticket, /PAGO A CARGO DE EMPRESA/);
 });
+
+test("el ticket termico destaca cubiertos sin emoji y con suplemento", () => {
+  const ticket = buildThermalOrderPlainText(
+    baseOrder({
+      subtotal: 13.2,
+      subsidy_total: 4,
+      employee_total: 9.2,
+      company_invoice_total: 4,
+      total: 9.2,
+      order_items: [
+        {
+          id: "daily-menu-cutlery-item",
+          order_id: "12345678-1234-4000-8000-123456789abc",
+          product_id: "daily-menu",
+          name: "MenÃº del dÃ­a",
+          quantity: 1,
+          unit_price: 13.2,
+          base_price: 13,
+          subsidy_amount: 4,
+          total_price: 9.2,
+          metadata: {
+            display_name: "MenÃº del dÃ­a",
+            first_course: "Crema de verduras",
+            second_course: "Pollo al horno",
+            side: "Patatas panaderas",
+            drink_or_dessert: "Agua mineral",
+            bread: "No",
+            cutlery: "Si (+0,20 €)"
+          }
+        }
+      ]
+    })
+  );
+
+  assert.match(ticket, /CUBIERTOS\n> SI \(\+0,20 EUR\)/);
+  assert.doesNotMatch(ticket, /🍴/);
+  assert.doesNotMatch(ticket, /[^\x20-\x7E\r\n]/);
+});

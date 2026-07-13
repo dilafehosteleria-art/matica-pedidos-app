@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { DELIVERY_WINDOW } from "@/lib/constants";
+import { cutlerySupplement } from "@/lib/cutlery";
 import { validateCompanyOrderEmail } from "@/lib/email-rules";
 import { toDateInputValue } from "@/lib/format";
 import { getGlobalSchedule } from "@/lib/global-settings";
@@ -151,16 +152,17 @@ function isMissingPaymentColumnError(message?: string) {
 
 function expectedConfiguredUnitPrice(metadata: Record<string, string>) {
   const displayName = metadata.display_name?.trim();
+  const withCutlery = (price: number | null) => price === null ? null : Number((price + cutlerySupplement(metadata)).toFixed(2));
 
   if (
     displayName === "Menú del día" &&
     metadata.first_course?.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().includes("ensalada")
   ) {
-    return expectedSaladUnitPrice(13, metadata, SMALL_SALAD_SIZE_LABEL);
+    return withCutlery(expectedSaladUnitPrice(13, metadata, SMALL_SALAD_SIZE_LABEL));
   }
 
   if (displayName === "Medio menú" && isCustomSaladChoice(metadata.plate ?? "")) {
-    return expectedSaladUnitPrice(10, metadata, MEDIUM_SALAD_SIZE_LABEL);
+    return withCutlery(expectedSaladUnitPrice(10, metadata, MEDIUM_SALAD_SIZE_LABEL));
   }
 
   if (displayName === "Escoge tu bebida") {
@@ -172,24 +174,26 @@ function expectedConfiguredUnitPrice(metadata: Record<string, string>) {
   }
 
   if (displayName === "Diseña tu ensalada") {
-    return expectedSaladUnitPrice(7.5, metadata);
+    return withCutlery(expectedSaladUnitPrice(7.5, metadata));
   }
 
   if (displayName === "Diseña tu wrap") {
-    return expectedCustomWrapUnitPrice(7.5, metadata);
+    return withCutlery(expectedCustomWrapUnitPrice(7.5, metadata));
   }
 
   if (displayName === "Menú ensalada pequeña + bocadillo") {
-    return expectedSaladUnitPrice(10, metadata, SMALL_SALAD_SIZE_LABEL);
+    return withCutlery(expectedSaladUnitPrice(10, metadata, SMALL_SALAD_SIZE_LABEL));
   }
 
   if (displayName === "Platos combinados Matica") {
     const proteinSupplement = GRILL_PROTEIN_SUPPLEMENTS[metadata.main_protein?.trim() ?? ""];
 
-    return typeof proteinSupplement === "number" ? Number((GRILL_BASE_PRICE + proteinSupplement).toFixed(2)) : null;
+    return typeof proteinSupplement === "number" ? withCutlery(Number((GRILL_BASE_PRICE + proteinSupplement).toFixed(2))) : null;
   }
 
-  return FIXED_CONFIGURED_PRICES[displayName ?? ""] ?? null;
+  const fixedPrice = FIXED_CONFIGURED_PRICES[displayName ?? ""];
+
+  return typeof fixedPrice === "number" ? withCutlery(fixedPrice) : null;
 }
 
 function safeConfiguredUnitPrice(metadata: Record<string, string>) {

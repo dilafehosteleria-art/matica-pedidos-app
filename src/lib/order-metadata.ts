@@ -29,6 +29,7 @@ const LABELS: Record<string, string> = {
   drink: "Bebida",
   dessert: "Postre",
   bread: "Pan",
+  cutlery: "Cubiertos",
   suplementos: "Suplementos"
 };
 
@@ -183,7 +184,7 @@ export function buildOrderItemOptionLines(metadata?: Record<string, string> | nu
   }
 
   const entries: OrderMetadataEntry[] = [];
-  const usedKeys = new Set<string>(["bread", "categoria", "display_name"]);
+  const usedKeys = new Set<string>(["bread", "cutlery", "categoria", "display_name"]);
   const side = metadata.side?.trim();
 
   if (hasValue(metadata, "first_course")) {
@@ -257,6 +258,10 @@ export function buildOrderItemOptionLines(metadata?: Record<string, string> | nu
 
   if (hasValue(metadata, "bread")) {
     appendEntry(entries, metadata, "bread", "Pan");
+  }
+
+  if (hasValue(metadata, "cutlery")) {
+    appendEntry(entries, metadata, "cutlery", "Cubiertos");
   }
 
   return entries;

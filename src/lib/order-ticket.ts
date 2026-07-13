@@ -36,6 +36,7 @@ const METADATA_LABELS: Record<string, string> = {
   drink: "Bebida",
   dessert: "Postre",
   bread: "Pan",
+  cutlery: "Cubiertos",
   suplementos: "Suplementos"
 };
 
@@ -250,7 +251,9 @@ export function buildThermalOrderPlainText(order: AdminOrder) {
     for (const entry of orderItemOptionLines(item.metadata)) {
       lines.push(thermalTicketText(entry.label).toUpperCase());
       for (const value of metadataEntryValues(entry)) {
-        lines.push(`> ${thermalTicketText(value)}`);
+        const thermalValue = entry.key === "cutlery" ? thermalTicketText(value).toUpperCase() : thermalTicketText(value);
+
+        lines.push(`> ${thermalValue}`);
       }
     }
     lines.push("");

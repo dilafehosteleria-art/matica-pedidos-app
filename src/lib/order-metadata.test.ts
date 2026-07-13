@@ -39,6 +39,35 @@ test("admin, ticket y email reciben la ensalada del Medio Menú por bloques y si
   ]);
 });
 
+test("Cubiertos aparece como bloque propio y no se duplica en suplementos", () => {
+  const blocks = renderedBlocks({
+    display_name: "MenÃº del dÃ­a",
+    first_course: "Gazpacho andaluz",
+    second_course: "Pollo al horno",
+    side: "Ensalada",
+    drink_or_dessert: "Agua mineral",
+    bread: "No",
+    cutlery: "Si (+0,20 €)",
+    _configured_unit_price: "13.20",
+    _supplement_total: "0.20"
+  });
+
+  assert.deepEqual(blocks.at(-2), { label: "Pan", values: ["No"] });
+  assert.deepEqual(blocks.at(-1), { label: "Cubiertos", values: ["Si (+0,20 €)"] });
+  assert.equal(blocks.some((block: { label: string }) => block.label === "Suplementos"), false);
+});
+
+test("Cubiertos no aparece si no se pide", () => {
+  const blocks = renderedBlocks({
+    display_name: "Medio menÃº",
+    plate: "Pollo Matica Krispy",
+    drink_or_dessert: "Agua mineral",
+    bread: "No"
+  });
+
+  assert.equal(blocks.some((block: { label: string }) => block.label === "Cubiertos"), false);
+});
+
 test("Menú del día separa segundo, guarnición, bebida y pan", () => {
   assert.deepEqual(
     renderedBlocks({
