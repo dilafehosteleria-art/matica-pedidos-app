@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 const configFlowModulePath = "./config-flow.ts";
-const { activeConfigFlowGroups, nextConfigFlowStepIndex } = await import(configFlowModulePath);
+const { activeConfigFlowGroups, displayConfigFlowStep, nextConfigFlowStepIndex } = await import(configFlowModulePath);
 
 const dailyMenuGroups = [
   { key: "first_course" },
@@ -29,10 +29,11 @@ const halfMenuGroups = [
 
 test("Menú del día no salta el configurador al elegir Ensalada a tu manera como primero", () => {
   const selected = { first_course: "Ensalada a tu manera" };
+  const activeGroups = activeConfigFlowGroups(dailyMenuGroups, selected);
 
   assert.equal(nextConfigFlowStepIndex(dailyMenuGroups, "first_course", selected), 1);
   assert.deepEqual(
-    activeConfigFlowGroups(dailyMenuGroups, selected).map((group: { key: string }) => group.key),
+    activeGroups.map((group: { key: string }) => group.key),
     [
       "first_course",
       "salad_base",
@@ -45,6 +46,8 @@ test("Menú del día no salta el configurador al elegir Ensalada a tu manera com
       "bread_cutlery"
     ]
   );
+  assert.deepEqual(displayConfigFlowStep(activeGroups, 1), { current: 1, total: 5 });
+  assert.deepEqual(displayConfigFlowStep(activeGroups, 8), { current: 5, total: 5 });
 });
 
 test("Menú del día mantiene cinco pasos cuando el primero no es ensalada configurable", () => {
@@ -59,12 +62,15 @@ test("Menú del día mantiene cinco pasos cuando el primero no es ensalada confi
 
 test("Medio menú no salta el configurador al elegir Ensalada a tu manera como plato", () => {
   const selected = { plate: "Ensalada a tu manera" };
+  const activeGroups = activeConfigFlowGroups(halfMenuGroups, selected);
 
   assert.equal(nextConfigFlowStepIndex(halfMenuGroups, "plate", selected), 1);
   assert.deepEqual(
-    activeConfigFlowGroups(halfMenuGroups, selected).map((group: { key: string }) => group.key),
+    activeGroups.map((group: { key: string }) => group.key),
     ["plate", "salad_base", "protein", "toppings", "dressing", "drink_or_dessert", "bread_cutlery"]
   );
+  assert.deepEqual(displayConfigFlowStep(activeGroups, 1), { current: 1, total: 3 });
+  assert.deepEqual(displayConfigFlowStep(activeGroups, 6), { current: 3, total: 3 });
 });
 
 test("Medio menú mantiene Pan y cubiertos como paso final", () => {

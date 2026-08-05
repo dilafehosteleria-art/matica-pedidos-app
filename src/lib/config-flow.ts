@@ -35,3 +35,24 @@ export function nextConfigFlowStepIndex(
 
   return Math.min(currentIndex + 1, activeGroups.length - 1);
 }
+
+export function displayConfigFlowStep(groups: ConfigFlowGroup[], currentIndex: number) {
+  const rootStepByKey = new Map<string, number>();
+  let rootStep = 0;
+
+  for (const group of groups) {
+    if (group.dependsOn) {
+      rootStepByKey.set(group.key, rootStepByKey.get(group.dependsOn.key) ?? rootStep + 1);
+    } else {
+      rootStep += 1;
+      rootStepByKey.set(group.key, rootStep);
+    }
+  }
+
+  const currentGroup = groups[currentIndex];
+
+  return {
+    current: currentGroup ? (rootStepByKey.get(currentGroup.key) ?? Math.min(currentIndex + 1, rootStep)) : 0,
+    total: rootStep
+  };
+}

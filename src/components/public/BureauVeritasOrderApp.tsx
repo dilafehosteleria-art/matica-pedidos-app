@@ -30,7 +30,7 @@ import { DELIVERY_WINDOW } from "@/lib/constants";
 import { CUTLERY_METADATA_KEY, CUTLERY_PRICE, CUTLERY_SELECTED_LABEL } from "@/lib/cutlery";
 import { validateCompanyOrderEmail } from "@/lib/email-rules";
 import { formatCurrency } from "@/lib/format";
-import { activeConfigFlowGroups, nextConfigFlowStepIndex } from "@/lib/config-flow";
+import { activeConfigFlowGroups, displayConfigFlowStep, nextConfigFlowStepIndex } from "@/lib/config-flow";
 import { calculateCartTotals, getSubsidyAmount } from "@/lib/pricing";
 import {
   isCustomSaladChoice,
@@ -1221,6 +1221,7 @@ function ConfigModal({
   const [multiValues, setMultiValues] = useState<Record<string, string[]>>({});
   const activeGroups = activeConfigFlowGroups(spec.groups, singleValues);
   const currentGroup = activeGroups[stepIndex];
+  const displayStep = displayConfigFlowStep(activeGroups, stepIndex);
 
   useEffect(() => {
     if (stepIndex >= activeGroups.length) {
@@ -1491,7 +1492,7 @@ function ConfigModal({
                 <fieldset className="space-y-3">
                   <legend>
                     <span className="block text-xs font-black uppercase text-matica-green">
-                      Paso {stepIndex + 1} de {activeGroups.length}
+                      Paso {displayStep.current} de {displayStep.total}
                     </span>
                     <span className="mt-1 block text-2xl font-black">{currentGroup.label}</span>
                     {currentGroup.instruction || (currentGroup.type === "multi" && (currentGroup.min || currentGroup.max)) ? (
