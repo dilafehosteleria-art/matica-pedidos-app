@@ -22,6 +22,7 @@ const validHalfMenuSalad = {
 
 test("reconoce los nombres configurables usados por el menú", () => {
   assert.equal(isCustomSaladChoice("Ensalada a tu manera"), true);
+  assert.equal(isCustomSaladChoice("ENSALDA A TU MANERA"), true);
   assert.equal(isCustomSaladChoice("Diseña tu ensalada"), true);
   assert.equal(isCustomSaladChoice("Ensalada arroz con queso fresco"), false);
 });

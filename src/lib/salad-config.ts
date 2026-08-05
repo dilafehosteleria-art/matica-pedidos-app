@@ -62,7 +62,11 @@ function normalize(value: string) {
 export function isCustomSaladChoice(value: string) {
   const normalized = normalize(value);
 
-  return normalized.includes("ensalada a tu manera") || normalized.includes("disena tu ensalada");
+  return (
+    normalized.includes("ensalada a tu manera") ||
+    normalized.includes("ensalda a tu manera") ||
+    normalized.includes("disena tu ensalada")
+  );
 }
 
 function selectedValues(value?: string) {
