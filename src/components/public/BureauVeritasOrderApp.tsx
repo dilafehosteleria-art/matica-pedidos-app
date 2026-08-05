@@ -30,6 +30,7 @@ import { DELIVERY_WINDOW } from "@/lib/constants";
 import { CUTLERY_METADATA_KEY, CUTLERY_PRICE, CUTLERY_SELECTED_LABEL } from "@/lib/cutlery";
 import { validateCompanyOrderEmail } from "@/lib/email-rules";
 import { formatCurrency } from "@/lib/format";
+import { activeConfigFlowGroups, nextConfigFlowStepIndex } from "@/lib/config-flow";
 import { calculateCartTotals, getSubsidyAmount } from "@/lib/pricing";
 import {
   isCustomSaladChoice,
@@ -470,7 +471,7 @@ function getConfigSpec(
 ): ConfigSpec {
   if (product.product_type === "daily_menu") {
     const saladFirstCourses = menuFirstCourseOptions(menu)
-      .filter((option) => normalize(option.label).includes("ensalada"))
+      .filter((option) => isCustomSaladChoice(option.label))
       .map((option) => option.label);
     const subsidy = getSubsidyAmount(product.product_type, company);
 
@@ -1218,7 +1219,7 @@ function ConfigModal({
   const [stepIndex, setStepIndex] = useState(0);
   const [singleValues, setSingleValues] = useState<Record<string, string>>({});
   const [multiValues, setMultiValues] = useState<Record<string, string[]>>({});
-  const activeGroups = spec.groups.filter((group) => isGroupActive(group));
+  const activeGroups = activeConfigFlowGroups(spec.groups, singleValues);
   const currentGroup = activeGroups[stepIndex];
 
   useEffect(() => {
@@ -1262,14 +1263,6 @@ function ConfigModal({
       : configuredUnitPrice;
   const canSubmitConfig = activeGroups.every((group) => isGroupComplete(group));
   const canGoNext = currentGroup ? isGroupComplete(currentGroup) && stepIndex < activeGroups.length - 1 : false;
-
-  function isGroupActive(group: ConfigGroup) {
-    if (!group.dependsOn) {
-      return true;
-    }
-
-    return group.dependsOn.values.includes(singleValues[group.dependsOn.key]);
-  }
 
   function isGroupComplete(group: ConfigGroup) {
     if (group.type === "checkbox") {
@@ -1316,10 +1309,13 @@ function ConfigModal({
   }
 
   function selectSingle(group: ConfigGroup, optionLabel: string) {
-    setSingleValues((current) => ({ ...current, [group.key]: optionLabel }));
+    const nextSingleValues = { ...singleValues, [group.key]: optionLabel };
+    const nextStepIndex = nextConfigFlowStepIndex(spec.groups, group.key, nextSingleValues);
 
-    if (stepIndex < activeGroups.length - 1) {
-      window.setTimeout(() => setStepIndex((currentStep) => Math.min(currentStep + 1, activeGroups.length - 1)), 120);
+    setSingleValues(nextSingleValues);
+
+    if (nextStepIndex !== stepIndex) {
+      window.setTimeout(() => setStepIndex(nextStepIndex), 120);
     }
   }
 

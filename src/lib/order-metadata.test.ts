@@ -68,6 +68,36 @@ test("Cubiertos no aparece si no se pide", () => {
   assert.equal(blocks.some((block: { label: string }) => block.label === "Cubiertos"), false);
 });
 
+test("Medio menu con ensalada configurada y cubiertos mantiene el orden completo", () => {
+  assert.deepEqual(
+    renderedBlocks({
+      display_name: "Medio men\u00fa",
+      plate: "Ensalada a tu manera",
+      salad_size: "Tama\u00f1o Mediano 1000ML",
+      salad_base: "Arroz integral, M\u00e9zclum",
+      protein: "Pollo",
+      toppings: "Tomate, Pepino, Ma\u00edz",
+      dressing: "Vinagreta bals\u00e1mica",
+      drink_or_dessert: "Agua mineral",
+      bread: "No",
+      cutlery: "Si (+0,20 \u20ac)",
+      _configured_unit_price: "10.20",
+      _supplement_total: "0.20"
+    }),
+    [
+      { label: "Plato", values: ["Ensalada a tu manera"] },
+      { label: "Tama\u00f1o", values: ["Tama\u00f1o Mediano 1000ML"] },
+      { label: "Bases", values: ["Arroz integral", "M\u00e9zclum"] },
+      { label: "Prote\u00edna", values: ["Pollo"] },
+      { label: "Toppings", values: ["Tomate", "Pepino", "Ma\u00edz"] },
+      { label: "Salsa", values: ["Vinagreta bals\u00e1mica"] },
+      { label: "Bebida", values: ["Agua mineral"] },
+      { label: "Pan", values: ["No"] },
+      { label: "Cubiertos", values: ["Si (+0,20 \u20ac)"] }
+    ]
+  );
+});
+
 test("Menú del día separa segundo, guarnición, bebida y pan", () => {
   assert.deepEqual(
     renderedBlocks({
@@ -241,4 +271,38 @@ test("el informe incluye toda la configuración y oculta campos técnicos", () =
   }
 
   assert.doesNotMatch(reportValue, /display_name|_configured_unit_price|_supplement_total/);
+});
+
+test("Menu del dia con ensalada configurada, segundo, guarnicion y cubiertos mantiene el orden completo", () => {
+  assert.deepEqual(
+    renderedBlocks({
+      display_name: "Men\u00fa del d\u00eda",
+      first_course: "Ensalada a tu manera",
+      salad_size: "Tama\u00f1o Peque\u00f1o 750ML",
+      salad_base: "Quinoa",
+      protein: "At\u00fan",
+      toppings: "Huevo, Ma\u00edz, Tomate",
+      dressing: "Sal y Vinagre",
+      second_course: "Pollo al teriyaki",
+      side: "Verduritas asadas",
+      drink_or_dessert: "Lipton Lim\u00f3n",
+      bread: "No",
+      cutlery: "Si (+0,20 \u20ac)",
+      _configured_unit_price: "13.20",
+      _supplement_total: "0.20"
+    }),
+    [
+      { label: "Primero", values: ["Ensalada a tu manera"] },
+      { label: "Tama\u00f1o", values: ["Tama\u00f1o Peque\u00f1o 750ML"] },
+      { label: "Bases", values: ["Quinoa"] },
+      { label: "Prote\u00edna", values: ["At\u00fan"] },
+      { label: "Toppings", values: ["Huevo", "Ma\u00edz", "Tomate"] },
+      { label: "Salsa", values: ["Sal y Vinagre"] },
+      { label: "Segundo", values: ["Pollo al teriyaki"] },
+      { label: "Guarnici\u00f3n", values: ["Verduritas asadas"] },
+      { label: "Bebida", values: ["Lipton Lim\u00f3n"] },
+      { label: "Pan", values: ["No"] },
+      { label: "Cubiertos", values: ["Si (+0,20 \u20ac)"] }
+    ]
+  );
 });
