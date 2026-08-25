@@ -4,6 +4,11 @@ import { operationalPaymentLabel, paymentMethodLabel, paymentStatusLabel } from 
 import { formatOrderMetadataForReport } from "@/lib/order-metadata";
 import { orderCompanyInvoiceTotal, orderEmployeeTotal } from "@/lib/order-ticket";
 import { isBillableOrder } from "@/lib/order-validity";
+import {
+  buildInvoiceRecipientGroups,
+  isBureauVeritasInvoiceCandidate,
+  type InvoiceBranch
+} from "@/lib/invoice-consolidation";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import type { AdminOrder, CompanyBranch, OrderStatus, Company } from "@/lib/types";
 import { buildStyledWorksheetXml } from "@/lib/xlsx-worksheet";
@@ -133,6 +138,7 @@ type ReportAuth =
   | { kind: "client"; company: Company };
 
 type DynamicSheet = {
+  invoiceTemplate?: boolean;
   name: string;
   rows: unknown[][];
   moneyColumns?: number[];
@@ -141,6 +147,8 @@ type DynamicSheet = {
   totalRows?: number[];
   widths?: number[];
   merges?: string[];
+  printArea?: string;
+  rowHeights?: number[];
 };
 
 type InvoiceInput = {
@@ -772,21 +780,64 @@ function dynamicStylesXml() {
 </styleSheet>`;
 }
 
+function invoiceStylesXml() {
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <numFmts count="3">
+    <numFmt numFmtId="164" formatCode="#,##0.00 €"/>
+    <numFmt numFmtId="165" formatCode="0.00%"/>
+    <numFmt numFmtId="166" formatCode="0"/>
+  </numFmts>
+  <fonts count="7">
+    <font><sz val="12"/><name val="Calibri"/></font>
+    <font><b/><sz val="36"/><color rgb="FFC0C0C0"/><name val="Calibri"/></font>
+    <font><sz val="12"/><color rgb="FF808080"/><name val="Calibri"/></font>
+    <font><b/><sz val="12"/><color rgb="FF990033"/><name val="Calibri"/></font>
+    <font><b/><sz val="12"/><name val="Calibri"/></font>
+    <font><sz val="9"/><name val="Verdana"/></font>
+    <font><b/><sz val="16"/><color rgb="FF990033"/><name val="Calibri"/></font>
+  </fonts>
+  <fills count="4">
+    <fill><patternFill patternType="none"/></fill>
+    <fill><patternFill patternType="gray125"/></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FFA6A6A6"/><bgColor indexed="64"/></patternFill></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FFC0C0C0"/><bgColor indexed="64"/></patternFill></fill>
+  </fills>
+  <borders count="2">
+    <border><left/><right/><top/><bottom/><diagonal/></border>
+    <border><left style="thin"><color rgb="FF000000"/></left><right style="thin"><color rgb="FF000000"/></right><top style="thin"><color rgb="FF000000"/></top><bottom style="thin"><color rgb="FF000000"/></bottom><diagonal/></border>
+  </borders>
+  <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
+  <cellXfs count="19">
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
+    <xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"><alignment horizontal="left" vertical="center"/></xf>
+    <xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1"><alignment horizontal="left" vertical="center"/></xf>
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"><alignment horizontal="left" vertical="center"/></xf>
+    <xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1"><alignment horizontal="right" vertical="center"/></xf>
+    <xf numFmtId="0" fontId="3" fillId="2" borderId="1" xfId="0" applyFill="1" applyBorder="1" applyFont="1"><alignment horizontal="center" vertical="center"/></xf>
+    <xf numFmtId="0" fontId="3" fillId="2" borderId="1" xfId="0" applyFill="1" applyBorder="1" applyFont="1"><alignment horizontal="left" vertical="center"/></xf>
+    <xf numFmtId="166" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyNumberFormat="1"><alignment horizontal="center" vertical="center"/></xf>
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1"><alignment horizontal="left" vertical="center"/></xf>
+    <xf numFmtId="164" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyNumberFormat="1"><alignment horizontal="right" vertical="center"/></xf>
+    <xf numFmtId="165" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyNumberFormat="1"><alignment horizontal="right" vertical="center"/></xf>
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1"/>
+    <xf numFmtId="0" fontId="4" fillId="0" borderId="1" xfId="0" applyBorder="1" applyFont="1"><alignment horizontal="left" vertical="center"/></xf>
+    <xf numFmtId="0" fontId="5" fillId="0" borderId="1" xfId="0" applyBorder="1" applyFont="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1"><alignment horizontal="left" vertical="center"/></xf>
+    <xf numFmtId="0" fontId="6" fillId="3" borderId="1" xfId="0" applyFill="1" applyBorder="1" applyFont="1"><alignment horizontal="left" vertical="center"/></xf>
+    <xf numFmtId="164" fontId="6" fillId="3" borderId="1" xfId="0" applyFill="1" applyBorder="1" applyFont="1" applyNumberFormat="1"><alignment horizontal="right" vertical="center"/></xf>
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1"><alignment horizontal="center" vertical="center"/></xf>
+    <xf numFmtId="0" fontId="2" fillId="0" borderId="1" xfId="0" applyBorder="1" applyFont="1"><alignment horizontal="left" vertical="center"/></xf>
+  </cellXfs>
+  <cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
+</styleSheet>`;
+}
+
 function escapeXmlAttribute(value: string) {
   return escapeXml(value).replaceAll("\n", " ");
 }
 
 function styleIdForCell(rowIndex: number, columnIndex: number, sheet: DynamicSheet) {
-  const isInvoiceSheet = sheet.name !== "Resumen por empresa" && sheet.name !== "Detalle pedidos";
-
-  if (isInvoiceSheet && sheet.headerRows?.includes(rowIndex)) {
-    return 7;
-  }
-
-  if (isInvoiceSheet && rowIndex === 34) {
-    return sheet.moneyColumns?.includes(columnIndex) ? 8 : 9;
-  }
-
   if (sheet.headerRows?.includes(rowIndex)) {
     return 2;
   }
@@ -802,6 +853,68 @@ function styleIdForCell(rowIndex: number, columnIndex: number, sheet: DynamicShe
   return sheet.moneyColumns?.includes(columnIndex) ? 4 : 3;
 }
 
+function invoiceStyleIdForCell(rowIndex: number, columnIndex: number) {
+  if (rowIndex === 2) {
+    if (columnIndex === 1) return 1;
+    if (columnIndex >= 4) return 4;
+  }
+
+  if (rowIndex === 3 && columnIndex >= 4) return 4;
+
+  if (rowIndex === 4) {
+    if (columnIndex === 1) return 2;
+    if (columnIndex >= 2 && columnIndex <= 3) return 3;
+    if (columnIndex >= 4) return 4;
+  }
+
+  if (rowIndex === 5) {
+    if (columnIndex === 1 || columnIndex === 7) return 2;
+    if (columnIndex >= 2 && columnIndex <= 3) return 3;
+    if (columnIndex === 8) return 4;
+  }
+
+  if (rowIndex >= 7 && rowIndex <= 10) {
+    if (columnIndex === 1 || (rowIndex === 7 && columnIndex === 5)) return 18;
+    if (columnIndex >= 2 && columnIndex <= 4) return 8;
+    return 11;
+  }
+
+  if (rowIndex === 12) {
+    return columnIndex >= 2 && columnIndex <= 3 ? 6 : 5;
+  }
+
+  if (rowIndex >= 13 && rowIndex <= 26) {
+    if (columnIndex >= 2 && columnIndex <= 3) return 8;
+    if (columnIndex === 5 || columnIndex === 6 || columnIndex === 8) return 9;
+    if (columnIndex === 7) return 10;
+    return 7;
+  }
+
+  if (rowIndex === 27) {
+    if (columnIndex <= 2) return 12;
+    if (columnIndex === 8) return 9;
+    return 14;
+  }
+
+  if (rowIndex >= 28 && rowIndex <= 32) {
+    if (columnIndex <= 2) return 13;
+    if (rowIndex === 30 && columnIndex === 6) return 10;
+    if ((rowIndex === 31 && (columnIndex === 4 || columnIndex === 5 || columnIndex === 6 || columnIndex === 8))
+      || columnIndex === 8) return 9;
+    return 14;
+  }
+
+  if (rowIndex === 33 && columnIndex <= 2) return 13;
+
+  if (rowIndex === 34) {
+    if (columnIndex <= 2) return 13;
+    if (columnIndex >= 3 && columnIndex <= 6) return 15;
+    if (columnIndex >= 7) return 16;
+  }
+
+  return 0;
+}
+
 function styledWorksheetXml(sheet: DynamicSheet) {
   const widths = sheet.widths?.length
     ? `<cols>${sheet.widths.map((width, index) => `<col min="${index + 1}" max="${index + 1}" width="${width}" customWidth="1"/>`).join("")}</cols>`
@@ -813,8 +926,15 @@ function styledWorksheetXml(sheet: DynamicSheet) {
     .map((row, rowIndex) => {
       const cells = row
         .map((value, columnIndex) => {
+          if (sheet.invoiceTemplate && (rowIndex < 2 || rowIndex > 34 || columnIndex < 1 || columnIndex > 8)) {
+            return "";
+          }
+
           const cellRef = `${columnName(columnIndex)}${rowIndex + 1}`;
-          const style = ` s="${styleIdForCell(rowIndex, columnIndex, sheet)}"`;
+          const styleId = sheet.invoiceTemplate
+            ? invoiceStyleIdForCell(rowIndex, columnIndex)
+            : styleIdForCell(rowIndex, columnIndex, sheet);
+          const style = ` s="${styleId}"`;
 
           if (typeof value === "number" && Number.isFinite(value)) {
             return `<c r="${cellRef}"${style}><v>${value}</v></c>`;
@@ -823,20 +943,45 @@ function styledWorksheetXml(sheet: DynamicSheet) {
           return `<c r="${cellRef}"${style} t="inlineStr"><is><t>${escapeXml(String(value ?? ""))}</t></is></c>`;
         })
         .join("");
+      const height = sheet.rowHeights?.[rowIndex];
+      const rowHeight = height ? ` ht="${height}" customHeight="1"` : "";
 
-      return `<row r="${rowIndex + 1}">${cells}</row>`;
+      return `<row r="${rowIndex + 1}"${rowHeight}>${cells}</row>`;
     })
     .join("");
 
-  return buildStyledWorksheetXml({ columnsXml: widths, rowsXml: body, mergesXml: merges });
+  if (!sheet.invoiceTemplate) {
+    return buildStyledWorksheetXml({ columnsXml: widths, rowsXml: body, mergesXml: merges });
+  }
+
+  return buildStyledWorksheetXml({
+    sheetPropertiesXml: '<sheetPr><pageSetUpPr fitToPage="1"/></sheetPr>',
+    dimensionXml: '<dimension ref="B3:I35"/>',
+    sheetViewsXml: '<sheetViews><sheetView showGridLines="0" workbookViewId="0"/></sheetViews>',
+    sheetFormatPropertiesXml: '<sheetFormatPr defaultRowHeight="15"/>',
+    columnsXml: widths,
+    rowsXml: body,
+    mergesXml: merges,
+    printOptionsXml: '<printOptions horizontalCentered="0" verticalCentered="0"/>',
+    pageMarginsXml: '<pageMargins left="0.71" right="0.71" top="0.75" bottom="0.75" header="0.3" footer="0.3"/>',
+    pageSetupXml: '<pageSetup paperSize="9" orientation="portrait" fitToWidth="1" fitToHeight="1" horizontalDpi="600" verticalDpi="600"/>'
+  });
 }
 
 function dynamicWorkbookXml(sheets: DynamicSheet[]) {
+  const printAreas = sheets
+    .map((sheet, index) => sheet.printArea
+      ? `<definedName name="_xlnm.Print_Area" localSheetId="${index}">'${escapeXmlAttribute(sheet.name.replaceAll("'", "''"))}'!${sheet.printArea.replace(/([A-Z]+)(\d+)/g, (_, column, row) => `$${column}$${row}`)}</definedName>`
+      : "")
+    .filter(Boolean)
+    .join("");
+
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
   <sheets>
     ${sheets.map((sheet, index) => `<sheet name="${escapeXmlAttribute(sheet.name)}" sheetId="${index + 1}" r:id="rId${index + 1}"/>`).join("")}
   </sheets>
+  ${printAreas ? `<definedNames>${printAreas}</definedNames>` : ""}
 </workbook>`;
 }
 
@@ -860,12 +1005,14 @@ function dynamicContentTypesXml(sheets: DynamicSheet[]) {
 }
 
 function createDynamicWorkbook(sheets: DynamicSheet[]) {
+  const styles = sheets.some((sheet) => sheet.invoiceTemplate) ? invoiceStylesXml() : dynamicStylesXml();
+
   return createZip([
     { name: "[Content_Types].xml", content: dynamicContentTypesXml(sheets) },
     { name: "_rels/.rels", content: rootRelsXml() },
     { name: "xl/workbook.xml", content: dynamicWorkbookXml(sheets) },
     { name: "xl/_rels/workbook.xml.rels", content: dynamicWorkbookRelsXml(sheets) },
-    { name: "xl/styles.xml", content: dynamicStylesXml() },
+    { name: "xl/styles.xml", content: styles },
     ...sheets.map((sheet, index) => ({
       name: `xl/worksheets/sheet${index + 1}.xml`,
       content: styledWorksheetXml(sheet)
@@ -1092,88 +1239,101 @@ function fiscalCityLine(branch: NonNullable<ReportOrder["company_branches"]>) {
   return line ? `${line}.` : "";
 }
 
-function createTemplateInvoicesWorkbook(lines: ReportLine[], filters: ReportFilters, input: InvoiceInput) {
-  type InvoiceGroup = { amount: number; quantity: number; type: string };
-  const byBranch = new Map<string, { branch: NonNullable<ReportOrder["company_branches"]>; groups: Map<string, InvoiceGroup> }>();
+function createTemplateInvoicesWorkbook(
+  lines: ReportLine[],
+  filters: ReportFilters,
+  input: InvoiceInput,
+  availableBranches: InvoiceBranch[] = []
+) {
+  const recipients = buildInvoiceRecipientGroups(
+    lines
+      .filter((line) => line.lineCompanyInvoiceTotal > 0 && line.order.company_branches?.id)
+      .map((line) => ({
+        amount: line.lineCompanyInvoiceTotal,
+        branch: line.order.company_branches as NonNullable<ReportOrder["company_branches"]>,
+        companyName: line.order.companies?.name,
+        quantity: Number(line.item?.quantity ?? 1),
+        type: productReportType(line)
+      })),
+    availableBranches
+  );
 
-  for (const line of lines.filter((candidate) => candidate.lineCompanyInvoiceTotal > 0)) {
-    const branch = line.order.company_branches;
-
-    if (!branch?.id) {
-      continue;
-    }
-
-    const current = byBranch.get(branch.id) ?? { branch, groups: new Map<string, InvoiceGroup>() };
-    const type = productReportType(line);
-    const group = current.groups.get(type) ?? { amount: 0, quantity: 0, type };
-
-    group.amount = addMoney(group.amount, line.lineCompanyInvoiceTotal);
-    group.quantity += Number(line.item?.quantity ?? 1);
-    current.groups.set(type, group);
-    byBranch.set(branch.id, current);
-  }
-
-  const sheets: DynamicSheet[] = Array.from(byBranch.values())
+  const sheets: DynamicSheet[] = recipients
     .filter((entry) => Array.from(entry.groups.values()).some((group) => group.amount > 0))
     .sort((a, b) => a.branch.name.localeCompare(b.branch.name, "es"))
     .map((entry, index) => {
       const totalWithVat = roundMoney(Array.from(entry.groups.values()).reduce((sum, group) => addMoney(sum, group.amount), 0));
       const taxableBase = roundMoney(totalWithVat / (1 + INVOICE_VAT_RATE));
       const vat = roundMoney(totalWithVat - taxableBase);
-      const branch = entry.branch;
+      const branch = entry.branch as NonNullable<ReportOrder["company_branches"]>;
       const fiscalName = branch.fiscal_name?.trim() || branch.name;
-      let allocatedTaxableBase = 0;
       const invoiceGroups = Array.from(entry.groups.values())
         .filter((group) => group.amount > 0)
         .sort((a, b) => a.type.localeCompare(b.type, "es"));
       const detailRows = invoiceGroups
         .map((group, detailIndex) => {
           const unitPrice = group.quantity > 0 ? roundMoney(group.amount / group.quantity) : group.amount;
-          const lineTaxableBase = detailIndex === invoiceGroups.length - 1
-            ? roundMoney(taxableBase - allocatedTaxableBase)
-            : roundMoney(group.amount / (1 + INVOICE_VAT_RATE));
 
-          allocatedTaxableBase = addMoney(allocatedTaxableBase, lineTaxableBase);
-
-          return ["", detailIndex + 1, invoiceArticle(group.type, filters), "", group.quantity, unitPrice, lineTaxableBase, INVOICE_VAT_RATE, group.amount];
+          return ["", detailIndex + 1, invoiceArticle(group.type, filters), "", group.quantity, unitPrice, "", INVOICE_VAT_RATE, group.amount];
         });
-      const emptyDetailRows = Array.from({ length: Math.max(0, 14 - detailRows.length) }, () => ["", "", "", "", "", "", 0, "", 0]);
+      const emptyDetailRows = Array.from({ length: Math.max(0, 14 - detailRows.length) }, () => ["", "", "", "", "", "", "", "", ""]);
       const rows: unknown[][] = [
         ["", "", "", "", "", "", "", "", ""],
         ["", "", "", "", "", "", "", "", ""],
         ["", "FACTURA", "", "", "DILAFE HOSTELERIA, S.L.", "", "", "", ""],
         ["", "", "", "", "Ave. De la Industria 37", "", "", "", ""],
-        ["", "Numero:", input.invoiceNumber, "", "28108, Alcobendas, Madrid", "", "", "", ""],
-        ["", "Fecha:", invoiceDateLabel(input.invoiceDate), "", "", "", "", "NIF", ""],
+        ["", "Número:", input.invoiceNumber, "", "28108, Alcobendas, Madrid", "", "", "", ""],
+        ["", "Fecha:", invoiceDateLabel(input.invoiceDate), "", "", "", "", "NIF", "B87896429"],
         ["", "", "", "", "", "", "", "", ""],
         ["", "Cliente:", fiscalName, "", "", "Comentarios", "", "", ""],
         ["", "Domicilio:", branch.fiscal_address ?? "", "", "", "", "", "", ""],
-        ["", "Ciudad:", fiscalCityLine(branch), "", "", "", "", "", ""],
-        ["", "N.I.F.:", branch.tax_id ?? "", "", "", "", "", "", ""],
+        ["", "Ciudad:", [branch.fiscal_postal_code?.trim(), branch.fiscal_city?.trim()].filter(Boolean).join(", "), "", "", "", "", "", ""],
+        ["", "N.I.F.:", branch.tax_id ? `CIF: ${branch.tax_id}` : "", "", "", "", "", "", ""],
         ["", "", "", "", "", "", "", "", ""],
-        ["", "Codigo", "Articulo", "", "Unidades", "Precio Un.", "Subtotal", "% IVA", "Total con IVA"],
+        ["", "Código", "Artículo", "", "Unidades", "Precio Un.", "Subtotal", "% IVA", "Total con IVA"],
         ...detailRows,
         ...emptyDetailRows,
         ["", "Forma de pago", "", "Subtotal", "", "", "", "", totalWithVat],
-        ["", "Trasnferencia bancaria a la CCC ES30 0182 1832 01 0201674299.", "", "Descuento", "", "", "", "", 0],
+        ["", "Transferencia bancaria a la CCC ES30 0182 1832 01 0201674299.", "", "Descuento", "", "", "", "", 0],
         ["", "", "", "Base Imponible", "", "", "", "", taxableBase],
-        ["", "", "", "I.V.A.", "", "", `${Math.round(INVOICE_VAT_RATE * 100)},00%`, "", ""],
+        ["", "", "", "I.V.A.", "", "", INVOICE_VAT_RATE, "", ""],
         ["", "", "", "", 0, 0, vat, "", vat],
         ["", "", "", "Recargo Equivalencia", "", "", "", "", 0],
         ["", "", "", "", "", "", "", "", ""],
-        ["", "", "", "TOTAL FACTURA", "", "", "", totalWithVat, ""],
-        ["", "", "", "", "", "", "", "", ""],
-        ["", "", "", "", "", "", "", "", ""]
+        ["", "", "", "TOTAL FACTURA", "", "", "", totalWithVat, ""]
       ];
+      const detailMerges = Array.from({ length: 14 }, (_, detailIndex) => `C${detailIndex + 14}:D${detailIndex + 14}`);
 
       return {
-        name: sanitizeSheetName(branch.name, `Factura ${index + 1}`),
+        invoiceTemplate: true,
+        name: recipients.length === 1 ? "Factura" : sanitizeSheetName(branch.name, `Factura ${index + 1}`),
         rows,
-        moneyColumns: [5, 6, 7, 8],
-        percentColumns: [7],
-        headerRows: [12],
-        totalRows: [27, 28, 29, 31, 34],
-        widths: [10.5, 10.5, 28, 10.5, 12, 12, 12, 12, 14]
+        widths: [10.5, 10.5, 10.5, 23, 10.5, 10.5, 10.5, 10.5, 12.3, 10.5],
+        merges: [
+          "B3:D4",
+          "E3:I3",
+          "E4:I4",
+          "C5:D5",
+          "E5:I5",
+          "C6:D6",
+          "C8:E8",
+          "C9:D9",
+          "F9:I11",
+          "C10:D10",
+          "C11:D11",
+          "C13:D13",
+          ...detailMerges,
+          "B28:C28",
+          "B29:C35",
+          "D35:G35",
+          "H35:I35"
+        ],
+        printArea: "B3:I35",
+        rowHeights: [
+          24.8, 17.5, 17.5, 17.5, 17.5, 17.5, 21, 17.5, 17.5, 17.5, 17.5, 12.8,
+          ...Array.from({ length: 22 }, () => 15.5),
+          21
+        ]
       };
     });
 
@@ -1384,8 +1544,17 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Fecha y numero de factura son obligatorios." }, { status: 400 });
     }
 
-    const filename = `facturas-${filters.dateFrom}_${filters.dateTo}.xlsx`;
-    const workbook = createTemplateInvoicesWorkbook(lines, filters, { invoiceDate, invoiceNumber });
+    const invoiceLines = lines.filter((line) => line.lineCompanyInvoiceTotal > 0 && line.order.company_branches);
+    const containsOnlyBureauVeritas = invoiceLines.length > 0 && invoiceLines.every((line) => isBureauVeritasInvoiceCandidate({
+      branch: line.order.company_branches as NonNullable<ReportOrder["company_branches"]>,
+      companyName: line.order.companies?.name
+    }));
+    const filename = containsOnlyBureauVeritas
+      ? `factura-bureau-veritas-inversiones-${filters.dateFrom}_${filters.dateTo}.xlsx`
+      : `facturas-${filters.dateFrom}_${filters.dateTo}.xlsx`;
+    const options = await getReportOptions(supabase, filters.companyId);
+    const availableBranches = "error" in options ? [] : options.branches;
+    const workbook = createTemplateInvoicesWorkbook(lines, filters, { invoiceDate, invoiceNumber }, availableBranches);
 
     return new NextResponse(workbook, {
       headers: {
