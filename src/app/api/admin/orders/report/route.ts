@@ -6,6 +6,7 @@ import { orderCompanyInvoiceTotal, orderEmployeeTotal } from "@/lib/order-ticket
 import { isBillableOrder } from "@/lib/order-validity";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import type { AdminOrder, CompanyBranch, OrderStatus, Company } from "@/lib/types";
+import { buildStyledWorksheetXml } from "@/lib/xlsx-worksheet";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -827,13 +828,7 @@ function styledWorksheetXml(sheet: DynamicSheet) {
     })
     .join("");
 
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-  ${widths}
-  <sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>
-  <sheetData>${body}</sheetData>
-  ${merges}
-</worksheet>`;
+  return buildStyledWorksheetXml({ columnsXml: widths, rowsXml: body, mergesXml: merges });
 }
 
 function dynamicWorkbookXml(sheets: DynamicSheet[]) {
