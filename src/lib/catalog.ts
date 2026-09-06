@@ -313,8 +313,8 @@ export function buildPublicCatalogSections(categories: Category[], products: Pro
           cloneCatalogProduct(pick(allProducts, (product) => product.product_type === "daily_menu"), {
             name: "Menú del día",
             description: "Primer plato, segundo plato, guarnición, bebida o postre y pan opcional.",
-            base_price: 13,
-            customer_price: 9,
+            base_price: 13.5,
+            customer_price: 9.5,
             product_type: "daily_menu"
           }),
           cloneCatalogProduct(pick(allProducts, (product) => product.product_type === "half_menu"), {

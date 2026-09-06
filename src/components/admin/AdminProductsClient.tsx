@@ -3,6 +3,7 @@
 import { AlertCircle, ImageIcon, Loader2, Save, Upload } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AdminGate } from "./AdminGate";
+import { employeeProductPrice, type PriceSubsidyRule } from "@/lib/product-prices";
 import { formatCurrency } from "@/lib/format";
 import type { Category, Product, ProductDraft } from "@/lib/types";
 
@@ -17,6 +18,7 @@ export function AdminProductsClient() {
 function ProductsEditor({ pin, clearPin }: { pin: string; clearPin: () => void }) {
   const [categories, setCategories] = useState<Category[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
+  const [subsidyRules, setSubsidyRules] = useState<PriceSubsidyRule[]>([]);
   const [drafts, setDrafts] = useState<Record<string, ProductDraft>>({});
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState("");
@@ -44,6 +46,7 @@ function ProductsEditor({ pin, clearPin }: { pin: string; clearPin: () => void }
     const nextProducts = (payload.products ?? []) as Product[];
     setCategories((payload.categories ?? []) as Category[]);
     setProducts(nextProducts);
+    setSubsidyRules(payload.subsidyRules ?? []);
     setDrafts(
       Object.fromEntries(
         nextProducts.map((product) => [
@@ -53,7 +56,7 @@ function ProductsEditor({ pin, clearPin }: { pin: string; clearPin: () => void }
             active: product.active,
             sold_out: product.sold_out,
             base_price: Number(product.base_price),
-            customer_price: Number(product.customer_price),
+            customer_price: employeeProductPrice(Number(product.base_price), product.product_type, payload.subsidyRules ?? []),
             description: product.description,
             image_url: product.image_url
           }
@@ -84,7 +87,10 @@ function ProductsEditor({ pin, clearPin }: { pin: string; clearPin: () => void }
       ...current,
       [productId]: {
         ...current[productId],
-        [field]: value
+        [field]: value,
+        ...(field === "base_price" ? {
+          customer_price: employeeProductPrice(Number(value), products.find((product) => product.id === productId)?.product_type ?? "standard", subsidyRules)
+        } : {})
       }
     }));
   }
@@ -279,25 +285,26 @@ function ProductEditorCard({
 
       <div className="mt-4 grid gap-3 md:grid-cols-[160px_160px_1fr_auto] md:items-end">
         <label className="space-y-1">
-          <span className="text-sm font-bold text-matica-ink/70">Precio base</span>
+          <span className="text-sm font-bold text-matica-ink/70">Precio del producto</span>
           <input
             className="matica-focus w-full rounded-lg border border-matica-line px-3 py-3"
             type="number"
-            min="0"
+            min="0.01"
             step="0.01"
             value={draft.base_price}
             onChange={(event) => onChange("base_price", Number(event.target.value))}
           />
         </label>
         <label className="space-y-1">
-          <span className="text-sm font-bold text-matica-ink/70">Precio cliente</span>
+          <span className="text-sm font-bold text-matica-ink/70">Precio cliente calculado</span>
           <input
             className="matica-focus w-full rounded-lg border border-matica-line px-3 py-3"
             type="number"
-            min="0"
+            min="0.01"
             step="0.01"
             value={draft.customer_price}
-            onChange={(event) => onChange("customer_price", Number(event.target.value))}
+            readOnly
+            aria-label="Precio cliente calculado con la subvención de Bureau Veritas"
           />
         </label>
         <label className="space-y-1">
@@ -317,6 +324,7 @@ function ProductEditorCard({
           Guardar
         </button>
       </div>
+      <p className="mt-2 text-xs text-matica-ink/65">El precio cliente se calcula automáticamente descontando la subvención de Bureau Veritas cuando corresponde.</p>
       <div className="mt-3">
         <span className="text-sm font-bold text-matica-ink/70">Imagen</span>
       </div>
