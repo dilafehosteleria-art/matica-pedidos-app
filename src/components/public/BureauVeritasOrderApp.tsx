@@ -26,6 +26,8 @@ import {
   normalizeCatalogText as normalize,
   type PublicSection
 } from "@/lib/catalog";
+import { applyCartPriceUpdate } from "@/lib/cart-price-update";
+import { employeeProductPrice } from "@/lib/product-prices";
 import { DELIVERY_WINDOW } from "@/lib/constants";
 import { CUTLERY_METADATA_KEY, CUTLERY_PRICE, CUTLERY_SELECTED_LABEL } from "@/lib/cutlery";
 import { validateCompanyOrderEmail } from "@/lib/email-rules";
@@ -228,22 +230,22 @@ const GRILL_SIDE_OPTIONS: Option[] = [
 ];
 
 const DRINK_OPTIONS: Option[] = [
-  { label: "Coca Cola", unitPrice: 2 },
-  { label: "Coca Cola Zero", unitPrice: 2 },
-  { label: "Lipton", unitPrice: 2 },
-  { label: "Fanta Naranja", unitPrice: 2 },
-  { label: "Agua mineral", unitPrice: 1.5 },
-  { label: "Agua con gas", unitPrice: 1.5 }
+  { label: "Coca Cola" },
+  { label: "Coca Cola Zero" },
+  { label: "Lipton" },
+  { label: "Fanta Naranja" },
+  { label: "Agua mineral" },
+  { label: "Agua con gas" }
 ];
 
 const DESSERT_OPTIONS: Option[] = [
-  { label: "Flan", unitPrice: 1 },
-  { label: "Yogur de frutas", unitPrice: 1 },
-  { label: "Natillas", unitPrice: 1 },
-  { label: "Plátano", unitPrice: 1 },
-  { label: "Manzana", unitPrice: 1 },
-  { label: "Flan de queso", unitPrice: 1.2 },
-  { label: "Cookie", unitPrice: 2 }
+  { label: "Flan" },
+  { label: "Yogur de frutas" },
+  { label: "Natillas" },
+  { label: "Plátano" },
+  { label: "Manzana" },
+  { label: "Flan de queso" },
+  { label: "Cookie" }
 ];
 
 type MenuDishOption = Option;
@@ -463,11 +465,19 @@ function getSaladGroups({
   ];
 }
 
+function catalogOptions(options: Option[], type: "drink" | "dessert", products: Product[]): Option[] {
+  return options.flatMap((option) => {
+    const selected = products.find((item) => item.product_type === type && normalize(item.name) === normalize(option.label) && item.active && !item.sold_out);
+    return selected ? [{ ...option, unitPrice: Number(selected.base_price) }] : [];
+  });
+}
+
 function getConfigSpec(
   product: Product,
   section: PublicSection,
   menu: DailyMenu | null,
-  company?: PublicData["company"] | null
+  company?: PublicData["company"] | null,
+  products: Product[] = []
 ): ConfigSpec {
   if (product.product_type === "daily_menu") {
     const saladFirstCourses = menuFirstCourseOptions(menu)
@@ -614,7 +624,7 @@ function getConfigSpec(
       title: "Escoge tu bebida",
       lead: "Selecciona una bebida.",
       included: [],
-      groups: [{ key: "drink", label: "Bebidas", type: "single", options: DRINK_OPTIONS }]
+      groups: [{ key: "drink", label: "Bebidas", type: "single", options: catalogOptions(DRINK_OPTIONS, "drink", products) }]
     };
   }
 
@@ -623,7 +633,7 @@ function getConfigSpec(
       title: "Escoge tu postre",
       lead: "Selecciona un postre.",
       included: [],
-      groups: [{ key: "dessert", label: "Postres", type: "single", options: DESSERT_OPTIONS }]
+      groups: [{ key: "dessert", label: "Postres", type: "single", options: catalogOptions(DESSERT_OPTIONS, "dessert", products) }]
     };
   }
 
@@ -856,6 +866,18 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
     const payload = await response.json();
 
     if (!response.ok) {
+      if (payload.code === "PRICE_CHANGED") {
+        const updatedCart = applyCartPriceUpdate(cart, payload.prices);
+        if (updatedCart) {
+          setCart(updatedCart);
+          void fetch(`/api/public/companies/${companySlug}`, { cache: "no-store" })
+            .then((result) => result.ok ? result.json() : null)
+            .then((freshData: PublicData | null) => { if (freshData) setData(freshData); })
+            .catch(() => { /* The server price update already keeps this cart usable. */ });
+          setSubmitState({ status: "error", message: "El precio ha cambiado. Hemos actualizado tu carrito conservando tus selecciones. Revisa el nuevo total y vuelve a confirmar el pedido." });
+          return;
+        }
+      }
       setSubmitState({ status: "error", message: payload.error ?? "No se pudo confirmar el pedido." });
       return;
     }
@@ -1046,6 +1068,7 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
         <ConfigModal
           key={`${configuring.product.id}:${getDisplayName(configuring.product, configuring.section.kind)}`}
           product={configuring.product}
+          products={data?.products ?? []}
           section={configuring.section}
           onClose={() => setConfiguring(null)}
           menu={data?.dailyMenu ?? null}
@@ -1108,7 +1131,7 @@ function ProductCard({
 }) {
   const canAdd = !product.sold_out && hasMenuChoices(product, menu);
   const subsidy = getSubsidyAmount(product.product_type, company);
-  const employeePrice = subsidy > 0 ? Number(product.customer_price) : Number(product.base_price);
+  const employeePrice = employeeProductPrice(Number(product.base_price), product.product_type, company.billing_type === "subsidized" ? company.subsidy_rules : []);
   const displayName = getDisplayName(product, section.kind);
   const imageUrl = getProductImageUrl(product);
   const [imageFailed, setImageFailed] = useState(false);
@@ -1200,6 +1223,7 @@ function ProductCard({
 
 function ConfigModal({
   product,
+  products,
   section,
   menu,
   company,
@@ -1208,6 +1232,7 @@ function ConfigModal({
   onAdd
 }: {
   product: Product;
+  products: Product[];
   section: PublicSection;
   menu: DailyMenu | null;
   company?: PublicData["company"];
@@ -1215,7 +1240,7 @@ function ConfigModal({
   onClose: () => void;
   onAdd: (metadata: Record<string, string>, unitPrice: number) => void;
 }) {
-  const spec = getConfigSpec(product, section, menu, company);
+  const spec = getConfigSpec(product, section, menu, company, products);
   const [stepIndex, setStepIndex] = useState(0);
   const [singleValues, setSingleValues] = useState<Record<string, string>>({});
   const [multiValues, setMultiValues] = useState<Record<string, string[]>>({});

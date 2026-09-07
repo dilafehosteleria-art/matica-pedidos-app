@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { DELIVERY_WINDOW } from "@/lib/constants";
-import { cutlerySupplement } from "@/lib/cutlery";
+import { expectedProductUnitPrice } from "@/lib/configured-price";
 import { validateCompanyOrderEmail } from "@/lib/email-rules";
 import { toDateInputValue } from "@/lib/format";
 import { getGlobalSchedule } from "@/lib/global-settings";
@@ -15,13 +15,6 @@ import {
 } from "@/lib/payment";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import type { AdminOrder, OrderStatus, PaymentMethod, ProductType } from "@/lib/types";
-import {
-  expectedSaladUnitPrice,
-  isCustomSaladChoice,
-  MEDIUM_SALAD_SIZE_LABEL,
-  SMALL_SALAD_SIZE_LABEL
-} from "@/lib/salad-config";
-import { expectedCustomWrapUnitPrice } from "@/lib/wrap-config";
 
 export const dynamic = "force-dynamic";
 
@@ -72,53 +65,6 @@ type SupabaseCompany = {
   billing_type?: "employee" | "subsidized" | "company" | null;
 };
 
-const FIXED_CONFIGURED_PRICES: Record<string, number> = {
-  "Menú del día": 13,
-  "Medio menú": 10,
-  "Menú ensalada pequeña + bocadillo": 10,
-  "Caesar Crunch Chicken Bowl": 9.9,
-  "Mediterranean Fresh Bowl": 9.9,
-  "Tex-Mex Protein Bowl": 9.9,
-  "Green Fresh Bowl": 9.9,
-  "Diseña tu ensalada": 7.5,
-  "Wrap Caesar Crunch": 8.9,
-  "Wrap Tex-Mex Pork": 8.9,
-  "Wrap Fresh Chicken": 8.9,
-  "Wrap Mediterranean Tuna": 8.9,
-  "Diseña tu wrap": 7.5,
-  "Platos combinados Matica": 10,
-  "Escoge tu bocadillo": 6,
-  Cubiertos: 0.2
-};
-
-const DRINK_CONFIGURED_PRICES: Record<string, number> = {
-  "Coca Cola": 2,
-  "Coca Cola Zero": 2,
-  Lipton: 2,
-  "Fanta Naranja": 2,
-  "Agua mineral": 1.5,
-  "Agua con gas": 1.5
-};
-
-const DESSERT_CONFIGURED_PRICES: Record<string, number> = {
-  Flan: 1,
-  "Yogur de frutas": 1,
-  Natillas: 1,
-  Plátano: 1,
-  Manzana: 1,
-  "Flan de queso": 1.2,
-  Cookie: 2
-};
-
-const GRILL_BASE_PRICE = 10;
-
-const GRILL_PROTEIN_SUPPLEMENTS: Record<string, number> = {
-  "Filete de ternera a la parrilla": 1.5,
-  "Lomo de cerdo a la parrilla": 0,
-  "Pechuga de pollo marinada a la parrilla": 0,
-  "Salmón a la plancha": 2
-};
-
 function badRequest(message: string, status = 400) {
   return NextResponse.json({ error: message }, { status });
 }
@@ -148,77 +94,6 @@ function isMissingPaymentColumnError(message?: string) {
         message.includes("'company_invoice_total' column")
       )
   );
-}
-
-function expectedConfiguredUnitPrice(metadata: Record<string, string>) {
-  const displayName = metadata.display_name?.trim();
-  const withCutlery = (price: number | null) => price === null ? null : Number((price + cutlerySupplement(metadata)).toFixed(2));
-
-  if (
-    displayName === "Menú del día" &&
-    metadata.first_course?.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().includes("ensalada")
-  ) {
-    return withCutlery(expectedSaladUnitPrice(13, metadata, SMALL_SALAD_SIZE_LABEL));
-  }
-
-  if (displayName === "Medio menú" && isCustomSaladChoice(metadata.plate ?? "")) {
-    return withCutlery(expectedSaladUnitPrice(10, metadata, MEDIUM_SALAD_SIZE_LABEL));
-  }
-
-  if (displayName === "Escoge tu bebida") {
-    return DRINK_CONFIGURED_PRICES[metadata.drink?.trim() ?? ""] ?? null;
-  }
-
-  if (displayName === "Escoge tu postre") {
-    return DESSERT_CONFIGURED_PRICES[metadata.dessert?.trim() ?? ""] ?? null;
-  }
-
-  if (displayName === "Diseña tu ensalada") {
-    return withCutlery(expectedSaladUnitPrice(7.5, metadata));
-  }
-
-  if (displayName === "Diseña tu wrap") {
-    return withCutlery(expectedCustomWrapUnitPrice(7.5, metadata));
-  }
-
-  if (displayName === "Menú ensalada pequeña + bocadillo") {
-    return withCutlery(expectedSaladUnitPrice(10, metadata, SMALL_SALAD_SIZE_LABEL));
-  }
-
-  if (displayName === "Platos combinados Matica") {
-    const proteinSupplement = GRILL_PROTEIN_SUPPLEMENTS[metadata.main_protein?.trim() ?? ""];
-
-    return typeof proteinSupplement === "number" ? withCutlery(Number((GRILL_BASE_PRICE + proteinSupplement).toFixed(2))) : null;
-  }
-
-  const fixedPrice = FIXED_CONFIGURED_PRICES[displayName ?? ""];
-
-  return typeof fixedPrice === "number" ? withCutlery(fixedPrice) : null;
-}
-
-function safeConfiguredUnitPrice(metadata: Record<string, string>) {
-  const incomingUnitPrice = Number(metadata._configured_unit_price);
-  const expectedUnitPrice = expectedConfiguredUnitPrice(metadata);
-  const displayName = metadata.display_name?.trim();
-  const requiresValidatedConfiguration =
-    displayName === "Diseña tu wrap" ||
-    displayName === "Diseña tu ensalada" ||
-    displayName === "Menú ensalada pequeña + bocadillo" ||
-    (
-      displayName === "Menú del día" &&
-      (metadata.first_course ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().includes("ensalada")
-    ) ||
-    (displayName === "Medio menú" && isCustomSaladChoice(metadata.plate ?? ""));
-
-  if (!Number.isFinite(incomingUnitPrice) || incomingUnitPrice <= 0) {
-    return { value: null, valid: !requiresValidatedConfiguration };
-  }
-
-  if (expectedUnitPrice === null || Math.abs(incomingUnitPrice - expectedUnitPrice) > 0.01) {
-    return { value: null, valid: false };
-  }
-
-  return { value: expectedUnitPrice, valid: true };
 }
 
 export async function POST(request: NextRequest) {
@@ -301,15 +176,10 @@ export async function POST(request: NextRequest) {
     .filter((item) => item.product_id)
     .map((item) => {
       const metadata = item.metadata ?? {};
-      const configuredUnitPrice = safeConfiguredUnitPrice(metadata);
-
       return {
         product_id: item.product_id as string,
         quantity: Math.min(Math.max(1, Number(item.quantity ?? 1)), 20),
-        metadata,
-        configured_unit_price: configuredUnitPrice.value,
-        price_valid: configuredUnitPrice.valid,
-        supplement_total: Math.min(Math.max(0, Number(item.metadata?._supplement_total ?? 0)), 20)
+        metadata
       };
     });
 
@@ -317,15 +187,10 @@ export async function POST(request: NextRequest) {
     return badRequest("El carrito está vacío.");
   }
 
-  if (normalizedItems.some((item) => !item.price_valid)) {
-    return badRequest("Algún precio del carrito no es válido. Vuelve a añadir el producto.");
-  }
-
   const productIds = Array.from(new Set(normalizedItems.map((item) => item.product_id)));
   const { data: products, error: productsError } = await supabase
     .from("products")
     .select("id,name,base_price,product_type")
-    .in("id", productIds)
     .eq("active", true)
     .eq("sold_out", false);
 
@@ -335,8 +200,33 @@ export async function POST(request: NextRequest) {
 
   const productMap = new Map((products as SupabaseProduct[] | null)?.map((product) => [product.id, product]) ?? []);
 
-  if (productMap.size !== productIds.length) {
+  if (productIds.some((id) => !productMap.has(id))) {
     return badRequest("Algún producto del carrito ya no está disponible.");
+  }
+
+  // Validate only after loading current prices, before any customer/order writes.
+  const pricedItems = normalizedItems.map((item) => {
+    const product = productMap.get(item.product_id)!;
+    const unitPrice = expectedProductUnitPrice(product, item.metadata, Array.from(productMap.values()));
+    const quoted = item.metadata._configured_unit_price;
+    const incoming = Number(quoted);
+    const quoteValid = quoted === undefined || (Number.isFinite(incoming) && incoming > 0);
+    return {
+      ...item,
+      configured_unit_price: unitPrice,
+      price_valid: unitPrice !== null && quoteValid && (quoted === undefined || Math.abs(incoming - unitPrice) < 1e-8),
+      price_recoverable: unitPrice !== null && quoteValid
+    };
+  });
+
+  if (pricedItems.some((item) => !item.price_valid)) {
+    return NextResponse.json({
+      error: "Algún precio del carrito no es válido. Vuelve a añadir el producto.",
+      ...(pricedItems.every((item) => item.price_recoverable) ? {
+        code: "PRICE_CHANGED",
+        prices: pricedItems.map((item) => ({ product_id: item.product_id, unit_price: item.configured_unit_price }))
+      } : {})
+    }, { status: 400 });
   }
 
   const { data: subsidyRules, error: subsidyRulesError } = await supabase
@@ -388,7 +278,7 @@ export async function POST(request: NextRequest) {
   let subsidyTotal = 0;
   let subsidyApplied = false;
 
-  const orderItems = normalizedItems.map((item) => {
+  const orderItems = pricedItems.map((item) => {
     const product = productMap.get(item.product_id);
 
     if (!product) {
@@ -396,7 +286,7 @@ export async function POST(request: NextRequest) {
     }
 
     const basePrice = Number(product.base_price);
-    const unitPrice = item.configured_unit_price ?? Number((basePrice + item.supplement_total).toFixed(2));
+    const unitPrice = item.configured_unit_price!;
     const lineSubtotal = Number((unitPrice * item.quantity).toFixed(2));
     const possibleSubsidy =
       billingType === "subsidized"

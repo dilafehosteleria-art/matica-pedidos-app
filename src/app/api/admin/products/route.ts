@@ -10,12 +10,21 @@ import {
 } from "@/lib/catalog";
 import { ensureCustomSaladProduct } from "@/lib/catalog-maintenance";
 import { CATEGORIES, PRODUCTS } from "@/lib/constants";
+import { employeeProductPrice, validCatalogPrice, type PriceSubsidyRule } from "@/lib/product-prices";
 import { getSupabaseAdminClient, getSupabaseServerClient } from "@/lib/supabase/server";
 import type { Category, Product, ProductDraft } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
 type SupabaseAdminClient = NonNullable<ReturnType<typeof getSupabaseAdminClient>>;
+
+async function bureauVeritasPriceRules(supabase: SupabaseAdminClient) {
+  const { data, error } = await supabase.from("companies")
+    .select("subsidy_rules(product_type,subsidy_amount,active)")
+    .eq("slug", "bureau-veritas").eq("active", true).maybeSingle();
+  if (error || !data) throw new Error("No se pudo consultar la subvención de Bureau Veritas.");
+  return (data.subsidy_rules ?? []) as PriceSubsidyRule[];
+}
 
 async function ensureDefaultProductIdentities(supabase: SupabaseAdminClient) {
   for (const product of PRODUCTS) {
@@ -154,7 +163,18 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  return NextResponse.json(buildAdminCatalogPayload(categories.data ?? [], products.data ?? []));
+  try {
+    const subsidyRules = await bureauVeritasPriceRules(supabase);
+    const catalog = buildAdminCatalogPayload(categories.data ?? [], products.data ?? []);
+    // Each drink/dessert has its own price; expose the real rows to the editor.
+    const individualProducts = (products.data ?? []).filter((product) => product.product_type === "drink" || product.product_type === "dessert");
+    return NextResponse.json({ ...catalog, subsidyRules, products: [
+      ...catalog.products.filter((product) => product.product_type !== "drink" && product.product_type !== "dessert"),
+      ...individualProducts
+    ] });
+  } catch (error) {
+    return NextResponse.json({ error: (error as Error).message }, { status: 503 });
+  }
 }
 
 export async function PATCH(request: NextRequest) {
@@ -176,13 +196,29 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ error: "Producto requerido." }, { status: 400 });
   }
 
+  if (!validCatalogPrice(body.base_price)) {
+    return NextResponse.json({ error: "El precio debe ser mayor que cero y tener como máximo dos decimales." }, { status: 400 });
+  }
+
+  const currentProduct = await supabase.from("products").select("id,product_type").eq("id", body.id).single();
+  if (currentProduct.error || !currentProduct.data) {
+    return NextResponse.json({ error: "Producto no encontrado." }, { status: 404 });
+  }
+
+  let subsidyRules: PriceSubsidyRule[];
+  try {
+    subsidyRules = await bureauVeritasPriceRules(supabase);
+  } catch (error) {
+    return NextResponse.json({ error: (error as Error).message }, { status: 503 });
+  }
+
   const { data, error } = await supabase
     .from("products")
     .update({
       active: body.active,
       sold_out: body.sold_out,
       base_price: Number(body.base_price),
-      customer_price: Number(body.customer_price),
+      customer_price: employeeProductPrice(body.base_price, currentProduct.data.product_type, subsidyRules),
       description: body.description,
       image_url: body.image_url?.trim() ? body.image_url.trim() : null
     })

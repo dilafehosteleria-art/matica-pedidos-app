@@ -10,8 +10,8 @@ const menu: CartItem = {
   product_id: "menu",
   name: "Menú del día",
   quantity: 1,
-  base_price: 13,
-  customer_price: 13,
+  base_price: 13.5,
+  customer_price: 13.5,
   product_type: "daily_menu"
 };
 
@@ -26,10 +26,10 @@ test("Bureau Veritas aplica su subvención configurada", () => {
   };
 
   assert.deepEqual(calculateCartTotals([menu], company), {
-    subtotal: 13,
+    subtotal: 13.5,
     subsidyTotal: 4,
-    total: 9,
-    employeeTotal: 9,
+    total: 9.5,
+    employeeTotal: 9.5,
     companyInvoiceTotal: 4,
     subsidyApplied: true,
     fullPriceBecauseSubsidyUsed: false
@@ -45,13 +45,13 @@ test("Bureau Veritas cobra cubiertos al empleado sin cambiar la subvencion", () 
     billing_type: "subsidized",
     subsidy_rules: [{ product_type: "daily_menu", subsidy_amount: 4, active: true }]
   };
-  const menuWithCutlery = { ...menu, base_price: 13.2, customer_price: 13.2, metadata: { cutlery: "Si (+0,20 €)" } };
+  const menuWithCutlery = { ...menu, base_price: 13.7, customer_price: 13.7, metadata: { cutlery: "Si (+0,20 €)" } };
 
   const totals = calculateCartTotals([menuWithCutlery], company);
 
-  assert.equal(totals.subtotal, 13.2);
+  assert.equal(totals.subtotal, 13.7);
   assert.equal(totals.subsidyTotal, 4);
-  assert.equal(totals.employeeTotal, 9.2);
+  assert.equal(totals.employeeTotal, 9.7);
   assert.equal(totals.companyInvoiceTotal, 4);
 });
 
@@ -94,7 +94,7 @@ test("ICF factura el pedido completo a empresa y deja a cero el empleado", () =>
 
   assert.equal(totals.subsidyTotal, 0);
   assert.equal(totals.employeeTotal, 0);
-  assert.equal(totals.companyInvoiceTotal, 13);
+  assert.equal(totals.companyInvoiceTotal, 13.5);
 });
 
 test("una empresa con ambas opciones cobra al empleado cuando elige Stripe", () => {
@@ -109,7 +109,7 @@ test("una empresa con ambas opciones cobra al empleado cuando elige Stripe", () 
 
   const totals = calculateCartTotals([menu], company, false, "stripe_card");
 
-  assert.equal(totals.employeeTotal, 13);
+  assert.equal(totals.employeeTotal, 13.5);
   assert.equal(totals.companyInvoiceTotal, 0);
 });
 
@@ -126,6 +126,6 @@ test("una empresa estándar no aplica subvención ni factura a empresa", () => {
   const totals = calculateCartTotals([menu], company);
 
   assert.equal(totals.subsidyTotal, 0);
-  assert.equal(totals.employeeTotal, 13);
+  assert.equal(totals.employeeTotal, 13.5);
   assert.equal(totals.companyInvoiceTotal, 0);
 });
