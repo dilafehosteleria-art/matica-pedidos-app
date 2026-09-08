@@ -291,7 +291,7 @@ const MENU_SIDE_OPTIONS: Option[] = [
   { label: "Arroz jazmín" },
   { label: "Ensalada" },
   { label: "Patatas fritas" },
-  { label: "Verduritas asadas" }
+  { label: "Verduras a la plancha" }
 ];
 
 const BREAD_CUTLERY_GROUP_KEY = "bread_cutlery";
