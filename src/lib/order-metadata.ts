@@ -1,3 +1,5 @@
+import { isCustomSaladChoice } from "./salad-config.ts";
+
 export type OrderMetadataEntry = {
   key: string;
   label: string;
@@ -79,9 +81,7 @@ function normalizeSelection(value: string) {
 }
 
 function isCustomSaladSelection(value?: string) {
-  const normalized = normalizeSelection(value ?? "");
-
-  return normalized.includes("ensalada a tu manera") || normalized.includes("disena tu ensalada");
+  return isCustomSaladChoice(value ?? "");
 }
 
 function splitSelectionValues(key: string, value: string) {

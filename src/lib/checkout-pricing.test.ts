@@ -212,6 +212,38 @@ test("producto no disponible se rechaza antes de cualquier escritura", async (t)
 });
 
 for (const product of [dailyMenu, halfMenu]) {
+  test(`${product.name}: el nombre con erratas no permite omitir ingredientes ni suplementos`, async (t) => {
+    const h = checkoutHarness(t, product);
+    const selection = { [product.product_type === "daily_menu" ? "first_course" : "plate"]: "ENSALDA A TUU MANERA" };
+    const incomplete = await h.submit(String(product.base_price), selection);
+    assert.equal(incomplete.status, 400);
+    assert.equal(h.writes.length, 0);
+    assert.equal(h.stripeRequests.length, 0);
+
+    const configured = {
+      ...selection,
+      salad_size: product.product_type === "daily_menu" ? "Tamaño Pequeño 750ML" : "Tamaño Mediano 1000ML",
+      salad_base: "Arroz blanco",
+      protein: "Salmón ahumado",
+      toppings: "Maíz",
+      dressing: "Mahonesa de soja"
+    };
+    assert.equal((await h.submit(String(product.base_price), configured)).status, 400);
+    assert.equal(h.writes.length, 0);
+    assert.equal(h.stripeRequests.length, 0);
+    const response = await h.submit((Number(product.base_price) + 2.5).toFixed(2), configured);
+    assert.equal(response.status, 200);
+    assert.equal((await response.json()).order.subtotal, Number(product.base_price) + 2.5);
+  });
+
+  test(`${product.name}: una ensalada de receta fija no exige el configurador`, async (t) => {
+    const h = checkoutHarness(t, product);
+    const response = await h.submit(String(product.base_price), {
+      [product.product_type === "daily_menu" ? "first_course" : "plate"]: "ENSALADA MIXTA ( ATUN Y HUEVO )"
+    });
+    assert.equal(response.status, 200);
+  });
+
   for (const premium of [false, true]) {
     test(`${product.name} con ensalada${premium ? " premium y cubiertos" : ""}: conserva configuración y usa precio actual`, async (t) => {
       const h = checkoutHarness(t, product);
