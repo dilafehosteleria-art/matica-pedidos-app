@@ -1,4 +1,5 @@
 import type { Category, Company, CompanyBranch, DailyMenu, Product } from "./types";
+import { CUSTOM_SALAD_CHOICE_LABEL } from "./salad-config.ts";
 
 export const BUREAU_VERITAS_COMPANY_ID = "7dca1236-f8ad-4d2f-9ec0-2ed0f51ce2a1";
 
@@ -522,7 +523,7 @@ export const DEFAULT_DAILY_MENU: DailyMenu = {
   id: "d8489fda-d5e3-41f0-9cd1-4d21119a0a69",
   date: "2026-05-20",
   first_courses: [
-    "Ensalada arroz con queso fresco",
+    CUSTOM_SALAD_CHOICE_LABEL,
     "Lasaña de espinacas con champiñones y pimientos asados",
     "Pasta con gambas y tomate cherry",
     "Salmorejo cordobés"

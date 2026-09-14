@@ -1,8 +1,13 @@
 # Ensalada configurable en los menús
 
-En administración, seleccionar **Ensalada a tu manera (configurable)** en uno
-de los cuatro primeros platos. Esta opción guarda el nombre canónico sin tener
-que escribirlo. Para sustituirla por una receta fija, seleccionar **Otro plato**.
+En administración, cada fecha nueva comienza con **ENSALADA A TU MANERA** como
+primer plato 1. Solo ese campo tiene selector: para sustituirla un día por otra
+receta, seleccionar **Otro plato** y escribir el nombre. Los primeros 2, 3 y 4 y
+los segundos conservan campos de texto sencillos. Al volver a abrir una fecha
+guardada se respeta la elección de ese día, incluida cualquier sustitución.
+
+El texto público es **ENSALADA A TU MANERA (diseña tu ensalada con tus ingredientes
+favoritos)**. La opción fija y los menús de ejemplo comparten ese mismo valor.
 
 La ensalada usa tamaño pequeño (750 ml) en Menú del día y mediano (1000 ml) en
 Medio menú. Ambos requieren bases, proteína, toppings y salsa. Las ensaladas de

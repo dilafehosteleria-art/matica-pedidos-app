@@ -35,6 +35,7 @@ import { formatCurrency } from "@/lib/format";
 import { activeConfigFlowGroups, displayConfigFlowStep, nextConfigFlowStepIndex } from "@/lib/config-flow";
 import { calculateCartTotals, getSubsidyAmount } from "@/lib/pricing";
 import {
+  CUSTOM_SALAD_CHOICE_LABEL,
   isCustomSaladChoice,
   normalizeMenuSaladChoice,
   MEDIUM_SALAD_SIZE_LABEL,
@@ -252,7 +253,7 @@ const DESSERT_OPTIONS: Option[] = [
 type MenuDishOption = Option;
 
 const FALLBACK_MENU_FIRST_COURSE_OPTIONS: MenuDishOption[] = [
-  { label: "Ensalada arroz con queso fresco" },
+  { label: CUSTOM_SALAD_CHOICE_LABEL },
   { label: "Lasaña de espinacas con champiñones y pimientos asados" },
   { label: "Pasta con gambas y tomate cherry" },
   { label: "Salmorejo cordobés" }

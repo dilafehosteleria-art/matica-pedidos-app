@@ -6,7 +6,7 @@ export type SaladOption = {
 export const MEDIUM_SALAD_SIZE_LABEL = "Tamaño Mediano 1000ML";
 export const LARGE_SALAD_SIZE_LABEL = "Tamaño Grande 1500ML";
 export const SMALL_SALAD_SIZE_LABEL = "Tamaño Pequeño 750ML";
-export const CUSTOM_SALAD_CHOICE_LABEL = "Ensalada a tu manera";
+export const CUSTOM_SALAD_CHOICE_LABEL = "ENSALADA A TU MANERA (diseña tu ensalada con tus ingredientes favoritos)";
 
 export const SALAD_SIZE_OPTIONS: SaladOption[] = [
   { label: MEDIUM_SALAD_SIZE_LABEL },

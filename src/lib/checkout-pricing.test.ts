@@ -250,7 +250,7 @@ for (const product of [dailyMenu, halfMenu]) {
       const isDaily = product.product_type === "daily_menu";
       const price = (Number(product.base_price) + (premium ? 2.5 + 0.2 : 0)).toFixed(2);
       const response = await h.submit(price, {
-        [isDaily ? "first_course" : "plate"]: "Ensalada a tu manera",
+        [isDaily ? "first_course" : "plate"]: "ENSALADA A TU MANERA (diseña tu ensalada con tus ingredientes favoritos)",
         salad_size: isDaily ? "Tamaño Pequeño 750ML" : "Tamaño Mediano 1000ML",
         salad_base: "Arroz blanco",
         protein: premium ? "Salmón ahumado" : "Pollo",
