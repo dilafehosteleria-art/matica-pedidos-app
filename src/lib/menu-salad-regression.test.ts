@@ -54,6 +54,22 @@ type Group = ConfigFlowGroup & { options: { label: string }[] };
 const section = { kind: "menus", title: "Menús" };
 const expectedSaladLabel = "ENSALADA A TU MANERA (diseña tu ensalada con tus ingredientes favoritos)";
 
+test("Nestea aparece en menú, medio menú, grill y bebidas aunque el catálogo conserve el nombre anterior", () => {
+  for (const productType of ["daily_menu", "half_menu"]) {
+    const spec = getConfigSpec({ product_type: productType, base_price: 10 }, section, menu);
+    const drinks = spec.groups.find((group: Group) => group.key === "drink_or_dessert").options;
+    assert.ok(drinks.some((option: { label: string }) => option.label === "Nestea de limón"));
+    assert.ok(drinks.every((option: { label: string }) => !option.label.includes("Lipton")));
+  }
+  const grill = getConfigSpec({ name: "Platos combinados Matica", product_type: "standard", base_price: 10 }, { ...section, kind: "grill" }, menu);
+  assert.ok(grill.groups.find((group: Group) => group.key === "drink_or_dessert").options.some((option: { label: string }) => option.label === "Nestea de limón"));
+  for (const name of ["Lipton", "Nestea de limón"]) {
+    const catalog = [{ id: "tea", name, product_type: "drink", base_price: 2, active: true, sold_out: false }];
+    const drinks = getConfigSpec({ name: "Escoge tu bebida", product_type: "drink", base_price: 1.5 }, { ...section, kind: "drinks" }, menu, undefined, catalog);
+    assert.deepEqual(drinks.groups[0].options, [{ label: "Nestea de limón", unitPrice: 2 }]);
+  }
+});
+
 for (const productType of ["daily_menu", "half_menu"] as const) {
   test(`${productType}: la configuración real abre los cuatro pasos con el menú del 14/09`, () => {
     const product = { product_type: productType, base_price: productType === "daily_menu" ? 13.5 : 10 } as Product;

@@ -14,6 +14,7 @@ import { getGlobalSchedule } from "@/lib/global-settings";
 import { publicStripePaymentsEnabled } from "@/lib/payment";
 import { DEFAULT_GLOBAL_SCHEDULE } from "@/lib/schedule";
 import { normalizeMenuSaladChoice } from "@/lib/salad-config";
+import { normalizeDrinkChoice } from "@/lib/drink-options";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import type { DailyMenu, DailyMenuCourse, Product, PublicCompany, PublicData } from "@/lib/types";
 
@@ -56,7 +57,7 @@ function normalizeMenu(menu: DailyMenu | null): DailyMenu | null {
     ...menu,
     first_courses: (menu.first_courses ?? []).map(normalizeMenuSaladChoice),
     second_courses: (menu.second_courses ?? []).map(normalizeCourse).filter((course): course is DailyMenuCourse => Boolean(course)),
-    drinks: menu.drinks ?? [],
+    drinks: (menu.drinks ?? []).map(normalizeDrinkChoice),
     desserts: menu.desserts ?? []
   };
 }

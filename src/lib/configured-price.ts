@@ -1,4 +1,5 @@
 import { cutlerySupplement } from "./cutlery.ts";
+import { normalizeDrinkChoice } from "./drink-options.ts";
 import { validatedMenuUnitPrice } from "./menu-checkout-price.ts";
 import { expectedSaladUnitPrice, SMALL_SALAD_SIZE_LABEL } from "./salad-config.ts";
 import { expectedCustomWrapUnitPrice } from "./wrap-config.ts";
@@ -25,9 +26,10 @@ export function expectedProductUnitPrice(product: PricedProduct, metadata: Recor
     return validatedMenuUnitPrice({ ...product, product_type: product.product_type }, configuration).value;
   }
   if (product.product_type === "drink" || product.product_type === "dessert") {
+    const normalizeChoice = (value: string) => normalize(product.product_type === "drink" ? normalizeDrinkChoice(value) : value);
     const choice = metadata[product.product_type === "drink" ? "drink" : "dessert"];
     const selected = choice
-      ? catalog.find((candidate) => candidate.product_type === product.product_type && normalize(candidate.name) === normalize(choice))
+      ? catalog.find((candidate) => candidate.product_type === product.product_type && normalizeChoice(candidate.name) === normalizeChoice(choice))
       : product;
     const price = Number(selected?.base_price);
     return Number.isFinite(price) && price > 0 ? price : null;

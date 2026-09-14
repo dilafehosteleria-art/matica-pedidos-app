@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { assertAdmin } from "@/lib/admin";
 import { toDateInputValue } from "@/lib/format";
 import { CUSTOM_SALAD_CHOICE_LABEL, normalizeMenuSaladChoice } from "@/lib/salad-config";
+import { normalizeDrinkChoice } from "@/lib/drink-options";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import type { DailyMenuCourse } from "@/lib/types";
 
@@ -45,7 +46,7 @@ export async function GET(request: NextRequest) {
 
   return NextResponse.json({
     menu:
-      data ?? {
+      data ? { ...data, drinks: (data.drinks ?? []).map(normalizeDrinkChoice) } : {
         id: null,
         date,
         first_courses: [CUSTOM_SALAD_CHOICE_LABEL, "", "", ""],
@@ -97,7 +98,7 @@ export async function PUT(request: NextRequest) {
         date: body.date,
         first_courses: firstCourses,
         second_courses: secondCourses,
-        drinks: sanitizeList(body.drinks),
+        drinks: sanitizeList(body.drinks).map(normalizeDrinkChoice),
         desserts: sanitizeList(body.desserts),
         active: body.active ?? true
       },

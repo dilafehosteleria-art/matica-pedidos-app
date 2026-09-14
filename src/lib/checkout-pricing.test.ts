@@ -346,6 +346,24 @@ for (const type of ["drink", "dessert"]) {
   });
 }
 
+for (const [catalogName, selection] of [
+  ["Lipton", "Nestea de limón"],
+  ["Nestea de limón", "Lipton"],
+  ["Nestea de limón", "Nestea de limón"]
+]) {
+  test(`cambio a Nestea: catálogo ${catalogName}, cesta ${selection}, mantiene precio`, async (t) => {
+    const parent = { id: "selector", name: "Agua mineral", product_type: "drink", base_price: 1.5 };
+    const tea = { id: "tea", name: catalogName, product_type: "drink", base_price: 2 };
+    const h = checkoutHarness(t, parent, "bureau-veritas", true, [parent, tea]);
+    assert.equal((await h.submit("1.50", { drink: selection })).status, 400);
+    assert.equal(h.writes.length, 0);
+    const response = await h.submit("2.00", { drink: selection });
+    assert.equal(response.status, 200);
+    assert.equal((await response.json()).order.total, 2);
+    assert.equal(h.stripeRequests[0].get("line_items[0][price_data][unit_amount]"), "200");
+  });
+}
+
 function adminPriceHarness(t: TestContext, productType = "daily_menu", subsidy = 4, subsidyError = false) {
   const writes: Row[] = [];
   const oldPin = process.env.ADMIN_PIN;
