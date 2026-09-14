@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { assertAdmin } from "@/lib/admin";
 import { toDateInputValue } from "@/lib/format";
+import { normalizeMenuSaladChoice } from "@/lib/salad-config";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import type { DailyMenuCourse } from "@/lib/types";
 
@@ -82,7 +83,7 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({ error: "Fecha requerida." }, { status: 400 });
   }
 
-  const firstCourses = sanitizeList(body.first_courses);
+  const firstCourses = sanitizeList(body.first_courses).map(normalizeMenuSaladChoice);
   const secondCourses = sanitizeSecondCourses(body.second_courses);
 
   if (firstCourses.length !== 4 || secondCourses.length !== 3) {

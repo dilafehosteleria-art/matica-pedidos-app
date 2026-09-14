@@ -6,6 +6,7 @@ export type SaladOption = {
 export const MEDIUM_SALAD_SIZE_LABEL = "Tamaño Mediano 1000ML";
 export const LARGE_SALAD_SIZE_LABEL = "Tamaño Grande 1500ML";
 export const SMALL_SALAD_SIZE_LABEL = "Tamaño Pequeño 750ML";
+export const CUSTOM_SALAD_CHOICE_LABEL = "Ensalada a tu manera";
 
 export const SALAD_SIZE_OPTIONS: SaladOption[] = [
   { label: MEDIUM_SALAD_SIZE_LABEL },
@@ -56,17 +57,22 @@ function normalize(value: string) {
   return value
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase();
+    .toLowerCase()
+    .replace(/([a-z])\1+/g, "$1")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 export function isCustomSaladChoice(value: string) {
   const normalized = normalize(value);
 
-  return (
-    normalized.includes("ensalada a tu manera") ||
-    normalized.includes("ensalda a tu manera") ||
-    normalized.includes("disena tu ensalada")
-  );
+  // Legacy menus contain free text, including ENSALDA and repeated letters.
+  // Match the configurable recipe, never every dish containing "ensalada".
+  return /\b(?:ensalada|ensalda) a tu manera\b|\bdisena tu ensalada\b/.test(normalized);
+}
+
+export function normalizeMenuSaladChoice(value: string) {
+  return isCustomSaladChoice(value) ? CUSTOM_SALAD_CHOICE_LABEL : value.trim();
 }
 
 function selectedValues(value?: string) {

@@ -36,6 +36,7 @@ import { activeConfigFlowGroups, displayConfigFlowStep, nextConfigFlowStepIndex 
 import { calculateCartTotals, getSubsidyAmount } from "@/lib/pricing";
 import {
   isCustomSaladChoice,
+  normalizeMenuSaladChoice,
   MEDIUM_SALAD_SIZE_LABEL,
   SALAD_BASE_OPTIONS,
   SALAD_DRESSING_OPTIONS,
@@ -368,7 +369,7 @@ function courseName(course: DailyMenuCourse) {
 
 function menuFirstCourseOptions(menu: DailyMenu | null): MenuDishOption[] {
   const options = (menu?.first_courses ?? [])
-    .map((label) => label.trim())
+    .map(normalizeMenuSaladChoice)
     .filter(Boolean)
     .map((label) => ({ label }));
 

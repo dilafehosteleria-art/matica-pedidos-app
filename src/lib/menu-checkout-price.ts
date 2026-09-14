@@ -23,10 +23,8 @@ export function validatedMenuUnitPrice(product: MenuProduct, metadata: Record<st
   if (displayName && displayName !== (dailyMenu ? "Menú del día" : "Medio menú")) return invalid;
 
   let configuredPrice: number | null = basePrice;
-  if (dailyMenu && (metadata.first_course ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().includes("ensalada")) {
-    configuredPrice = expectedSaladUnitPrice(basePrice, metadata, SMALL_SALAD_SIZE_LABEL);
-  } else if (!dailyMenu && isCustomSaladChoice(metadata.plate ?? "")) {
-    configuredPrice = expectedSaladUnitPrice(basePrice, metadata, MEDIUM_SALAD_SIZE_LABEL);
+  if (isCustomSaladChoice((dailyMenu ? metadata.first_course : metadata.plate) ?? "")) {
+    configuredPrice = expectedSaladUnitPrice(basePrice, metadata, dailyMenu ? SMALL_SALAD_SIZE_LABEL : MEDIUM_SALAD_SIZE_LABEL);
   }
   if (configuredPrice === null) return invalid;
 

@@ -9,7 +9,8 @@ const {
   SALAD_PROTEIN_OPTIONS,
   SALAD_TOPPING_OPTIONS,
   expectedSaladUnitPrice,
-  isCustomSaladChoice
+  isCustomSaladChoice,
+  normalizeMenuSaladChoice
 } = await import(saladModulePath);
 
 const validHalfMenuSalad = {
@@ -25,6 +26,23 @@ test("reconoce los nombres configurables usados por el menú", () => {
   assert.equal(isCustomSaladChoice("ENSALDA A TU MANERA"), true);
   assert.equal(isCustomSaladChoice("Diseña tu ensalada"), true);
   assert.equal(isCustomSaladChoice("Ensalada arroz con queso fresco"), false);
+});
+
+test("normaliza el texto que rompió el menú del 14/09 y variantes de escritura", () => {
+  for (const label of [
+    "ENSALDA A TUU MANERA",
+    "  Ensalada   a  tu manera  ",
+    "ENSALADA\u00a0A TU MANERA (diseña tu ensalada con tus ingredientes favoritos en nuestro buffet)",
+    "Ensaladda a tu manerra",
+    "Diseña tuu ensalada"
+  ]) {
+    assert.equal(isCustomSaladChoice(label), true, label);
+    assert.equal(normalizeMenuSaladChoice(label), "Ensalada a tu manera", label);
+  }
+  for (const label of ["ENSALADA MIXTA ( ATUN Y HUEVO )", "Ensalada arroz con queso fresco", "ENSALDA MIXTA", "Gazpacho"] ) {
+    assert.equal(isCustomSaladChoice(label), false, label);
+    assert.equal(normalizeMenuSaladChoice(label), label);
+  }
 });
 
 test("el Medio Menú reutiliza las opciones y límites de la ensalada del catálogo", () => {

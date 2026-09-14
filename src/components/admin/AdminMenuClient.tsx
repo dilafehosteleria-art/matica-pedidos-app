@@ -4,6 +4,7 @@ import { AlertCircle, Loader2, Save } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { AdminGate } from "./AdminGate";
 import { arrayToLines, linesToArray, toDateInputValue } from "@/lib/format";
+import { CUSTOM_SALAD_CHOICE_LABEL, isCustomSaladChoice, normalizeMenuSaladChoice } from "@/lib/salad-config";
 import type { DailyMenu, DailyMenuCourse } from "@/lib/types";
 
 type MenuForm = {
@@ -96,7 +97,7 @@ function MenuEditor({ pin, clearPin }: { pin: string; clearPin: () => void }) {
     setMessage("");
     setError("");
 
-    const firstCourses = cleanCourseFields(form.first_courses);
+    const firstCourses = cleanCourseFields(form.first_courses).map(normalizeMenuSaladChoice);
     const secondCourses = cleanCourseFields(form.second_courses);
 
     if (firstCourses.some((course) => !course) || secondCourses.some((course) => !course)) {
@@ -194,7 +195,7 @@ function MenuEditor({ pin, clearPin }: { pin: string; clearPin: () => void }) {
               />
               <div className="grid gap-3 md:grid-cols-2">
                 {form.first_courses.map((course, index) => (
-                  <CourseField
+                  <FirstCourseField
                     key={`first-${index}`}
                     label={`Primer plato ${index + 1}`}
                     value={course}
@@ -323,6 +324,41 @@ function CourseField({
         placeholder={label}
       />
     </label>
+  );
+}
+
+function FirstCourseField({
+  label,
+  value,
+  onChange
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const customSalad = isCustomSaladChoice(value);
+
+  return (
+    <div className="space-y-2 rounded-lg border border-matica-line p-3">
+      <label className="block space-y-1">
+        <span className="text-sm font-bold text-matica-ink/70">{label}</span>
+        <select
+          className="matica-focus min-h-11 w-full rounded-lg border border-matica-line bg-white px-3 font-semibold"
+          value={customSalad ? "custom_salad" : "dish"}
+          onChange={(event) => onChange(event.target.value === "custom_salad" ? CUSTOM_SALAD_CHOICE_LABEL : "")}
+        >
+          <option value="dish">Otro plato</option>
+          <option value="custom_salad">Ensalada a tu manera (configurable)</option>
+        </select>
+      </label>
+      {customSalad ? (
+        <p className="text-sm font-semibold text-matica-green">
+          El cliente elegirá bases, proteína, toppings y salsa en Menú del día y Medio menú.
+        </p>
+      ) : (
+        <CourseField label={`Nombre del ${label.toLowerCase()}`} value={value} onChange={onChange} />
+      )}
+    </div>
   );
 }
 
