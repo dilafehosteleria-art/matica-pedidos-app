@@ -29,6 +29,7 @@ import {
 import { applyCartPriceUpdate } from "@/lib/cart-price-update";
 import { employeeProductPrice } from "@/lib/product-prices";
 import { DELIVERY_WINDOW } from "@/lib/constants";
+import { LEMON_TEA_LABEL, normalizeDrinkChoice } from "@/lib/drink-options";
 import { CUTLERY_METADATA_KEY, CUTLERY_PRICE, CUTLERY_SELECTED_LABEL } from "@/lib/cutlery";
 import { validateCompanyOrderEmail } from "@/lib/email-rules";
 import { formatCurrency } from "@/lib/format";
@@ -234,7 +235,7 @@ const GRILL_SIDE_OPTIONS: Option[] = [
 const DRINK_OPTIONS: Option[] = [
   { label: "Coca Cola" },
   { label: "Coca Cola Zero" },
-  { label: "Lipton" },
+  { label: LEMON_TEA_LABEL },
   { label: "Fanta Naranja" },
   { label: "Agua mineral" },
   { label: "Agua con gas" }
@@ -271,7 +272,7 @@ const MENU_DRINK_OPTIONS: Option[] = [
   { label: "Coca Cola" },
   { label: "Coca Cola Zero" },
   { label: "Fanta Naranja" },
-  { label: "Lipton Limón" }
+  { label: LEMON_TEA_LABEL }
 ];
 
 const MENU_DESSERT_OPTIONS: Option[] = [
@@ -468,8 +469,9 @@ function getSaladGroups({
 }
 
 function catalogOptions(options: Option[], type: "drink" | "dessert", products: Product[]): Option[] {
+  const normalizeChoice = (value: string) => normalize(type === "drink" ? normalizeDrinkChoice(value) : value);
   return options.flatMap((option) => {
-    const selected = products.find((item) => item.product_type === type && normalize(item.name) === normalize(option.label) && item.active && !item.sold_out);
+    const selected = products.find((item) => item.product_type === type && normalizeChoice(item.name) === normalizeChoice(option.label) && item.active && !item.sold_out);
     return selected ? [{ ...option, unitPrice: Number(selected.base_price) }] : [];
   });
 }

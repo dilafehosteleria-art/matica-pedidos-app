@@ -467,7 +467,7 @@ export function buildPublicCatalogSections(categories: Category[], products: Pro
         return compactProducts([
           cloneCatalogProduct(pick(drinks, (product) => product.product_type === "drink" || normalizeCatalogText(product.name).includes("agua")), {
             name: "Escoge tu bebida",
-            description: "Coca Cola, Coca Cola Zero, Lipton, Fanta, agua mineral o agua con gas.",
+            description: "Coca Cola, Coca Cola Zero, Nestea de limón, Fanta, agua mineral o agua con gas.",
             base_price: 1.5,
             customer_price: 1.5,
             product_type: "drink"

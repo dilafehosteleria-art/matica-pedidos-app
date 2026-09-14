@@ -1,5 +1,6 @@
 import type { Category, Company, CompanyBranch, DailyMenu, Product } from "./types";
 import { CUSTOM_SALAD_CHOICE_LABEL } from "./salad-config.ts";
+import { LEMON_TEA_LABEL } from "./drink-options.ts";
 
 export const BUREAU_VERITAS_COMPANY_ID = "7dca1236-f8ad-4d2f-9ec0-2ed0f51ce2a1";
 
@@ -403,7 +404,7 @@ export const PRODUCTS: Product[] = [
   {
     id: "ce70c4e6-382a-41e9-a392-f82a0c9d5f03",
     category_id: "943a1885-7301-479d-a3a5-3b11b43ef017",
-    name: "Lipton",
+    name: LEMON_TEA_LABEL,
     description: "Té frío.",
     base_price: 2,
     customer_price: 2,
@@ -533,7 +534,7 @@ export const DEFAULT_DAILY_MENU: DailyMenu = {
     { name: "Hamburguesa clásica con bacon y queso" },
     { name: "Pollo asado" }
   ],
-  drinks: ["Agua mineral", "Agua con gas", "Coca Cola", "Coca Cola Zero", "Fanta Naranja", "Lipton Limón"],
+  drinks: ["Agua mineral", "Agua con gas", "Coca Cola", "Coca Cola Zero", "Fanta Naranja", LEMON_TEA_LABEL],
   desserts: ["Flan", "Gelatina", "Natillas", "Plátano", "Manzana", "Yogur de frutas"],
   active: true
 };
