@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { assertAdmin } from "@/lib/admin";
 import { toDateInputValue } from "@/lib/format";
-import { normalizeMenuSaladChoice } from "@/lib/salad-config";
+import { CUSTOM_SALAD_CHOICE_LABEL, normalizeMenuSaladChoice } from "@/lib/salad-config";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import type { DailyMenuCourse } from "@/lib/types";
 
@@ -48,7 +48,7 @@ export async function GET(request: NextRequest) {
       data ?? {
         id: null,
         date,
-        first_courses: [],
+        first_courses: [CUSTOM_SALAD_CHOICE_LABEL, "", "", ""],
         second_courses: [],
         drinks: [],
         desserts: [],

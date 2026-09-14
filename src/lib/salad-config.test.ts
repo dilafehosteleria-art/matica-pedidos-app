@@ -37,7 +37,7 @@ test("normaliza el texto que rompió el menú del 14/09 y variantes de escritura
     "Diseña tuu ensalada"
   ]) {
     assert.equal(isCustomSaladChoice(label), true, label);
-    assert.equal(normalizeMenuSaladChoice(label), "Ensalada a tu manera", label);
+    assert.equal(normalizeMenuSaladChoice(label), "ENSALADA A TU MANERA (diseña tu ensalada con tus ingredientes favoritos)", label);
   }
   for (const label of ["ENSALADA MIXTA ( ATUN Y HUEVO )", "Ensalada arroz con queso fresco", "ENSALDA MIXTA", "Gazpacho"] ) {
     assert.equal(isCustomSaladChoice(label), false, label);

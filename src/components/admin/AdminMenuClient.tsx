@@ -42,7 +42,7 @@ export function AdminMenuClient() {
 function MenuEditor({ pin, clearPin }: { pin: string; clearPin: () => void }) {
   const [form, setForm] = useState<MenuForm>({
     date: toDateInputValue(),
-    first_courses: courseFields([], FIRST_COURSE_FIELD_COUNT),
+    first_courses: courseFields([CUSTOM_SALAD_CHOICE_LABEL], FIRST_COURSE_FIELD_COUNT),
     second_courses: courseFields([], SECOND_COURSE_FIELD_COUNT),
     drinks: "",
     desserts: "",
@@ -198,6 +198,7 @@ function MenuEditor({ pin, clearPin }: { pin: string; clearPin: () => void }) {
                   <FirstCourseField
                     key={`first-${index}`}
                     label={`Primer plato ${index + 1}`}
+                    allowCustomSalad={index === 0}
                     value={course}
                     onChange={(value) => updateCourse("first_courses", index, value)}
                   />
@@ -330,12 +331,18 @@ function CourseField({
 function FirstCourseField({
   label,
   value,
-  onChange
+  onChange,
+  allowCustomSalad = true
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
+  allowCustomSalad?: boolean;
 }) {
+  if (!allowCustomSalad) {
+    return <CourseField label={label} value={value} onChange={onChange} />;
+  }
+
   const customSalad = isCustomSaladChoice(value);
 
   return (
@@ -348,12 +355,12 @@ function FirstCourseField({
           onChange={(event) => onChange(event.target.value === "custom_salad" ? CUSTOM_SALAD_CHOICE_LABEL : "")}
         >
           <option value="dish">Otro plato</option>
-          <option value="custom_salad">Ensalada a tu manera (configurable)</option>
+          <option value="custom_salad">ENSALADA A TU MANERA</option>
         </select>
       </label>
       {customSalad ? (
         <p className="text-sm font-semibold text-matica-green">
-          El cliente elegirá bases, proteína, toppings y salsa en Menú del día y Medio menú.
+          Diseña tu ensalada con tus ingredientes favoritos.
         </p>
       ) : (
         <CourseField label={`Nombre del ${label.toLowerCase()}`} value={value} onChange={onChange} />
