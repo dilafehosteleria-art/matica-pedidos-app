@@ -37,8 +37,11 @@ import { activeConfigFlowGroups, displayConfigFlowStep, nextConfigFlowStepIndex 
 import { calculateCartTotals, getSubsidyAmount } from "@/lib/pricing";
 import {
   CUSTOM_SALAD_CHOICE_LABEL,
+  CUSTOM_SALAD_DESCRIPTION,
   isCustomSaladChoice,
+  isValidSaladBaseSelection,
   normalizeMenuSaladChoice,
+  saladBaseRequiresPair,
   MEDIUM_SALAD_SIZE_LABEL,
   SALAD_BASE_OPTIONS,
   SALAD_DRESSING_OPTIONS,
@@ -550,7 +553,7 @@ function getConfigSpec(
   if (isCustomSaladProduct(product)) {
     return {
       title: "Diseña tu ensalada",
-      lead: "Elige una base, 3 toppings y una proteína. Termínala con la salsa que más te guste.",
+      lead: CUSTOM_SALAD_DESCRIPTION,
       included: [],
       groups: getSaladGroups({ includeSize: true })
     };
@@ -1251,6 +1254,13 @@ function ConfigModal({
   const activeGroups = activeConfigFlowGroups(spec.groups, singleValues);
   const currentGroup = activeGroups[stepIndex];
   const displayStep = displayConfigFlowStep(activeGroups, stepIndex);
+  const saladSize = product.product_type === "daily_menu"
+    ? SMALL_SALAD_SIZE_LABEL
+    : product.product_type === "half_menu"
+      ? MEDIUM_SALAD_SIZE_LABEL
+      : spec.defaultMetadata?.salad_size ?? singleValues.salad_size;
+  const selectedSaladBases = multiValues.salad_base ?? [];
+  const needsSecondSaladBase = selectedSaladBases.length === 1 && saladBaseRequiresPair(selectedSaladBases[0], saladSize);
 
   useEffect(() => {
     if (stepIndex >= activeGroups.length) {
@@ -1307,7 +1317,7 @@ function ConfigModal({
     const selectedCount = selected.length;
 
     if (group.key === "salad_base") {
-      return selectedCount >= 1 && selectedCount <= 2;
+      return isValidSaladBaseSelection(selected, saladSize);
     }
 
     const min = group.min ?? 0;
@@ -1538,6 +1548,15 @@ function ConfigModal({
                     ) : null}
                   </legend>
 
+                  {currentGroup.key === "salad_base" && saladSize !== SMALL_SALAD_SIZE_LABEL ? (
+                    <div className="space-y-1 text-sm font-semibold">
+                      <p className="text-matica-ink/65">Las bases marcadas «Para combinar» necesitan una segunda base.</p>
+                      {needsSecondSaladBase ? (
+                        <p role="status" className="text-matica-green">Elige una segunda base para completar tu ensalada.</p>
+                      ) : null}
+                    </div>
+                  ) : null}
+
                   {currentGroup.key === BREAD_CUTLERY_GROUP_KEY ? (
                     <div className="space-y-4">
                       <div className="space-y-2">
@@ -1588,7 +1607,12 @@ function ConfigModal({
                               checked ? "border-matica-green bg-matica-mint text-matica-green" : "border-matica-line bg-white text-matica-ink"
                             }`}
                           >
-                            <span>{option.label}</span>
+                            <span>
+                              {option.label}
+                              {currentGroup.key === "salad_base" && saladBaseRequiresPair(option.label, saladSize) ? (
+                                <span className="mt-0.5 block text-xs font-semibold text-matica-ink/60">Para combinar</span>
+                              ) : null}
+                            </span>
                             {currentGroup.type !== "checkbox" || option.unitPrice || option.price ? (
                               <span className="text-xs font-black">
                                 {option.unitPrice ? formatCurrency(option.unitPrice) : option.price ? `+${formatCurrency(option.price)}` : "incluido"}

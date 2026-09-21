@@ -13,6 +13,21 @@ La ensalada usa tamaño pequeño (750 ml) en Menú del día y mediano (1000 ml) 
 Medio menú. Ambos requieren bases, proteína, toppings y salsa. Las ensaladas de
 receta fija, como ensalada mixta, no activan estos pasos.
 
+## Bases y tamaños (prueba de septiembre de 2026)
+
+Se ofrecen ocho bases y se pueden seleccionar una o dos distintas. En 750 ml
+(Menú del día y ensalada pequeña + bocadillo), cualquier base puede elegirse sola.
+En 1000 y 1500 ml, quinoa, arroz blanco, arroz integral, garbanzos y lentejas
+requieren otra base. Cualquier pareja distinta es válida, incluso dos de esas
+cinco bases. Mézclum, espinaca y pasta siguen pudiendo elegirse solas.
+
+El selector identifica las bases que requieren mezcla con «Para combinar» y
+explica cuándo falta la segunda. `isValidSaladBaseSelection` comparte la misma
+regla con la validación del pedido; repetir una base no cuenta como una pareja.
+Los garbanzos continúan disponibles como topping. No se modifican precios ni
+pedidos históricos. En cocina, la ración total de base se reparte entre las dos
+seleccionadas, en lugar de servir dos raciones completas.
+
 ## Incidencia del 14 de septiembre de 2026
 
 El menú guardado contenía `ENSALDA A TUU MANERA`. La corrección del 5 de agosto

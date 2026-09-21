@@ -99,6 +99,52 @@ test("ensalada pequeña + bocadillo y ensalada independiente conservan sus confi
   }
 });
 
+for (const scenario of [
+  { name: "Menú del día", product_type: "daily_menu", size: "Tamaño Pequeño 750ML", singleAllowed: true },
+  { name: "Medio menú", product_type: "half_menu", size: "Tamaño Mediano 1000ML", singleAllowed: false },
+  { name: "Menú ensalada pequeña + bocadillo", product_type: "standard", size: "Tamaño Pequeño 750ML", singleAllowed: true },
+  { name: "Diseña tu ensalada", product_type: "standard", size: "Tamaño Mediano 1000ML", singleAllowed: false },
+  { name: "Diseña tu ensalada", product_type: "standard", size: "Tamaño Grande 1500ML", singleAllowed: false }
+]) {
+  test(`${scenario.name} ${scenario.size}: el modal indica las mezclas y bloquea avanzar o añadir si falta otra base`, () => {
+    const product = { name: scenario.name, product_type: scenario.product_type, base_price: 10 };
+    const spec = getConfigSpec(product, section, menu);
+    const singles: Record<string, string> = {};
+    const multiples: Record<string, string[]> = {};
+    for (const group of spec.groups) {
+      if (group.type === "single") singles[group.key] = group.options[0].label;
+      if (group.type === "multi") multiples[group.key] = group.options.slice(0, group.max).map((option: { label: string }) => option.label);
+    }
+    if (spec.groups.some((group: Group) => group.key === "salad_size")) singles.salad_size = scenario.size;
+    const step = activeConfigFlowGroups(spec.groups, singles).findIndex((group: Group) => group.key === "salad_base");
+    let hookIndex = 0;
+    const { ConfigModal } = loadModule("src/components/public/BureauVeritasOrderApp.tsx", {
+      react: {
+        ...require("react"), useEffect: () => {},
+        useState: () => [[step, singles, multiples][hookIndex++], () => {}]
+      }
+    }, "\nexport { ConfigModal };\n");
+    for (const bases of [["Quinoa"], ["Garbanzos", "Lentejas"], ["Mézclum"]]) {
+      multiples.salad_base = bases;
+      hookIndex = 0;
+      const html = renderToStaticMarkup(createElement(ConfigModal, {
+        product, products: [], section, menu, subsidyAlreadyUsed: true, onClose: () => {}, onAdd: () => {}
+      }));
+      assert.match(html, /Lentejas/);
+      assert.match(html, /Garbanzos/);
+      const blocked = bases.length === 1 && bases[0] === "Quinoa" && !scenario.singleAllowed;
+      const nextButton = html.match(/<button[^>]*>Siguiente<\/button>/)?.[0] ?? "";
+      const addButton = html.match(/<button[^>]*>(?:(?!<\/button>)[\s\S])*Añadir<\/button>/)?.[0] ?? "";
+      assert.ok(nextButton);
+      assert.ok(addButton);
+      assert.equal(nextButton.includes('disabled=""'), blocked, bases.join(", "));
+      assert.equal(addButton.includes('disabled=""'), blocked, bases.join(", "));
+      assert.equal(html.includes("Elige una segunda base para completar tu ensalada."), blocked);
+      assert.equal(html.includes("Para combinar"), !scenario.singleAllowed);
+    }
+  });
+}
+
 test("administración muestra la ensalada como opción fija sin campo de nombre editable", () => {
   const { FirstCourseField } = loadModule("src/components/admin/AdminMenuClient.tsx", {}, "\nexport { FirstCourseField };\n");
   const html = renderToStaticMarkup(createElement(FirstCourseField, { label: "Primer plato 1", value: menu.first_courses[0], onChange: () => {} }));

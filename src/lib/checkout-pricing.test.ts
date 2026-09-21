@@ -137,6 +137,47 @@ function checkoutHarness(t: TestContext, product = dailyMenu, companySlug = "bur
   };
 }
 
+const saladCheckoutCases = [
+  { product: dailyMenu, size: "Tamaño Pequeño 750ML", singleAllowed: true, price: 13.5, course: { first_course: "Ensalada a tu manera" } },
+  { product: halfMenu, size: "Tamaño Mediano 1000ML", singleAllowed: false, price: 10, course: { plate: "Ensalada a tu manera" } },
+  { product: { id: "salad", name: "Diseña tu ensalada", product_type: "standard", base_price: 7.5 }, size: "Tamaño Mediano 1000ML", singleAllowed: false, price: 7.5 },
+  { product: { id: "salad", name: "Diseña tu ensalada", product_type: "standard", base_price: 7.5 }, size: "Tamaño Grande 1500ML", singleAllowed: false, price: 9.5 },
+  { product: { id: "combo", name: "Menú ensalada pequeña + bocadillo", product_type: "standard", base_price: 10 }, size: "Tamaño Pequeño 750ML", singleAllowed: true, price: 10 }
+];
+
+for (const scenario of saladCheckoutCases) {
+  test(`${scenario.product.name} ${scenario.size}: valida las bases antes de cobrar y conserva ingredientes y precio`, async (t) => {
+    const h = checkoutHarness(t, scenario.product);
+    const metadata: Record<string, string> = {
+      ...(scenario.course as Record<string, string> | undefined),
+      salad_size: scenario.size, protein: "Pollo", toppings: "Garbanzos, Tomate, Pepino",
+      dressing: "Vinagreta balsámica", ...(scenario.product.id === "combo" ? { sandwich: "Jamón serrano" } : {})
+    };
+    const restricted = ["Quinoa", "Arroz blanco", "Arroz integral", "Garbanzos", "Lentejas"];
+    const rejected = ["Quinoa, Quinoa", "Garbanzos, Garbanzos", "Quinoa, Pasta, Lentejas", ...(!scenario.singleAllowed ? restricted : [])];
+    for (const bases of rejected) {
+      const response = await h.submit(String(scenario.price), { ...metadata, salad_base: bases });
+      assert.equal(response.status, 400, bases);
+      assert.equal(h.writes.length, 0);
+      assert.equal(h.stripeRequests.length, 0);
+      assert.equal(h.emailCalls(), 0);
+    }
+    if (!scenario.singleAllowed) {
+      const forgedSize = await h.submit(String(scenario.price), { ...metadata, salad_base: "Quinoa", salad_size: "Tamaño Pequeño 750ML" });
+      assert.equal(forgedSize.status, 400);
+      assert.equal(h.writes.length, 0);
+    }
+    for (const bases of ["Mézclum", "Garbanzos, Lentejas", "Quinoa, Arroz integral", ...(scenario.singleAllowed ? restricted : [])]) {
+      const response = await h.submit(String(scenario.price), { ...metadata, salad_base: bases });
+      assert.equal(response.status, 200, bases);
+      assert.equal((await response.json()).order.subtotal, scenario.price);
+      const latestLines = h.writes.filter((write) => write.table === "order_items").at(-1)?.value as Row[];
+      assert.equal((latestLines[0].metadata as Row).salad_base, bases);
+      assert.equal(latestLines[0].unit_price, scenario.price);
+    }
+  });
+}
+
 const scenarios = [
   { label: "BV menú 13,50", product: dailyMenu, price: "13.50", subsidy: 4, employee: 9.5, cutlery: false },
   { label: "BV menú 13,50 + cubiertos", product: dailyMenu, price: "13.70", subsidy: 4, employee: 9.7, cutlery: true },
@@ -223,7 +264,7 @@ for (const product of [dailyMenu, halfMenu]) {
     const configured = {
       ...selection,
       salad_size: product.product_type === "daily_menu" ? "Tamaño Pequeño 750ML" : "Tamaño Mediano 1000ML",
-      salad_base: "Arroz blanco",
+      salad_base: "Arroz blanco, Mézclum",
       protein: "Salmón ahumado",
       toppings: "Maíz",
       dressing: "Mahonesa de soja"
@@ -252,7 +293,7 @@ for (const product of [dailyMenu, halfMenu]) {
       const response = await h.submit(price, {
         [isDaily ? "first_course" : "plate"]: "ENSALADA A TU MANERA (diseña tu ensalada con tus ingredientes favoritos)",
         salad_size: isDaily ? "Tamaño Pequeño 750ML" : "Tamaño Mediano 1000ML",
-        salad_base: "Arroz blanco",
+        salad_base: "Arroz blanco, Mézclum",
         protein: premium ? "Salmón ahumado" : "Pollo",
         toppings: "Maíz",
         dressing: "Mahonesa de soja",
@@ -323,7 +364,7 @@ const changedProducts: { product: Product; metadata?: Record<string, string>; ex
   { product: { id: "wrap", name: "Wrap Caesar Crunch", product_type: "standard", base_price: "9.50" }, expected: 9.5 },
   { product: { id: "sandwich", name: "Escoge tu bocadillo", product_type: "standard", base_price: "6.50" }, expected: 6.5 },
   { product: { id: "grill", name: "Platos combinados Matica", product_type: "standard", base_price: "11.00" }, metadata: { main_protein: "Filete de ternera a la parrilla" }, expected: 12.5 },
-  { product: { id: "salad", name: "Diseña tu ensalada", product_type: "standard", base_price: "8.00" }, metadata: { salad_size: "Tamaño Mediano 1000ML", salad_base: "Arroz blanco", protein: "Pollo", toppings: "Maíz", dressing: "Mahonesa de soja" }, expected: 8 }
+  { product: { id: "salad", name: "Diseña tu ensalada", product_type: "standard", base_price: "8.00" }, metadata: { salad_size: "Tamaño Mediano 1000ML", salad_base: "Arroz blanco, Mézclum", protein: "Pollo", toppings: "Maíz", dressing: "Mahonesa de soja" }, expected: 8 }
 ];
 for (const { product, metadata, expected } of changedProducts) {
   test(`${product.name}: acepta cambio de precio real sin otra modificación de código`, async (t) => {
