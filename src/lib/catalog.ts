@@ -1,4 +1,5 @@
 import { CATEGORIES, PRODUCTS } from "@/lib/constants";
+import { CUSTOM_SALAD_DESCRIPTION } from "@/lib/salad-config";
 import type { Category, Product } from "@/lib/types";
 
 export const CUSTOM_SALAD_PRODUCT_ID = "f4542750-92e9-4a8d-aa9c-3a9f5d5fbebd";
@@ -245,10 +246,14 @@ function cloneCatalogProduct(
     return undefined;
   }
 
+  const description = isCustomSaladProduct(product) && product.description?.trim() === "Elige una base, 3 toppings y una proteína. Termínala con la salsa que más te guste."
+    ? CUSTOM_SALAD_DESCRIPTION
+    : product.description;
+
   return {
     ...product,
     name: overrides.name ?? product.name,
-    description: product.description?.trim() ? product.description : overrides.description ?? product.description,
+    description: description?.trim() ? description : overrides.description ?? description,
     base_price: Number.isFinite(Number(product.base_price)) ? Number(product.base_price) : Number(overrides.base_price ?? 0),
     customer_price: Number.isFinite(Number(product.customer_price))
       ? Number(product.customer_price)
@@ -386,7 +391,7 @@ export function buildPublicCatalogSections(categories: Category[], products: Pro
             pickCustomSaladProduct(bowlsAndSalads),
             {
               name: "Diseña tu ensalada",
-              description: "Elige una base, 3 toppings y una proteína. Termínala con la salsa que más te guste.",
+              description: CUSTOM_SALAD_DESCRIPTION,
               base_price: 7.5,
               customer_price: 7.5,
               product_type: "standard"

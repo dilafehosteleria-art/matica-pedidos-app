@@ -1,12 +1,14 @@
 export type SaladOption = {
   label: string;
   price?: number;
+  requiresPair?: boolean;
 };
 
 export const MEDIUM_SALAD_SIZE_LABEL = "Tamaño Mediano 1000ML";
 export const LARGE_SALAD_SIZE_LABEL = "Tamaño Grande 1500ML";
 export const SMALL_SALAD_SIZE_LABEL = "Tamaño Pequeño 750ML";
 export const CUSTOM_SALAD_CHOICE_LABEL = "ENSALADA A TU MANERA (diseña tu ensalada con tus ingredientes favoritos)";
+export const CUSTOM_SALAD_DESCRIPTION = "Elige hasta dos bases, 3 toppings y una proteína. Termínala con la salsa que más te guste.";
 
 export const SALAD_SIZE_OPTIONS: SaladOption[] = [
   { label: MEDIUM_SALAD_SIZE_LABEL },
@@ -14,13 +16,27 @@ export const SALAD_SIZE_OPTIONS: SaladOption[] = [
 ];
 
 export const SALAD_BASE_OPTIONS: SaladOption[] = [
-  { label: "Arroz blanco" },
-  { label: "Arroz integral" },
+  { label: "Arroz blanco", requiresPair: true },
+  { label: "Arroz integral", requiresPair: true },
   { label: "Mézclum" },
   { label: "Espinaca" },
   { label: "Pasta" },
-  { label: "Quinoa" }
+  { label: "Quinoa", requiresPair: true },
+  { label: "Garbanzos", requiresPair: true },
+  { label: "Lentejas", requiresPair: true }
 ];
+
+export function saladBaseRequiresPair(label: string, size?: string) {
+  return size !== SMALL_SALAD_SIZE_LABEL && Boolean(SALAD_BASE_OPTIONS.find((option) => option.label === label)?.requiresPair);
+}
+
+export function isValidSaladBaseSelection(selected: readonly string[], size?: string) {
+  const validSize = size === SMALL_SALAD_SIZE_LABEL || SALAD_SIZE_OPTIONS.some((option) => option.label === size);
+  return validSize && selected.length >= 1 && selected.length <= 2 &&
+    new Set(selected).size === selected.length &&
+    selected.every((label) => SALAD_BASE_OPTIONS.some((option) => option.label === label)) &&
+    (selected.length === 2 || !saladBaseRequiresPair(selected[0], size));
+}
 
 export const SALAD_PROTEIN_OPTIONS: SaladOption[] = [
   { label: "Atún" },
@@ -102,7 +118,7 @@ export function expectedSaladUnitPrice(
     return null;
   }
 
-  if (!validSelection(metadata.salad_base, SALAD_BASE_OPTIONS, 1, 2)) {
+  if (!isValidSaladBaseSelection(selectedValues(metadata.salad_base), metadata.salad_size?.trim())) {
     return null;
   }
 

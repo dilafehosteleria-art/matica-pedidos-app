@@ -1,5 +1,5 @@
 import type { Category, Company, CompanyBranch, DailyMenu, Product } from "./types";
-import { CUSTOM_SALAD_CHOICE_LABEL } from "./salad-config.ts";
+import { CUSTOM_SALAD_CHOICE_LABEL, CUSTOM_SALAD_DESCRIPTION } from "./salad-config.ts";
 import { LEMON_TEA_LABEL } from "./drink-options.ts";
 
 export const BUREAU_VERITAS_COMPANY_ID = "7dca1236-f8ad-4d2f-9ec0-2ed0f51ce2a1";
@@ -231,7 +231,7 @@ export const PRODUCTS: Product[] = [
     id: "f4542750-92e9-4a8d-aa9c-3a9f5d5fbebd",
     category_id: "5f0416a3-f6d4-4345-a39f-503a1f3c301c",
     name: "Diseña tu ensalada",
-    description: "Elige una base, 3 toppings y una proteína. Termínala con la salsa que más te guste.",
+    description: CUSTOM_SALAD_DESCRIPTION,
     base_price: 7.5,
     customer_price: 7.5,
     image_url: null,
