@@ -16,11 +16,11 @@ export const SALAD_SIZE_OPTIONS: SaladOption[] = [
 ];
 
 export const SALAD_BASE_OPTIONS: SaladOption[] = [
-  { label: "Arroz blanco", requiresPair: true },
-  { label: "Arroz integral", requiresPair: true },
-  { label: "Mézclum" },
+  { label: "Mezclum de lechugas" },
   { label: "Espinaca" },
   { label: "Pasta" },
+  { label: "Arroz blanco", requiresPair: true },
+  { label: "Arroz integral", requiresPair: true },
   { label: "Quinoa", requiresPair: true },
   { label: "Garbanzos", requiresPair: true },
   { label: "Lentejas", requiresPair: true }
@@ -31,11 +31,13 @@ export function saladBaseRequiresPair(label: string, size?: string) {
 }
 
 export function isValidSaladBaseSelection(selected: readonly string[], size?: string) {
+  // Accept open carts using the previous name, without counting aliases as two bases.
+  const bases = selected.map((label) => label === "Mézclum" || label === "Mezclum" ? "Mezclum de lechugas" : label);
   const validSize = size === SMALL_SALAD_SIZE_LABEL || SALAD_SIZE_OPTIONS.some((option) => option.label === size);
-  return validSize && selected.length >= 1 && selected.length <= 2 &&
-    new Set(selected).size === selected.length &&
-    selected.every((label) => SALAD_BASE_OPTIONS.some((option) => option.label === label)) &&
-    (selected.length === 2 || !saladBaseRequiresPair(selected[0], size));
+  return validSize && bases.length >= 1 && bases.length <= 2 &&
+    new Set(bases).size === bases.length &&
+    bases.every((label) => SALAD_BASE_OPTIONS.some((option) => option.label === label)) &&
+    (bases.length === 2 || !saladBaseRequiresPair(bases[0], size));
 }
 
 export const SALAD_PROTEIN_OPTIONS: SaladOption[] = [

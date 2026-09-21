@@ -56,7 +56,7 @@ test("el Medio Menú reutiliza las opciones y límites de la ensalada del catál
   assert.equal(expectedSaladUnitPrice(10, validHalfMenuSalad, MEDIUM_SALAD_SIZE_LABEL), 10);
 });
 
-const singleBases = ["Mézclum", "Espinaca", "Pasta"];
+const singleBases = ["Mezclum de lechugas", "Espinaca", "Pasta"];
 const mixedBases = ["Quinoa", "Arroz blanco", "Arroz integral", "Garbanzos", "Lentejas"];
 const allBases = [...singleBases, ...mixedBases];
 
@@ -80,7 +80,7 @@ for (const size of [SMALL_SALAD_SIZE_LABEL, MEDIUM_SALAD_SIZE_LABEL, LARGE_SALAD
 
 test("rechaza bases vacías, desconocidas o más de dos y no permite falsear el tamaño pequeño", () => {
   for (const size of [SMALL_SALAD_SIZE_LABEL, MEDIUM_SALAD_SIZE_LABEL, LARGE_SALAD_SIZE_LABEL]) {
-    for (const bases of [[], ["Base inventada"], ["Quinoa", "Base inventada"], ["Mézclum", "Pasta", "Lentejas"]]) {
+    for (const bases of [[], ["Base inventada"], ["Quinoa", "Base inventada"], ["Mézclum", "Pasta", "Lentejas"], ["Mézclum", "Mezclum de lechugas"], ["Mezclum", "Mezclum de lechugas"]]) {
       assert.equal(isValidSaladBaseSelection(bases, size), false);
     }
   }

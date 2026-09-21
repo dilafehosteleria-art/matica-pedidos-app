@@ -124,7 +124,7 @@ for (const scenario of [
         useState: () => [[step, singles, multiples][hookIndex++], () => {}]
       }
     }, "\nexport { ConfigModal };\n");
-    for (const bases of [["Quinoa"], ["Garbanzos", "Lentejas"], ["Mézclum"]]) {
+    for (const bases of [["Quinoa"], ["Garbanzos", "Lentejas"], ["Mezclum de lechugas"]]) {
       multiples.salad_base = bases;
       hookIndex = 0;
       const html = renderToStaticMarkup(createElement(ConfigModal, {
