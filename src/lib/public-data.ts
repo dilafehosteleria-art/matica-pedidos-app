@@ -9,6 +9,7 @@ import {
   PRODUCTS
 } from "@/lib/constants";
 import { mergeCatalogDefaults } from "@/lib/catalog";
+import { readActiveDailyMenu } from "@/lib/active-daily-menu";
 import { toDateInputValue } from "@/lib/format";
 import { getGlobalSchedule } from "@/lib/global-settings";
 import { publicStripePaymentsEnabled } from "@/lib/payment";
@@ -30,7 +31,6 @@ const COMPANY_FIELDS = "*,subsidy_rules(product_type,subsidy_amount,active)";
 const BRANCH_FIELDS = "id,company_id,name,active";
 const CATEGORY_FIELDS = "id,name,slug,sort_order,active";
 const PRODUCT_FIELDS = "id,category_id,name,description,base_price,customer_price,image_url,active,sold_out,sort_order,product_type,created_at";
-const DAILY_MENU_FIELDS = "id,date,first_courses,second_courses,drinks,desserts,active,created_at";
 
 function normalizeCourse(course: DailyMenuCourse): DailyMenuCourse | null {
   if (typeof course === "string") {
@@ -167,12 +167,7 @@ export async function getPublicCompanyData(slug: string): Promise<PublicData | n
     .from("products")
     .select(PRODUCT_FIELDS)
     .order("sort_order", { ascending: true });
-  const todaysMenuQuery = supabase
-    .from("daily_menus")
-    .select(DAILY_MENU_FIELDS)
-    .eq("date", today)
-    .eq("active", true)
-    .maybeSingle();
+  const todaysMenuQuery = readActiveDailyMenu(supabase, today);
 
   const [companyResult, categories, products, todaysMenu, schedule] = await Promise.all([
     companyQuery,
@@ -182,9 +177,11 @@ export async function getPublicCompanyData(slug: string): Promise<PublicData | n
     scheduleQuery
   ]);
   const { data: company, error: companyError } = companyResult;
+  const dailyMenu = normalizeMenu(todaysMenu.data);
+  const fallbackWithTodaysMenu = fallback && { ...fallback, dailyMenu };
 
   if (companyError || !company) {
-    return fallback;
+    return fallbackWithTodaysMenu;
   }
 
   const branches = await supabase
@@ -194,22 +191,8 @@ export async function getPublicCompanyData(slug: string): Promise<PublicData | n
     .eq("active", true)
     .order("name", { ascending: true });
 
-  let dailyMenu = todaysMenu.data as DailyMenu | null;
-
-  if (!dailyMenu) {
-    const { data } = await supabase
-      .from("daily_menus")
-      .select(DAILY_MENU_FIELDS)
-      .eq("active", true)
-      .order("date", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    dailyMenu = data as DailyMenu | null;
-  }
-
   if (branches.error || categories.error || products.error) {
-    return fallback;
+    return fallbackWithTodaysMenu;
   }
 
   const catalog = mergeCatalogDefaults(categories.data ?? [], products.data ?? []);
@@ -222,7 +205,7 @@ export async function getPublicCompanyData(slug: string): Promise<PublicData | n
     branches: branches.data ?? [],
     categories: catalog.categories.filter((category) => category.active),
     products: catalog.products.filter((product) => product.active),
-    dailyMenu: normalizeMenu(dailyMenu) ?? fallback?.dailyMenu ?? null,
+    dailyMenu,
     schedule,
     source: "supabase"
   } satisfies PublicData;

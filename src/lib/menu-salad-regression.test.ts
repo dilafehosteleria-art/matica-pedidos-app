@@ -216,3 +216,55 @@ test("la lectura pública corrige el menú antiguo sin modificar el objeto ni la
   assert.deepEqual(normalized.second_courses, menu.second_courses);
   assert.equal(menu.first_courses[0], "ENSALDA A TUU MANERA");
 });
+
+test("el catálogo y la actualización pública usan solo la carta activa de hoy", async () => {
+  const today = "2026-11-12";
+  const todaysMenu = { ...menu, date: today };
+  const company = { id: "company", slug: "bureau-veritas", active: true };
+  let storedMenu: DailyMenu | null = { ...todaysMenu, date: "2026-11-11" };
+  let menuReadFails = false;
+  const mocks = {
+    "@/lib/format": { ...loadModule("src/lib/format.ts"), toDateInputValue: () => today },
+    "@/lib/global-settings": { getGlobalSchedule: async () => ({}) },
+    "@/lib/supabase/server": {
+      getSupabaseServerClient: () => ({
+        from(table: string) {
+          const filters = new Map<string, unknown>();
+          const query = {
+            select() { return query; },
+            eq(column: string, value: unknown) { filters.set(column, value); return query; },
+            order() { return Promise.resolve({ data: [], error: null }); },
+            then(resolve: (value: { data: unknown[]; error: null }) => unknown) {
+              return Promise.resolve({ data: [], error: null }).then(resolve);
+            },
+            async maybeSingle() {
+              if (table === "companies") return { data: company, error: null };
+              assert.equal(table, "daily_menus");
+              assert.equal(filters.get("date"), today);
+              assert.equal(filters.get("active"), true);
+              if (menuReadFails) return { data: null, error: { message: "unavailable" } };
+              const data = storedMenu?.date === today && storedMenu.active ? storedMenu : null;
+              return { data, error: null };
+            }
+          };
+          return query;
+        }
+      })
+    }
+  };
+  const { getPublicCompanyData } = loadModule("src/lib/public-data.ts", mocks);
+  const { GET } = loadModule("src/app/api/public/daily-menu/route.ts", mocks);
+
+  for (const candidate of [storedMenu, { ...todaysMenu, active: false }, todaysMenu]) {
+    storedMenu = candidate;
+    const data = await getPublicCompanyData("bureau-veritas");
+    const response = await GET();
+    assert.equal(data.dailyMenu?.date ?? null, candidate === todaysMenu ? today : null);
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("cache-control"), "no-store");
+    assert.deepEqual((await response.json()).menu, candidate === todaysMenu ? todaysMenu : null);
+  }
+
+  menuReadFails = true;
+  assert.equal((await GET()).status, 503);
+});
