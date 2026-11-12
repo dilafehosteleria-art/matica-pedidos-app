@@ -6,6 +6,7 @@ import test, { type TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
 import type { NextRequest } from "next/server";
+import type { DailyMenu } from "./types";
 
 const require = createRequire(import.meta.url);
 const { NextRequest: RequestClass } = require("next/server") as typeof import("next/server");
@@ -13,6 +14,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 type Row = Record<string, unknown>;
 type Product = { id: string; name: string; product_type: string; base_price: number | string };
 type Result = { data: unknown; error: { message: string } | null };
+type CheckoutItem = { product_id: string; quantity: number; metadata: Record<string, string> };
 
 // Load the real route and its pricing/payment dependencies with TypeScript's
 // existing compiler. Only external effects are replaced; no server or keys needed.
@@ -48,11 +50,30 @@ function loadCheckout(mocks: Record<string, unknown>, routePath = "src/app/api/o
 
 const dailyMenu: Product = { id: "menu", name: "Menú del día", product_type: "daily_menu", base_price: "13.50" };
 const halfMenu: Product = { id: "half", name: "Medio menú", product_type: "half_menu", base_price: "10.00" };
+const bowl: Product = { id: "bowl", name: "Caesar Crunch Chicken Bowl", product_type: "standard", base_price: "10.50" };
+const publishedMenu: DailyMenu = {
+  id: "menu-today",
+  date: "2026-11-12",
+  active: true,
+  first_courses: ["Pasta", "Ensalada a tu manera", "ENSALADA MIXTA ( ATUN Y HUEVO )", "Gazpacho"],
+  second_courses: [{ name: "Jamoncitos de pollo en pepitoria" }, "Merluza", "Secreto"],
+  drinks: [],
+  desserts: []
+};
 
-function checkoutHarness(t: TestContext, product = dailyMenu, companySlug = "bureau-veritas", available = true, catalog = [product]) {
+function checkoutHarness(
+  t: TestContext,
+  product = dailyMenu,
+  companySlug = "bureau-veritas",
+  available = true,
+  catalog = [product],
+  { menu = publishedMenu, menuReadError = false }: { menu?: DailyMenu | null; menuReadError?: boolean } = {}
+) {
+  t.mock.timers.enable({ apis: ["Date"], now: new Date("2026-11-11T23:10:00Z") });
   const companyPays = companySlug === "icf";
   const writes: { table: string; action: string; value: unknown }[] = [];
   const stripeRequests: URLSearchParams[] = [];
+  const menuReads: Row[] = [];
   let emailCalls = 0;
   let savedOrder: Row | undefined;
   const supabase = {
@@ -60,9 +81,10 @@ function checkoutHarness(t: TestContext, product = dailyMenu, companySlug = "bur
       let action = "select";
       let value: unknown;
       let single = false;
+      const filters: Row = {};
       const query = {
         select() { return query; },
-        eq() { return query; },
+        eq(column: string, value: unknown) { filters[column] = value; return query; },
         in() { return query; },
         gte() { return query; },
         maybeSingle() { single = true; return query; },
@@ -73,6 +95,12 @@ function checkoutHarness(t: TestContext, product = dailyMenu, companySlug = "bur
         then(onFulfilled: (result: Result) => unknown) {
           if (action !== "select") writes.push({ table, action, value });
           if (table === "orders" && action === "insert") savedOrder = value as Row;
+          if (table === "daily_menus") {
+            menuReads.push(filters);
+            const data = menu?.date === filters.date && menu?.active === filters.active ? menu : null;
+            const error = menuReadError ? { message: "Error de lectura simulado" } : null;
+            return Promise.resolve({ data, error }).then(onFulfilled);
+          }
           const rows: Record<string, unknown> = {
             companies: {
               id: companySlug, name: companySlug, billing_type: companyPays ? "company" : "subsidized",
@@ -118,24 +146,114 @@ function checkoutHarness(t: TestContext, product = dailyMenu, companySlug = "bur
     },
     "@/lib/order-email": { sendOrderNotificationEmail: async () => { emailCalls += 1; } }
   });
+  function submitItems(items: CheckoutItem[]) {
+    return route.POST(new RequestClass("https://matica.test/api/orders", {
+      method: "POST",
+      body: JSON.stringify({
+        company_slug: companySlug,
+        customer: { name: "Prueba local", email: "checkout-test@bureauveritas.com", phone: "000000000", company_branch_id: "branch" },
+        items,
+        payment_method: companyPays ? "pay_on_delivery" : "stripe_card"
+      })
+    }));
+  }
   return {
-    writes, stripeRequests,
+    writes, stripeRequests, menuReads, submitItems,
     emailCalls: () => emailCalls,
     async submit(price: string | undefined, extraMetadata: Record<string, string> = {}) {
-      const metadata: Record<string, string> = { display_name: product.name, ...extraMetadata };
+      const metadata: Record<string, string> = { display_name: product.name };
+      if (product.product_type === "daily_menu") {
+        metadata.first_course = "Pasta";
+        metadata.second_course = "Merluza";
+      }
+      if (product.product_type === "half_menu") metadata.plate = "Pasta";
+      Object.assign(metadata, extraMetadata);
       if (price !== undefined) metadata._configured_unit_price = price;
-      return route.POST(new RequestClass("https://matica.test/api/orders", {
-        method: "POST",
-        body: JSON.stringify({
-          company_slug: companySlug,
-          customer: { name: "Prueba local", email: "checkout-test@bureauveritas.com", phone: "000000000", company_branch_id: "branch" },
-          items: [{ product_id: product.id, quantity: 1, metadata }],
-          payment_method: companyPays ? "pay_on_delivery" : "stripe_card"
-        })
-      }));
+      return submitItems([{ product_id: product.id, quantity: 1, metadata }]);
     }
   };
 }
+
+test("medio menú: rechaza el pollo de ayer antes de cobrar y acepta un primero o un segundo de hoy", async (t) => {
+  const h = checkoutHarness(t, halfMenu);
+  const rejected = await h.submit("10.00", { plate: "POLLO A LA BRASA CON MOJO PICON" });
+  assert.equal(rejected.status, 409);
+  const payload = await rejected.json();
+  assert.equal(payload.code, "MENU_CHANGED");
+  assert.equal(payload.menu.date, publishedMenu.date);
+  assert.deepEqual(payload.invalidItems, [{ index: 0, fields: ["plate"] }]);
+  assert.deepEqual(h.menuReads, [{ date: publishedMenu.date, active: true }]);
+  assert.equal(h.writes.length, 0);
+  assert.equal(h.stripeRequests.length, 0);
+  assert.equal(h.emailCalls(), 0);
+
+  for (const plate of ["Pasta", " Jamoncitos de pollo en pepitoria "]) {
+    const response = await h.submit("10.00", { plate });
+    assert.equal(response.status, 200, JSON.stringify(await response.clone().json()));
+    assert.equal((await response.json()).order.employee_total, 6.5);
+    assert.equal(h.stripeRequests.at(-1)?.get("line_items[0][price_data][unit_amount]"), "650");
+  }
+  assert.equal(h.menuReads.length, 3);
+});
+
+test("carrito mixto: una sola lectura del menú identifica los platos retirados por línea", async (t) => {
+  const h = checkoutHarness(t, dailyMenu, "bureau-veritas", true, [bowl, dailyMenu, halfMenu]);
+  const response = await h.submitItems([
+    { product_id: bowl.id, quantity: 1, metadata: {} },
+    { product_id: dailyMenu.id, quantity: 1, metadata: { first_course: "Pasta", second_course: "Pollo de ayer" } },
+    { product_id: halfMenu.id, quantity: 1, metadata: { plate: "Merluza" } },
+    { product_id: dailyMenu.id, quantity: 1, metadata: { first_course: "Lentejas de ayer", second_course: "Secreto" } }
+  ]);
+  assert.equal(response.status, 409);
+  const payload = await response.json();
+  assert.equal(payload.code, "MENU_CHANGED");
+  assert.deepEqual(payload.invalidItems, [
+    { index: 1, fields: ["second_course"] },
+    { index: 3, fields: ["first_course"] }
+  ]);
+  assert.deepEqual(h.menuReads, [{ date: publishedMenu.date, active: true }]);
+  assert.equal(h.writes.length, 0);
+  assert.equal(h.stripeRequests.length, 0);
+  assert.equal(h.emailCalls(), 0);
+});
+
+for (const [label, menu] of [
+  ["ausente", null],
+  ["inactivo", { ...publishedMenu, active: false }],
+  ["de ayer", { ...publishedMenu, date: "2026-11-11" }]
+] as const) {
+  test(`un menú ${label} bloquea el pedido antes de escribir o cobrar`, async (t) => {
+    const h = checkoutHarness(t, dailyMenu, "bureau-veritas", true, [dailyMenu], { menu });
+    const response = await h.submit("13.50");
+    assert.equal(response.status, 409);
+    const payload = await response.json();
+    assert.equal(payload.code, "MENU_CHANGED");
+    assert.equal(payload.menu, null);
+    assert.deepEqual(payload.invalidItems, [{ index: 0, fields: ["first_course", "second_course"] }]);
+    assert.deepEqual(h.menuReads, [{ date: publishedMenu.date, active: true }]);
+    assert.equal(h.writes.length, 0);
+    assert.equal(h.stripeRequests.length, 0);
+    assert.equal(h.emailCalls(), 0);
+  });
+}
+
+test("un fallo al leer el menú devuelve 503 antes de escribir o cobrar", async (t) => {
+  const h = checkoutHarness(t, dailyMenu, "bureau-veritas", true, [dailyMenu], { menuReadError: true });
+  assert.equal((await h.submit("13.50")).status, 503);
+  assert.equal(h.menuReads.length, 1);
+  assert.equal(h.writes.length, 0);
+  assert.equal(h.stripeRequests.length, 0);
+  assert.equal(h.emailCalls(), 0);
+});
+
+test("un producto de carta se puede comprar sin consultar el menú diario", async (t) => {
+  const h = checkoutHarness(t, bowl, "bureau-veritas", true, [bowl], { menu: null, menuReadError: true });
+  const response = await h.submit("10.50");
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).order.employee_total, 10.5);
+  assert.deepEqual(h.menuReads, []);
+  assert.equal(h.stripeRequests[0].get("line_items[0][price_data][unit_amount]"), "1050");
+});
 
 const saladCheckoutCases = [
   { product: dailyMenu, size: "Tamaño Pequeño 750ML", singleAllowed: true, price: 13.5, course: { first_course: "Ensalada a tu manera" } },

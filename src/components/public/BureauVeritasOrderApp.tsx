@@ -15,7 +15,7 @@ import {
   Utensils,
   X
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   buildPublicCatalogSections,
   getCatalogDisplayName as getDisplayName,
@@ -30,17 +30,16 @@ import { applyCartPriceUpdate } from "@/lib/cart-price-update";
 import { employeeProductPrice } from "@/lib/product-prices";
 import { DELIVERY_WINDOW } from "@/lib/constants";
 import { LEMON_TEA_LABEL, normalizeDrinkChoice } from "@/lib/drink-options";
-import { CUTLERY_METADATA_KEY, CUTLERY_PRICE, CUTLERY_SELECTED_LABEL } from "@/lib/cutlery";
+import { CUTLERY_METADATA_KEY, CUTLERY_PRICE, CUTLERY_SELECTED_LABEL, hasCutlery } from "@/lib/cutlery";
+import { getDailyMenuCourses, getUnavailableMenuFields, isDailyMenuProduct, type MenuCourseField } from "@/lib/daily-menu-courses";
 import { validateCompanyOrderEmail } from "@/lib/email-rules";
 import { formatCurrency } from "@/lib/format";
 import { activeConfigFlowGroups, displayConfigFlowStep, nextConfigFlowStepIndex } from "@/lib/config-flow";
 import { calculateCartTotals, getSubsidyAmount } from "@/lib/pricing";
 import {
-  CUSTOM_SALAD_CHOICE_LABEL,
   CUSTOM_SALAD_DESCRIPTION,
   isCustomSaladChoice,
   isValidSaladBaseSelection,
-  normalizeMenuSaladChoice,
   saladBaseRequiresPair,
   MEDIUM_SALAD_SIZE_LABEL,
   SALAD_BASE_OPTIONS,
@@ -51,7 +50,7 @@ import {
   SMALL_SALAD_SIZE_LABEL
 } from "@/lib/salad-config";
 import { deliveryWindowLabel, getOrderWindowState } from "@/lib/schedule";
-import type { CartItem, CompanyBranch, CustomerForm, DailyMenu, DailyMenuCourse, PaymentMethod, Product, PublicData } from "@/lib/types";
+import type { CartItem, CompanyBranch, CustomerForm, DailyMenu, PaymentMethod, Product, PublicData } from "@/lib/types";
 import {
   WRAP_BASE_OPTIONS,
   WRAP_PROTEIN_OPTIONS,
@@ -102,6 +101,8 @@ type SubmitState =
   | { status: "error"; message: string };
 
 type PublicStep = "catalog" | "checkout" | "confirmation";
+type ProductConfiguration = { product: Product; section: PublicSection };
+type MenuReview = { fields: MenuCourseField[]; replacement?: ProductConfiguration };
 
 type PublicPaymentOption = {
   method: PaymentMethod;
@@ -256,19 +257,6 @@ const DESSERT_OPTIONS: Option[] = [
 
 type MenuDishOption = Option;
 
-const FALLBACK_MENU_FIRST_COURSE_OPTIONS: MenuDishOption[] = [
-  { label: CUSTOM_SALAD_CHOICE_LABEL },
-  { label: "Lasaña de espinacas con champiñones y pimientos asados" },
-  { label: "Pasta con gambas y tomate cherry" },
-  { label: "Salmorejo cordobés" }
-];
-
-const FALLBACK_MENU_SECOND_COURSE_OPTIONS: MenuDishOption[] = [
-  { label: "Filete de pescado en salsa de soja y jengibre" },
-  { label: "Hamburguesa clásica con bacon y queso" },
-  { label: "Pollo asado" }
-];
-
 const MENU_DRINK_OPTIONS: Option[] = [
   { label: "Agua mineral" },
   { label: "Agua con gas" },
@@ -368,41 +356,25 @@ function metadataLabel(metadata?: Record<string, string>) {
     .join(" · ");
 }
 
-function courseName(course: DailyMenuCourse) {
-  return typeof course === "string" ? course.trim() : course.name.trim();
-}
-
 function menuFirstCourseOptions(menu: DailyMenu | null): MenuDishOption[] {
-  const options = (menu?.first_courses ?? [])
-    .map(normalizeMenuSaladChoice)
-    .filter(Boolean)
-    .map((label) => ({ label }));
-
-  return options.length === 4 ? options : FALLBACK_MENU_FIRST_COURSE_OPTIONS;
+  return getDailyMenuCourses(menu).first.map((label) => ({ label }));
 }
 
 function menuSecondCourseOptions(menu: DailyMenu | null): MenuDishOption[] {
-  const options = (menu?.second_courses ?? [])
-    .map((course): MenuDishOption | null => {
-      const label = courseName(course);
-
-      return label ? { label } : null;
-    })
-    .filter((option): option is MenuDishOption => Boolean(option));
-
-  return options.length === 3 ? options : FALLBACK_MENU_SECOND_COURSE_OPTIONS;
+  return getDailyMenuCourses(menu).second.map((label) => ({ label }));
 }
 
 function hasMenuChoices(product: Product, menu: DailyMenu | null) {
+  if (!isDailyMenuProduct(product.product_type)) {
+    return true;
+  }
+
+  const { first, second } = getDailyMenuCourses(menu);
   if (product.product_type === "daily_menu") {
-    return Boolean(menuFirstCourseOptions(menu).length && menuSecondCourseOptions(menu).length && menuDrinkOrDessertOptions(menu).length);
+    return first.length > 0 && second.length > 0;
   }
 
-  if (product.product_type === "half_menu") {
-    return Boolean(menuPlateOptions(menu).length && menuDrinkOrDessertOptions(menu).length);
-  }
-
-  return true;
+  return first.length + second.length > 0;
 }
 
 function menuDrinkOrDessertOptions(_menu: DailyMenu | null): Option[] {
@@ -414,7 +386,8 @@ function grillDrinkOrDessertOptions(_menu: DailyMenu | null) {
 }
 
 function menuPlateOptions(menu: DailyMenu | null): Option[] {
-  return [...menuFirstCourseOptions(menu), ...menuSecondCourseOptions(menu)];
+  const { first, second } = getDailyMenuCourses(menu);
+  return [...first, ...second].map((label) => ({ label }));
 }
 
 function halfMenuSecondCourseLabels(menu: DailyMenu | null) {
@@ -658,14 +631,45 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
   const [customer, setCustomer] = useState<CustomerForm>(EMPTY_CUSTOMER);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [notes, setNotes] = useState("");
-  const [configuring, setConfiguring] = useState<{ product: Product; section: PublicSection } | null>(null);
+  const [configuring, setConfiguring] = useState<(ProductConfiguration & { replaceItem?: CartItem; fields?: MenuCourseField[] }) | null>(null);
   const [subsidyAlreadyUsed, setSubsidyAlreadyUsed] = useState(false);
   const [submitState, setSubmitState] = useState<SubmitState>({ status: "idle" });
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("pay_on_delivery");
   const [customerLoaded, setCustomerLoaded] = useState(false);
   const [orderWindow, setOrderWindow] = useState({ open: false, message: "" });
   const [lastOrder, setLastOrder] = useState<{ id: string; total: number } | null>(null);
+  const previousOrderWindow = useRef<boolean | null>(null);
+  const menuRequest = useRef<AbortController | null>(null);
+  const orderSubmitting = useRef(false);
   const storageKey = `${STORAGE_KEY_PREFIX}:${companySlug}`;
+  const catalogLoaded = data !== null;
+  const schedule = data?.schedule;
+  const dailyMenu = data?.dailyMenu ?? null;
+
+  const updateDailyMenu = useCallback((menu: DailyMenu | null) => {
+    setData((current) => current ? { ...current, dailyMenu: menu } : current);
+  }, []);
+
+  const refreshDailyMenu = useCallback(async () => {
+    if (menuRequest.current || orderSubmitting.current) {
+      return;
+    }
+
+    const request = new AbortController();
+    menuRequest.current = request;
+
+    try {
+      const response = await fetch("/api/public/daily-menu", { cache: "no-store", signal: request.signal });
+      if (response.ok) {
+        const { menu } = await response.json() as { menu: DailyMenu | null };
+        if (!request.signal.aborted) updateDailyMenu(menu);
+      }
+    } catch {
+      // Checkout will verify the current menu if this background refresh fails.
+    } finally {
+      if (menuRequest.current === request) menuRequest.current = null;
+    }
+  }, [updateDailyMenu]);
 
   useEffect(() => {
     setCustomer(readStoredCustomer(storageKey));
@@ -673,13 +677,49 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
   }, [storageKey]);
 
   useEffect(() => {
-    const refreshOrderWindow = () => setOrderWindow(getOrderWindowState(new Date(), data?.schedule));
+    const refreshOrderWindow = () => {
+      const next = getOrderWindowState(new Date(), schedule);
+      setOrderWindow((current) => current.open === next.open && current.message === next.message ? current : next);
+    };
 
     refreshOrderWindow();
     const interval = window.setInterval(refreshOrderWindow, 30_000);
 
     return () => window.clearInterval(interval);
-  }, [data?.schedule]);
+  }, [schedule]);
+
+  useEffect(() => {
+    if (!catalogLoaded) return;
+    const wasOpen = previousOrderWindow.current;
+    previousOrderWindow.current = orderWindow.open;
+    if (wasOpen === false && orderWindow.open) void refreshDailyMenu();
+  }, [catalogLoaded, orderWindow.open, refreshDailyMenu]);
+
+  useEffect(() => {
+    if (!catalogLoaded) return;
+
+    function refreshVisibleMenu() {
+      if (document.visibilityState === "visible") void refreshDailyMenu();
+    }
+
+    function refreshRestoredMenu(event: PageTransitionEvent) {
+      if (event.persisted) refreshVisibleMenu();
+    }
+
+    document.addEventListener("visibilitychange", refreshVisibleMenu);
+    window.addEventListener("pageshow", refreshRestoredMenu);
+
+    return () => {
+      document.removeEventListener("visibilitychange", refreshVisibleMenu);
+      window.removeEventListener("pageshow", refreshRestoredMenu);
+      menuRequest.current?.abort();
+      menuRequest.current = null;
+    };
+  }, [catalogLoaded, refreshDailyMenu]);
+
+  useEffect(() => {
+    setConfiguring((current) => current && hasMenuChoices(current.product, dailyMenu) ? current : null);
+  }, [dailyMenu]);
 
   useEffect(() => {
     fetch(`/api/public/companies/${companySlug}`)
@@ -755,10 +795,30 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
     return () => window.clearTimeout(timer);
   }, [companySlug, customer.email]);
 
+  const categories = data?.categories;
+  const products = data?.products;
   const publicSections = useMemo<PublicSection[]>(
-    () => (data ? buildPublicCatalogSections(data.categories, data.products) : []),
-    [data]
+    () => (categories && products ? buildPublicCatalogSections(categories, products) : []),
+    [categories, products]
   );
+  const menuReviews = useMemo(() => {
+    const reviews = new Map<string, MenuReview>();
+
+    for (const item of cart) {
+      if (!isDailyMenuProduct(item.product_type)) continue;
+      const fields = getUnavailableMenuFields(item.product_type, item.metadata ?? {}, dailyMenu);
+      if (!fields.length) continue;
+
+      const section = publicSections.find(({ products }) => products.some(({ id }) => id === item.product_id));
+      const product = section?.products.find(({ id }) => id === item.product_id);
+      const replacement = section && product && !product.sold_out && hasMenuChoices(product, dailyMenu)
+        ? { product, section }
+        : undefined;
+      reviews.set(item.key, { fields, replacement });
+    }
+
+    return reviews;
+  }, [cart, dailyMenu, publicSections]);
   const paymentOptions = useMemo(() => publicPaymentOptions(data?.company), [data?.company]);
 
   useEffect(() => {
@@ -788,6 +848,7 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
     Boolean(selectedBranch) &&
     paymentOptions.some((option) => option.method === paymentMethod) &&
     orderWindow.open &&
+    menuReviews.size === 0 &&
     cart.length > 0;
 
   function updateCustomer(field: keyof CustomerForm, value: string) {
@@ -799,19 +860,25 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  function addProduct(product: Product, section: PublicSection, metadata: Record<string, string>, unitPrice: number) {
+  function addProduct(product: Product, section: PublicSection, metadata: Record<string, string>, unitPrice: number, replacementKey?: string) {
     const item = buildCartItem(product, metadata, getDisplayName(product, section.kind), unitPrice);
 
     setCart((current) => {
-      const existing = current.find((cartItem) => cartItem.key === item.key);
+      const replaced = current.find((cartItem) => cartItem.key === replacementKey);
+      if (replacementKey && !replaced) return current;
 
-      if (!existing) {
-        return [...current, item];
+      const quantity = replaced?.quantity ?? 1;
+      const existing = current.find((cartItem) => cartItem.key === item.key && cartItem.key !== replacementKey);
+      if (existing) {
+        return current.filter((cartItem) => cartItem.key !== replacementKey).map((cartItem) =>
+          cartItem.key === item.key ? { ...cartItem, quantity: cartItem.quantity + quantity } : cartItem
+        );
       }
 
-      return current.map((cartItem) =>
-        cartItem.key === item.key ? { ...cartItem, quantity: cartItem.quantity + 1 } : cartItem
-      );
+      const nextItem = { ...item, quantity };
+      return replaced
+        ? current.map((cartItem) => cartItem.key === replacementKey ? nextItem : cartItem)
+        : [...current, nextItem];
     });
     setSubmitState({ status: "idle" });
   }
@@ -825,6 +892,7 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
   }
 
   async function submitOrder() {
+    if (orderSubmitting.current || menuReviews.size) return;
     setSubmitState({ status: "idle" });
 
     if (!orderWindow.open) {
@@ -852,34 +920,57 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
       return;
     }
 
+    orderSubmitting.current = true;
+    menuRequest.current?.abort();
+    menuRequest.current = null;
     setSubmitState({ status: "loading" });
 
-    const response = await fetch("/api/orders", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        company_slug: companySlug,
-        customer,
-        items: cart.map((item) => ({
-          product_id: item.product_id,
-          quantity: item.quantity,
-          metadata: item.metadata ?? {}
-        })),
-        notes,
-        payment_method: paymentMethod
-      })
-    });
-
-    const payload = await response.json();
+    let response: Response;
+    let payload;
+    try {
+      response = await fetch("/api/orders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          company_slug: companySlug,
+          customer,
+          items: cart.map((item) => ({
+            product_id: item.product_id,
+            quantity: item.quantity,
+            metadata: item.metadata ?? {}
+          })),
+          notes,
+          payment_method: paymentMethod
+        })
+      });
+      payload = await response.json();
+    } catch {
+      setSubmitState({ status: "error", message: "No se pudo confirmar el pedido. Revisa la conexión e inténtalo de nuevo." });
+      return;
+    } finally {
+      orderSubmitting.current = false;
+    }
 
     if (!response.ok) {
+      if (payload.code === "MENU_CHANGED") {
+        updateDailyMenu(payload.menu);
+        setSubmitState({ status: "idle" });
+        return;
+      }
+
       if (payload.code === "PRICE_CHANGED") {
         const updatedCart = applyCartPriceUpdate(cart, payload.prices);
         if (updatedCart) {
           setCart(updatedCart);
           void fetch(`/api/public/companies/${companySlug}`, { cache: "no-store" })
             .then((result) => result.ok ? result.json() : null)
-            .then((freshData: PublicData | null) => { if (freshData) setData(freshData); })
+            .then((freshData: PublicData | null) => {
+              if (freshData) {
+                setData((current) => current?.company.slug === freshData.company.slug
+                  ? { ...freshData, dailyMenu: current.dailyMenu }
+                  : current);
+              }
+            })
             .catch(() => { /* The server price update already keeps this cart usable. */ });
           setSubmitState({ status: "error", message: "El precio ha cambiado. Hemos actualizado tu carrito conservando tus selecciones. Revisa el nuevo total y vuelve a confirmar el pedido." });
           return;
@@ -991,6 +1082,14 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
                       </p>
                     </div>
                   </div>
+                  {section.products.some((product) => isDailyMenuProduct(product.product_type) && !product.sold_out && !hasMenuChoices(product, dailyMenu)) ? (
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-matica-line bg-white p-3 text-sm font-semibold text-matica-ink/65">
+                      <p>El menú de hoy aún no está disponible.</p>
+                      <button type="button" className="matica-focus font-bold text-matica-green underline" onClick={() => void refreshDailyMenu()}>
+                        Actualizar menú
+                      </button>
+                    </div>
+                  ) : null}
                   <div className="grid gap-2.5 sm:gap-4 sm:grid-cols-2 xl:grid-cols-3">
                     {section.products.map((product, productIndex) => (
                       <ProductCard
@@ -1057,6 +1156,13 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
           orderWindow={orderWindow}
           hasSubsidizedItem={hasSubsidizedItem}
           subsidyAlreadyUsed={subsidyAlreadyUsed}
+          menuReviews={menuReviews}
+          onReplaceMenuItem={(item, review) => {
+            if (review.replacement) {
+              setConfiguring({ ...review.replacement, replaceItem: item, fields: review.fields });
+            }
+          }}
+          onRemoveMenuItem={(key) => setCart((current) => current.filter((item) => item.key !== key))}
           changeQuantity={changeQuantity}
           submitOrder={submitOrder}
           onBack={() => goToStep("catalog")}
@@ -1071,18 +1177,20 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
         />
       ) : null}
 
-      {configuring ? (
+      {configuring && hasMenuChoices(configuring.product, dailyMenu) ? (
         <ConfigModal
-          key={`${configuring.product.id}:${getDisplayName(configuring.product, configuring.section.kind)}`}
+          key={configuring.replaceItem?.key ?? `${configuring.product.id}:${getDisplayName(configuring.product, configuring.section.kind)}`}
           product={configuring.product}
           products={data?.products ?? []}
           section={configuring.section}
           onClose={() => setConfiguring(null)}
-          menu={data?.dailyMenu ?? null}
+          menu={dailyMenu}
           company={data?.company}
           subsidyAlreadyUsed={subsidyAlreadyUsed}
+          replaceItem={configuring.replaceItem}
+          fieldsToReplace={configuring.fields}
           onAdd={(metadata, unitPrice) => {
-            addProduct(configuring.product, configuring.section, metadata, unitPrice);
+            addProduct(configuring.product, configuring.section, metadata, unitPrice, configuring.replaceItem?.key);
             setConfiguring(null);
           }}
         />
@@ -1235,6 +1343,8 @@ function ConfigModal({
   menu,
   company,
   subsidyAlreadyUsed,
+  replaceItem,
+  fieldsToReplace,
   onClose,
   onAdd
 }: {
@@ -1244,13 +1354,44 @@ function ConfigModal({
   menu: DailyMenu | null;
   company?: PublicData["company"];
   subsidyAlreadyUsed: boolean;
+  replaceItem?: CartItem;
+  fieldsToReplace?: MenuCourseField[];
   onClose: () => void;
   onAdd: (metadata: Record<string, string>, unitPrice: number) => void;
 }) {
   const spec = getConfigSpec(product, section, menu, company, products);
-  const [stepIndex, setStepIndex] = useState(0);
-  const [singleValues, setSingleValues] = useState<Record<string, string>>({});
-  const [multiValues, setMultiValues] = useState<Record<string, string[]>>({});
+  const initialSingleValues: Record<string, string> = {};
+  const initialMultiValues: Record<string, string[]> = {};
+  const priorChoices = replaceItem?.metadata;
+
+  if (priorChoices) {
+    if (priorChoices.bread && priorChoices.bread !== "No") initialSingleValues.bread = BREAD_OPTION.label;
+    if (hasCutlery(priorChoices)) initialSingleValues[CUTLERY_METADATA_KEY] = CUTLERY_OPTION.label;
+
+    for (const group of spec.groups) {
+      const previous = priorChoices[group.key];
+      if (!previous || fieldsToReplace?.some((field) => field === group.key)) continue;
+
+      if (group.type === "single") {
+        const savedOption = group.options.find(({ label }) =>
+          label === previous || (isCustomSaladChoice(label) && isCustomSaladChoice(previous))
+        );
+        if (savedOption) initialSingleValues[group.key] = savedOption.label;
+      } else if (group.type === "multi") {
+        const selected = previous.split(",").map((value) => value.trim());
+        initialMultiValues[group.key] = selected.filter((value) => group.options.some(({ label }) => label === value));
+      }
+    }
+  }
+
+  const [stepIndex, setStepIndex] = useState(() => Math.max(
+    0,
+    activeConfigFlowGroups(spec.groups, initialSingleValues).findIndex((group) =>
+      fieldsToReplace?.some((field) => field === group.key)
+    )
+  ));
+  const [singleValues, setSingleValues] = useState(initialSingleValues);
+  const [multiValues, setMultiValues] = useState(initialMultiValues);
   const activeGroups = activeConfigFlowGroups(spec.groups, singleValues);
   const currentGroup = activeGroups[stepIndex];
   const displayStep = displayConfigFlowStep(activeGroups, stepIndex);
@@ -1261,12 +1402,19 @@ function ConfigModal({
       : spec.defaultMetadata?.salad_size ?? singleValues.salad_size;
   const selectedSaladBases = multiValues.salad_base ?? [];
   const needsSecondSaladBase = selectedSaladBases.length === 1 && saladBaseRequiresPair(selectedSaladBases[0], saladSize);
+  const firstUnavailableCourse = activeGroups.findIndex((group) =>
+    ["plate", "first_course", "second_course"].includes(group.key) &&
+    singleValues[group.key] &&
+    !group.options.some(({ label }) => label === singleValues[group.key])
+  );
 
   useEffect(() => {
-    if (stepIndex >= activeGroups.length) {
+    if (firstUnavailableCourse >= 0 && stepIndex > firstUnavailableCourse) {
+      setStepIndex(firstUnavailableCourse);
+    } else if (stepIndex >= activeGroups.length) {
       setStepIndex(Math.max(activeGroups.length - 1, 0));
     }
-  }, [activeGroups.length, stepIndex]);
+  }, [activeGroups.length, firstUnavailableCourse, stepIndex]);
 
   function selectedValuesForGroup(group: ConfigGroup) {
     if (group.key === BREAD_CUTLERY_GROUP_KEY) {
@@ -1310,7 +1458,7 @@ function ConfigModal({
     }
 
     if (group.type === "single") {
-      return Boolean(singleValues[group.key]);
+      return group.options.some(({ label }) => label === singleValues[group.key]);
     }
 
     const selected = multiValues[group.key] ?? [];
@@ -1684,7 +1832,7 @@ function ConfigModal({
             type="button"
           >
             <Plus className="h-5 w-5" />
-            Añadir
+            {replaceItem ? "Guardar cambio" : "Añadir"}
           </button>
         </div>
       </div>
@@ -1714,6 +1862,9 @@ function CheckoutPanel({
   orderWindow,
   hasSubsidizedItem,
   subsidyAlreadyUsed,
+  menuReviews,
+  onReplaceMenuItem,
+  onRemoveMenuItem,
   changeQuantity,
   submitOrder,
   onBack
@@ -1739,6 +1890,9 @@ function CheckoutPanel({
   orderWindow: { open: boolean; message: string };
   hasSubsidizedItem: boolean;
   subsidyAlreadyUsed: boolean;
+  menuReviews: ReadonlyMap<string, MenuReview>;
+  onReplaceMenuItem: (item: CartItem, review: MenuReview) => void;
+  onRemoveMenuItem: (key: string) => void;
   changeQuantity: (key: string, delta: number) => void;
   submitOrder: () => void;
   onBack: () => void;
@@ -1774,43 +1928,65 @@ function CheckoutPanel({
 
             <div className="mt-4 space-y-3">
               {cart.length ? (
-                cart.map((item) => (
-                  <div key={item.key} className="border-b border-matica-line pb-3 last:border-0">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="font-black">{item.name}</p>
-                        <p className="mt-1 text-xs font-semibold leading-5 text-matica-ink/55">{metadataLabel(item.metadata)}</p>
+                cart.map((item) => {
+                  const review = menuReviews.get(item.key);
+
+                  return (
+                    <div key={item.key} className="border-b border-matica-line pb-3 last:border-0">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="font-black">{item.name}</p>
+                          <p className="mt-1 text-xs font-semibold leading-5 text-matica-ink/55">{metadataLabel(item.metadata)}</p>
+                        </div>
+                        <p className="shrink-0 font-black">{formatCurrency(item.base_price * item.quantity)}</p>
                       </div>
-                      <p className="shrink-0 font-black">{formatCurrency(item.base_price * item.quantity)}</p>
-                    </div>
-                    <div className="mt-3 flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-2">
-                        <button
-                          className="matica-focus grid h-10 w-10 place-items-center rounded-lg border border-matica-line bg-white"
-                          onClick={() => changeQuantity(item.key, -1)}
-                          aria-label={`Quitar ${item.name}`}
-                          type="button"
-                        >
-                          <Minus className="h-4 w-4" />
-                        </button>
-                        <span className="w-8 text-center font-black">{item.quantity}</span>
-                        <button
-                          className="matica-focus grid h-10 w-10 place-items-center rounded-lg border border-matica-line bg-white"
-                          onClick={() => changeQuantity(item.key, 1)}
-                          aria-label={`Añadir ${item.name}`}
-                          type="button"
-                        >
-                          <Plus className="h-4 w-4" />
-                        </button>
-                      </div>
-                      {getSubsidyAmount(item.product_type, company) > 0 ? (
-                        <span className="rounded-lg bg-matica-mint px-2 py-1 text-xs font-black text-matica-green">
-                          Subvencionable
-                        </span>
+                      {review ? (
+                        <div className="mt-2 rounded-lg bg-amber-50 p-2.5 text-sm font-semibold text-amber-900">
+                          <p>{review.replacement
+                            ? `El menú ha cambiado. Revisa ${review.fields.map((field) => `el ${formatMetadataKey(field).toLowerCase()}`).join(" y ")}.`
+                            : "Este menú no está disponible ahora."}
+                          </p>
+                          <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
+                            {review.replacement ? (
+                              <button type="button" className="matica-focus font-bold underline" onClick={() => onReplaceMenuItem(item, review)}>
+                                Volver a elegir
+                              </button>
+                            ) : null}
+                            <button type="button" className="matica-focus underline" onClick={() => onRemoveMenuItem(item.key)}>
+                              Quitar del carrito
+                            </button>
+                          </div>
+                        </div>
                       ) : null}
+                      <div className="mt-3 flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-2">
+                          <button
+                            className="matica-focus grid h-10 w-10 place-items-center rounded-lg border border-matica-line bg-white"
+                            onClick={() => changeQuantity(item.key, -1)}
+                            aria-label={`Quitar ${item.name}`}
+                            type="button"
+                          >
+                            <Minus className="h-4 w-4" />
+                          </button>
+                          <span className="w-8 text-center font-black">{item.quantity}</span>
+                          <button
+                            className="matica-focus grid h-10 w-10 place-items-center rounded-lg border border-matica-line bg-white"
+                            onClick={() => changeQuantity(item.key, 1)}
+                            aria-label={`Añadir ${item.name}`}
+                            type="button"
+                          >
+                            <Plus className="h-4 w-4" />
+                          </button>
+                        </div>
+                        {getSubsidyAmount(item.product_type, company) > 0 ? (
+                          <span className="rounded-lg bg-matica-mint px-2 py-1 text-xs font-black text-matica-green">
+                            Subvencionable
+                          </span>
+                        ) : null}
+                      </div>
                     </div>
-                  </div>
-                ))
+                  );
+                })
               ) : (
                 <div className="rounded-lg border border-dashed border-matica-line bg-matica-soft p-5 text-center">
                   <Utensils className="mx-auto h-6 w-6 text-matica-green" />
@@ -1962,6 +2138,11 @@ function CheckoutPanel({
             <div className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm font-bold text-red-700">
               {submitState.message}
             </div>
+          ) : null}
+          {menuReviews.size ? (
+            <p role="status" className="mt-3 text-sm font-bold text-amber-900">
+              Revisa los platos indicados en la cesta antes de confirmar.
+            </p>
           ) : null}
 
           {!orderWindow.open && orderWindow.message ? (

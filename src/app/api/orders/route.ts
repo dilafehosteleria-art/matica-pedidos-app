@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+import { readActiveDailyMenu } from "@/lib/active-daily-menu";
 import { DELIVERY_WINDOW } from "@/lib/constants";
 import { expectedProductUnitPrice } from "@/lib/configured-price";
+import { getUnavailableMenuFields, isDailyMenuProduct } from "@/lib/daily-menu-courses";
 import { validateCompanyOrderEmail } from "@/lib/email-rules";
 import { toDateInputValue } from "@/lib/format";
 import { getGlobalSchedule } from "@/lib/global-settings";
@@ -105,7 +107,8 @@ export async function POST(request: NextRequest) {
 
   const globalSchedule = await getGlobalSchedule(supabase);
 
-  if (!isOrderWindowOpen(new Date(), globalSchedule)) {
+  const now = new Date();
+  if (!isOrderWindowOpen(now, globalSchedule)) {
     return badRequest(orderWindowMessage(globalSchedule), 403);
   }
 
@@ -172,16 +175,12 @@ export async function POST(request: NextRequest) {
     return badRequest("Empresa/sociedad no válida.");
   }
 
-  const normalizedItems = items
-    .filter((item) => item.product_id)
-    .map((item) => {
-      const metadata = item.metadata ?? {};
-      return {
-        product_id: item.product_id as string,
-        quantity: Math.min(Math.max(1, Number(item.quantity ?? 1)), 20),
-        metadata
-      };
-    });
+  const normalizedItems = items.flatMap((item, index) => item.product_id ? [{
+    index,
+    product_id: item.product_id,
+    quantity: Math.min(Math.max(1, Number(item.quantity ?? 1)), 20),
+    metadata: item.metadata ?? {}
+  }] : []);
 
   if (!normalizedItems.length) {
     return badRequest("El carrito está vacío.");
@@ -229,11 +228,32 @@ export async function POST(request: NextRequest) {
     }, { status: 400 });
   }
 
-  const { data: subsidyRules, error: subsidyRulesError } = await supabase
+  const menuItems = pricedItems.flatMap((item) => {
+    const type = productMap.get(item.product_id)!.product_type;
+    return isDailyMenuProduct(type) ? [{ item, type }] : [];
+  });
+  const today = toDateInputValue(now);
+  const recentLimit = new Date(now.getTime() - 36 * 60 * 60 * 1000).toISOString();
+  const subsidyRulesQuery = supabase
     .from("subsidy_rules")
     .select("product_type,subsidy_amount")
     .eq("company_id", selectedCompany.id)
     .eq("active", true);
+  const existingOrdersQuery = supabase
+    .from("orders")
+    .select("created_at,status,payment_method,payment_status,order_items(subsidy_amount)")
+    .eq("company_id", selectedCompany.id)
+    .eq("customer_email", customerEmail)
+    .gte("created_at", recentLimit);
+  const [
+    { data: subsidyRules, error: subsidyRulesError },
+    { data: existingOrders, error: subsidyUsageError },
+    menuResult
+  ] = await Promise.all([
+    subsidyRulesQuery,
+    existingOrdersQuery,
+    menuItems.length ? readActiveDailyMenu(supabase, today) : null
+  ]);
 
   if (subsidyRulesError) {
     return badRequest(subsidyRulesError.message);
@@ -242,15 +262,6 @@ export async function POST(request: NextRequest) {
   const subsidyByType = new Map(
     ((subsidyRules as SubsidyRule[] | null) ?? []).map((rule) => [rule.product_type, Number(rule.subsidy_amount)])
   );
-
-  const recentLimit = new Date(Date.now() - 36 * 60 * 60 * 1000).toISOString();
-  const today = toDateInputValue();
-  const { data: existingOrders, error: subsidyUsageError } = await supabase
-    .from("orders")
-    .select("created_at,status,payment_method,payment_status,order_items(subsidy_amount)")
-    .eq("company_id", selectedCompany.id)
-    .eq("customer_email", customerEmail)
-    .gte("created_at", recentLimit);
 
   if (subsidyUsageError) {
     return badRequest(subsidyUsageError.message);
@@ -262,6 +273,27 @@ export async function POST(request: NextRequest) {
 
     return sameMadridDay && isSubsidyConsumingOrder(order) && hasSubsidy;
   });
+
+  if (menuResult) {
+    const { data: menu, error: menuError } = menuResult;
+    if (menuError) {
+      return badRequest("No se ha podido comprobar el menú. Inténtalo de nuevo en unos segundos.", 503);
+    }
+
+    const invalidItems = menuItems.flatMap(({ item, type }) => {
+      const fields = getUnavailableMenuFields(type, item.metadata, menu);
+      return fields.length ? [{ index: item.index, fields }] : [];
+    });
+
+    if (invalidItems.length) {
+      return NextResponse.json({
+        code: "MENU_CHANGED",
+        error: menu ? "El menú ha cambiado. Actualiza la página y vuelve a elegir el plato." : "El menú de hoy todavía no está disponible.",
+        menu,
+        invalidItems
+      }, { status: 409 });
+    }
+  }
 
   await supabase.from("customers").upsert(
     {
