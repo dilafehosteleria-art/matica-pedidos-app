@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { readActiveDailyMenu } from "@/lib/active-daily-menu";
 import { DELIVERY_WINDOW } from "@/lib/constants";
-import { expectedProductUnitPrice } from "@/lib/configured-price";
 import { getUnavailableMenuFields, isDailyMenuProduct } from "@/lib/daily-menu-courses";
 import { validateCompanyOrderEmail } from "@/lib/email-rules";
 import { toDateInputValue } from "@/lib/format";
@@ -239,7 +238,6 @@ export async function POST(request: NextRequest) {
   const { data: products, error: productsError } = await supabase
     .from("products")
     .select("id,name,base_price,product_type")
-    .in("id", productIds)
     .eq("active", true)
     .eq("sold_out", false);
 
@@ -247,9 +245,10 @@ export async function POST(request: NextRequest) {
     return badRequest(productsError.message);
   }
 
-  const productMap = new Map((products as SupabaseProduct[] | null)?.map((product) => [product.id, product]) ?? []);
+  const pricingCatalog = (products as SupabaseProduct[] | null) ?? [];
+  const productMap = new Map(pricingCatalog.map((product) => [product.id, product]));
 
-  if (productMap.size !== productIds.length) {
+  if (productIds.some((id) => !productMap.has(id))) {
     return badRequest("Algún producto del carrito ya no está disponible.");
   }
 
@@ -257,13 +256,11 @@ export async function POST(request: NextRequest) {
   const pricedItems = normalizedItems.map((item) => {
     const product = productMap.get(item.product_id)!;
     const { _configured_unit_price: quoted, ...unquotedMetadata } = item.metadata;
-    const validatedItem = priceOrderItem(product, unquotedMetadata);
-    const unitPrice = validatedItem.valid
-      ? expectedProductUnitPrice(product, validatedItem.metadata, Array.from(productMap.values()))
-      : null;
-    const incoming = quoted === undefined || quoted.trim() === "" ? null : Number(quoted);
-    const quoteValid = incoming === null || (Number.isFinite(incoming) && incoming > 0);
-    const priceMatches = incoming === null || (unitPrice !== null && Math.abs(incoming - unitPrice) < 1e-8);
+    const validatedItem = priceOrderItem(product, unquotedMetadata, pricingCatalog);
+    const unitPrice = validatedItem.unitPrice;
+    const incoming = quoted === undefined ? null : Number(quoted);
+    const quoteValid = quoted === undefined || (incoming !== null && Number.isFinite(incoming) && incoming > 0);
+    const priceMatches = quoted === undefined || (incoming !== null && unitPrice !== null && Math.abs(incoming - unitPrice) < 1e-8);
 
     return {
       ...item,

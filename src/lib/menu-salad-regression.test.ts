@@ -166,9 +166,18 @@ test("cada fecha nueva ofrece la ensalada primera y respeta una sustitución gua
     eq(column: string, value: string) { assert.equal(column, "date"); requestedDate = value; return query; },
     async maybeSingle() { return { data: stored.get(requestedDate) ?? null, error: null }; }
   };
+  const supabase = {
+    from: (table: string) => {
+      assert.equal(table, "daily_menus");
+      return query;
+    }
+  };
   const { GET } = loadModule("src/app/api/admin/menu/route.ts", {
     "@/lib/admin": { assertAdmin: () => null },
-    "@/lib/supabase/server": { getSupabaseServerClient: () => ({ from: (table: string) => { assert.equal(table, "daily_menus"); return query; } }) }
+    "@/lib/supabase/server": {
+      getSupabaseServerClient: () => supabase,
+      getSupabaseAdminClient: () => supabase
+    }
   });
   for (const date of ["2026-09-15", menu.date, "2026-09-16"]) {
     const response = await GET(new NextRequest(`http://matica.test/api/admin/menu?date=${date}`));
@@ -193,9 +202,18 @@ test("el guardado real normaliza clientes antiguos y conserva los demás platos 
     select() { return query; },
     async single() { return { data: { id: "local-menu", ...saved }, error: null }; }
   };
+  const supabase = {
+    from: (table: string) => {
+      assert.equal(table, "daily_menus");
+      return query;
+    }
+  };
   const { PUT } = loadModule("src/app/api/admin/menu/route.ts", {
     "@/lib/admin": { assertAdmin: () => null },
-    "@/lib/supabase/server": { getSupabaseServerClient: () => ({ from: (table: string) => { assert.equal(table, "daily_menus"); return query; } }) }
+    "@/lib/supabase/server": {
+      getSupabaseServerClient: () => supabase,
+      getSupabaseAdminClient: () => supabase
+    }
   });
   for (const firstCourse of [menu.first_courses[0], "Ensalada a tu manera", "ENSALADA MIXTA ( ATUN Y HUEVO )"]) {
     const body = { ...menu, first_courses: [firstCourse, ...menu.first_courses.slice(1)], drinks: ["Agua"], desserts: ["Flan"] };

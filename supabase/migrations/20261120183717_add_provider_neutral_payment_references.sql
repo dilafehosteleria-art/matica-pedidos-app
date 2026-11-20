@@ -32,3 +32,4 @@ where payment_provider is not null and payment_checkout_id is not null;
 create unique index if not exists idx_orders_provider_transaction_id
 on public.orders(payment_provider, payment_transaction_id)
 where payment_provider is not null and payment_transaction_id is not null;
+

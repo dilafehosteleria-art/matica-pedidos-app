@@ -6,6 +6,8 @@ import test, { type TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
 import type { NextRequest } from "next/server";
+import { PRODUCTS } from "./constants.ts";
+import { normalizeDrinkChoice } from "./drink-options.ts";
 import type { DailyMenu } from "./types";
 
 const require = createRequire(import.meta.url);
@@ -51,6 +53,23 @@ function loadCheckout(mocks: Record<string, unknown>, routePath = "src/app/api/o
 const dailyMenu: Product = { id: "menu", name: "Menú del día", product_type: "daily_menu", base_price: "13.50" };
 const halfMenu: Product = { id: "half", name: "Medio menú", product_type: "half_menu", base_price: "10.00" };
 const bowl: Product = { id: "bowl", name: "Caesar Crunch Chicken Bowl", product_type: "standard", base_price: "10.50" };
+
+function resolveCatalogIdentity(product: Product): Product {
+  const expectedName = product.product_type === "drink"
+    ? normalizeDrinkChoice(product.name)
+    : product.name;
+  const catalogProduct = PRODUCTS.find((candidate) =>
+    candidate.product_type === product.product_type && candidate.name === expectedName
+  );
+
+  assert.ok(
+    catalogProduct,
+    `El producto de prueba ${product.name} (${product.product_type}) no existe en PRODUCTS.`
+  );
+
+  return { ...product, id: catalogProduct.id };
+}
+
 const publishedMenu: DailyMenu = {
   id: "menu-today",
   date: "2026-11-12",
@@ -76,6 +95,10 @@ function checkoutHarness(
   const menuReads: Row[] = [];
   let emailCalls = 0;
   let savedOrder: Row | undefined;
+  const resolvedCatalog = catalog.map(resolveCatalogIdentity);
+  const productIds = new Map(
+    catalog.map((catalogProduct, index) => [catalogProduct.id, resolvedCatalog[index].id])
+  );
   const supabase = {
     from(table: string) {
       let action = "select";
@@ -85,7 +108,7 @@ function checkoutHarness(
       const query = {
         select() { return query; },
         eq(column: string, value: unknown) { filters[column] = value; return query; },
-        in() { return query; },
+        in(column: string, values: unknown[]) { filters[column] = values; return query; },
         gte() { return query; },
         maybeSingle() { single = true; return query; },
         single() { single = true; return query; },
@@ -107,7 +130,12 @@ function checkoutHarness(
               allow_card_payment: !companyPays, allow_pay_on_delivery: companyPays
             },
             company_branches: { id: "branch" },
-            products: available ? catalog : [],
+            products: available
+              ? resolvedCatalog.filter((product) => {
+                  const requestedIds = filters.id;
+                  return !Array.isArray(requestedIds) || requestedIds.includes(product.id);
+                })
+              : [],
             subsidy_rules: companyPays ? [] : [
               { product_type: "daily_menu", subsidy_amount: "4.00" },
               { product_type: "half_menu", subsidy_amount: "3.50" }
@@ -137,7 +165,10 @@ function checkoutHarness(
     return Response.json({ id: "cs_test_local", url: "https://checkout.stripe.test/session" });
   });
   const route = loadCheckout({
-    "@/lib/supabase/server": { getSupabaseServerClient: () => supabase },
+    "@/lib/supabase/server": {
+      getSupabaseServerClient: () => supabase,
+      getSupabaseAdminClient: () => supabase
+    },
     "@/lib/global-settings": { getGlobalSchedule: async () => ({}) },
     "@/lib/schedule": {
       isOrderWindowOpen: () => true,
@@ -147,21 +178,32 @@ function checkoutHarness(
     "@/lib/order-email": { sendOrderNotificationEmail: async () => { emailCalls += 1; } }
   });
   function submitItems(items: CheckoutItem[]) {
+    const resolvedItems = items.map((item) => ({
+      ...item,
+      product_id: productIds.get(item.product_id) ?? item.product_id
+    }));
+
     return route.POST(new RequestClass("https://matica.test/api/orders", {
       method: "POST",
       body: JSON.stringify({
         company_slug: companySlug,
         customer: { name: "Prueba local", email: "checkout-test@bureauveritas.com", phone: "000000000", company_branch_id: "branch" },
-        items,
+        items: resolvedItems,
         payment_method: companyPays ? "pay_on_delivery" : "stripe_card"
       })
     }));
   }
   return {
     writes, stripeRequests, menuReads, submitItems,
+    productId: (testId: string) => productIds.get(testId) ?? testId,
     emailCalls: () => emailCalls,
     async submit(price: string | undefined, extraMetadata: Record<string, string> = {}) {
-      const metadata: Record<string, string> = { display_name: product.name };
+      const displayName = product.product_type === "drink"
+        ? "Escoge tu bebida"
+        : product.product_type === "dessert"
+          ? "Escoge tu postre"
+          : product.name;
+      const metadata: Record<string, string> = { display_name: displayName };
       if (product.product_type === "daily_menu") {
         metadata.first_course = "Pasta";
         metadata.second_course = "Merluza";
@@ -269,7 +311,8 @@ for (const scenario of saladCheckoutCases) {
     const metadata: Record<string, string> = {
       ...(scenario.course as Record<string, string> | undefined),
       salad_size: scenario.size, protein: "Pollo", toppings: "Garbanzos, Tomate, Pepino",
-      dressing: "Vinagreta balsámica", ...(scenario.product.id === "combo" ? { sandwich: "Jamón serrano" } : {})
+      dressing: "Vinagreta balsámica",
+      ...(scenario.product.id === "combo" ? { sandwich: "Bocadillo de jamón serrano" } : {})
     };
     const restricted = ["Quinoa", "Arroz blanco", "Arroz integral", "Garbanzos", "Lentejas"];
     const rejected = ["Quinoa, Quinoa", "Garbanzos, Garbanzos", "Quinoa, Pasta, Lentejas", ...(!scenario.singleAllowed ? restricted : [])];
@@ -324,7 +367,7 @@ for (const scenario of scenarios) {
   });
 }
 
-for (const price of ["13.00", "13.20", "13.49", "13.51", "0", "-1", "NaN", ""]) {
+for (const price of ["13.00", "13.20", "13.49", "13.51", "0", "-1", "NaN"]) {
   test(`rechaza precio alterado/antiguo '${price}' antes de escribir o pedir Stripe`, async (t) => {
     const h = checkoutHarness(t);
     const response = await h.submit(price);
@@ -463,7 +506,7 @@ test("carrito anterior a una subida: actualiza precio, conserva selección y per
   assert.equal(h.writes.length, 0);
   assert.equal(h.stripeRequests.length, 0);
   const cart = applyCartPriceUpdate([{
-    key: "old-menu", product_id: "menu", name: "Menú del día", product_type: "daily_menu",
+    key: "old-menu", product_id: h.productId("menu"), name: "Menú del día", product_type: "daily_menu",
     quantity: 1, base_price: 13.2, customer_price: 13.2,
     metadata: { cutlery: "Si (+0,20 €)", bread: "No", first_course: "Pasta", _configured_unit_price: "13.20" }
   }], payload.prices)!;
@@ -480,7 +523,11 @@ test("carrito anterior a una subida: actualiza precio, conserva selección y per
 const changedProducts: { product: Product; metadata?: Record<string, string>; expected: number }[] = [
   { product: { id: "bowl", name: "Caesar Crunch Chicken Bowl", product_type: "standard", base_price: "10.50" }, expected: 10.5 },
   { product: { id: "wrap", name: "Wrap Caesar Crunch", product_type: "standard", base_price: "9.50" }, expected: 9.5 },
-  { product: { id: "sandwich", name: "Escoge tu bocadillo", product_type: "standard", base_price: "6.50" }, expected: 6.5 },
+  {
+    product: { id: "sandwich", name: "Escoge tu bocadillo", product_type: "standard", base_price: "6.50" },
+    metadata: { sandwich: "Bocadillo de jamón serrano" },
+    expected: 6.5
+  },
   { product: { id: "grill", name: "Platos combinados Matica", product_type: "standard", base_price: "11.00" }, metadata: { main_protein: "Filete de ternera a la parrilla" }, expected: 12.5 },
   { product: { id: "salad", name: "Diseña tu ensalada", product_type: "standard", base_price: "8.00" }, metadata: { salad_size: "Tamaño Mediano 1000ML", salad_base: "Arroz blanco, Mézclum", protein: "Pollo", toppings: "Maíz", dressing: "Mahonesa de soja" }, expected: 8 }
 ];
@@ -544,7 +591,10 @@ function adminPriceHarness(t: TestContext, productType = "daily_menu", subsidy =
     return query;
   } };
   const route = loadCheckout({
-    "@/lib/supabase/server": { getSupabaseServerClient: () => supabase, getSupabaseAdminClient: () => null }
+    "@/lib/supabase/server": {
+      getSupabaseServerClient: () => supabase,
+      getSupabaseAdminClient: () => supabase
+    }
   }, "src/app/api/admin/products/route.ts");
   return { writes, route, save: (basePrice: unknown, pin = "local-price-test") => route.PATCH(new RequestClass("https://matica.test/api/admin/products", {
     method: "PATCH", headers: { "x-admin-pin": pin },

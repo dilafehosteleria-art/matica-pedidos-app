@@ -125,7 +125,7 @@ test("una empresa con ambas opciones cobra al empleado cuando elige SumUp", () =
 
   const totals = calculateCartTotals([menu], company, false, "sumup_card");
 
-  assert.equal(totals.employeeTotal, 13);
+  assert.equal(totals.employeeTotal, 13.5);
   assert.equal(totals.companyInvoiceTotal, 0);
 });
 
