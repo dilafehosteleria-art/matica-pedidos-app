@@ -12,10 +12,15 @@ import { deliveryWindowLabel, isOrderWindowOpen, orderWindowMessage } from "@/li
 import {
   createStripeCheckoutSession,
   isOnlinePaymentMethod,
+  paymentProviderForMethod,
   paymentOptionsForCompany,
-  resolveStripeReturnBaseUrl
+  resolvePaymentReturnBaseUrl
 } from "@/lib/payment";
-import { getSupabaseServerClient } from "@/lib/supabase/server";
+import { createSumUpHostedCheckout } from "@/lib/sumup-hosted-checkout";
+import { sumUpCheckoutReferenceForOrder } from "@/lib/sumup-payment";
+import { priceOrderItem } from "@/lib/order-pricing";
+import { isMissingDatabaseColumn } from "@/lib/supabase/errors";
+import { getSupabaseAdminClient } from "@/lib/supabase/server";
 import type { AdminOrder, OrderStatus, PaymentMethod, ProductType } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -31,7 +36,7 @@ type IncomingOrder = {
   items?: {
     product_id?: string;
     quantity?: number;
-    metadata?: Record<string, string>;
+    metadata?: Record<string, unknown>;
   }[];
   notes?: string;
   payment_method?: PaymentMethod;
@@ -71,6 +76,29 @@ function badRequest(message: string, status = 400) {
   return NextResponse.json({ error: message }, { status });
 }
 
+function sanitizeMetadata(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {} as Record<string, string>;
+  }
+
+  const metadata: Record<string, string> = {};
+
+  for (const [key, entry] of Object.entries(value).slice(0, 50)) {
+    if (
+      !/^[a-z0-9_]{1,64}$/i.test(key) ||
+      ["__proto__", "constructor", "prototype"].includes(key) ||
+      typeof entry !== "string" ||
+      entry.length > 1_000
+    ) {
+      continue;
+    }
+
+    metadata[key] = entry;
+  }
+
+  return metadata;
+}
+
 function requestBaseUrl(request: NextRequest) {
   const forwardedHost = request.headers.get("x-forwarded-host")?.split(",")[0]?.trim();
   const forwardedProto = request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim() || "https";
@@ -82,24 +110,22 @@ function requestBaseUrl(request: NextRequest) {
   return request.nextUrl.origin;
 }
 
-function isMissingPaymentColumnError(message?: string) {
-  return Boolean(
-    message &&
-      (
-        message.includes("'payment_method' column") ||
-        message.includes("'payment_status' column") ||
-        message.includes("'payment_provider' column") ||
-        message.includes("'stripe_checkout_session_id' column") ||
-        message.includes("'stripe_payment_intent_id' column") ||
-        message.includes("'paid_at' column") ||
-        message.includes("'employee_total' column") ||
-        message.includes("'company_invoice_total' column")
-      )
-  );
-}
+const PAYMENT_COLUMNS = [
+  "payment_method",
+  "payment_status",
+  "payment_provider",
+  "payment_checkout_id",
+  "payment_transaction_id",
+  "stripe_checkout_session_id",
+  "stripe_payment_intent_id",
+  "paid_at",
+  "employee_total",
+  "company_invoice_total"
+] as const;
+const PRODUCT_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export async function POST(request: NextRequest) {
-  const supabase = getSupabaseServerClient();
+  const supabase = getSupabaseAdminClient();
 
   if (!supabase) {
     return badRequest("Ahora mismo no podemos registrar pedidos. Inténtalo de nuevo en unos minutos.", 503);
@@ -112,9 +138,16 @@ export async function POST(request: NextRequest) {
     return badRequest(orderWindowMessage(globalSchedule), 403);
   }
 
-  const body = (await request.json()) as IncomingOrder;
+  let body: IncomingOrder;
+
+  try {
+    body = (await request.json()) as IncomingOrder;
+  } catch {
+    return badRequest("El pedido no tiene un formato válido.");
+  }
+
   const customer = body.customer;
-  const items = body.items ?? [];
+  const items = Array.isArray(body.items) ? body.items : [];
 
   if (!customer?.name?.trim() || !customer.email?.trim() || !customer.phone?.trim() || !customer.company_branch_id) {
     return badRequest("Faltan datos del cliente.");
@@ -160,7 +193,7 @@ export async function POST(request: NextRequest) {
   const selectedPaymentOption = paymentOptions.find((option) => option.method === requestedPaymentMethod);
 
   if (!selectedPaymentOption) {
-    return badRequest("La forma de pago seleccionada no estÃ¡ disponible para esta empresa.");
+    return badRequest("La forma de pago seleccionada no está disponible para esta empresa.");
   }
 
   const { data: branch, error: branchError } = await supabase
@@ -175,21 +208,38 @@ export async function POST(request: NextRequest) {
     return badRequest("Empresa/sociedad no válida.");
   }
 
-  const normalizedItems = items.flatMap((item, index) => item.product_id ? [{
-    index,
-    product_id: item.product_id,
-    quantity: Math.min(Math.max(1, Number(item.quantity ?? 1)), 20),
-    metadata: item.metadata ?? {}
-  }] : []);
+  const normalizedItems = items.map((item, index) => {
+    const productId = item && typeof item.product_id === "string" ? item.product_id : "";
+    const metadata = sanitizeMetadata(item.metadata);
+    const quantity = Number(item.quantity ?? 1);
+
+    return {
+      index,
+      product_id: productId,
+      product_id_valid: PRODUCT_ID_PATTERN.test(productId),
+      quantity,
+      quantity_valid: Number.isInteger(quantity) && quantity >= 1 && quantity <= 20,
+      metadata,
+    };
+  });
 
   if (!normalizedItems.length) {
     return badRequest("El carrito está vacío.");
+  }
+
+  if (normalizedItems.some((item) => !item.quantity_valid)) {
+    return badRequest("Alguna cantidad del carrito no es válida.");
+  }
+
+  if (normalizedItems.some((item) => !item.product_id_valid)) {
+    return badRequest("Algún producto del carrito no es válido.");
   }
 
   const productIds = Array.from(new Set(normalizedItems.map((item) => item.product_id)));
   const { data: products, error: productsError } = await supabase
     .from("products")
     .select("id,name,base_price,product_type")
+    .in("id", productIds)
     .eq("active", true)
     .eq("sold_out", false);
 
@@ -199,22 +249,29 @@ export async function POST(request: NextRequest) {
 
   const productMap = new Map((products as SupabaseProduct[] | null)?.map((product) => [product.id, product]) ?? []);
 
-  if (productIds.some((id) => !productMap.has(id))) {
+  if (productMap.size !== productIds.length) {
     return badRequest("Algún producto del carrito ya no está disponible.");
   }
 
   // Validate only after loading current prices, before any customer/order writes.
   const pricedItems = normalizedItems.map((item) => {
     const product = productMap.get(item.product_id)!;
-    const unitPrice = expectedProductUnitPrice(product, item.metadata, Array.from(productMap.values()));
-    const quoted = item.metadata._configured_unit_price;
-    const incoming = Number(quoted);
-    const quoteValid = quoted === undefined || (Number.isFinite(incoming) && incoming > 0);
+    const { _configured_unit_price: quoted, ...unquotedMetadata } = item.metadata;
+    const validatedItem = priceOrderItem(product, unquotedMetadata);
+    const unitPrice = validatedItem.valid
+      ? expectedProductUnitPrice(product, validatedItem.metadata, Array.from(productMap.values()))
+      : null;
+    const incoming = quoted === undefined || quoted.trim() === "" ? null : Number(quoted);
+    const quoteValid = incoming === null || (Number.isFinite(incoming) && incoming > 0);
+    const priceMatches = incoming === null || (unitPrice !== null && Math.abs(incoming - unitPrice) < 1e-8);
+
     return {
       ...item,
       configured_unit_price: unitPrice,
-      price_valid: unitPrice !== null && quoteValid && (quoted === undefined || Math.abs(incoming - unitPrice) < 1e-8),
-      price_recoverable: unitPrice !== null && quoteValid
+      display_name: validatedItem.displayName,
+      metadata: validatedItem.metadata,
+      price_valid: validatedItem.valid && unitPrice !== null && quoteValid && priceMatches,
+      price_recoverable: validatedItem.valid && unitPrice !== null && quoteValid
     };
   });
 
@@ -324,10 +381,7 @@ export async function POST(request: NextRequest) {
       billingType === "subsidized"
         ? subsidyByType.get(product.product_type) ?? 0
         : 0;
-    const displayName =
-      item.metadata.display_name?.trim() && item.metadata.display_name.length <= 80
-        ? item.metadata.display_name.trim()
-        : product.name;
+    const displayName = item.display_name ?? product.name;
     const lineSubsidy =
       possibleSubsidy > 0 && !priorSubsidyUsed && !subsidyApplied
         ? Number(Math.min(possibleSubsidy, lineSubtotal).toFixed(2))
@@ -365,6 +419,7 @@ export async function POST(request: NextRequest) {
         ? subsidyTotal
         : 0;
   const total = employeeTotal;
+  const paymentProvider = paymentProviderForMethod(requestedPaymentMethod);
   const isOnlinePayment = isOnlinePaymentMethod(requestedPaymentMethod);
   const initialStatus: OrderStatus = isOnlinePayment ? "pendiente_pago" : "nuevo";
 
@@ -378,7 +433,7 @@ export async function POST(request: NextRequest) {
     status: initialStatus,
     payment_method: requestedPaymentMethod,
     payment_status: "pending",
-    payment_provider: isOnlinePayment ? "stripe" : null,
+    payment_provider: paymentProvider,
     subtotal,
     subsidy_total: subsidyTotal,
     employee_total: employeeTotal,
@@ -394,7 +449,7 @@ export async function POST(request: NextRequest) {
     .select("id")
     .single();
 
-  if (orderError && !isOnlinePayment && isMissingPaymentColumnError(orderError.message)) {
+  if (orderError && !isOnlinePayment && isMissingDatabaseColumn(orderError, PAYMENT_COLUMNS)) {
     const {
       payment_method: _paymentMethod,
       payment_status: _paymentStatus,
@@ -434,28 +489,77 @@ export async function POST(request: NextRequest) {
     return badRequest(orderItemsError.message);
   }
 
-  let stripeSession: { id: string; url: string } | null = null;
+  let onlineCheckout: { id: string; url: string } | null = null;
 
   if (isOnlinePayment) {
     try {
-      stripeSession = await createStripeCheckoutSession({
-        amount: total,
-        companyName: selectedCompany.name,
-        companySlug,
-        customerEmail,
-        orderId: order.id,
-        baseUrl: resolveStripeReturnBaseUrl(requestBaseUrl(request)),
-        paymentMethod: requestedPaymentMethod
-      });
+      const baseUrl = resolvePaymentReturnBaseUrl(requestBaseUrl(request));
 
-      await supabase
-        .from("orders")
-        .update({
-          stripe_checkout_session_id: stripeSession.id
-        })
-        .eq("id", order.id);
+      if (paymentProvider === "sumup") {
+        const checkoutReference = sumUpCheckoutReferenceForOrder(order.id);
+        const sumUpCheckout = await createSumUpHostedCheckout({
+          checkoutReference,
+          amount: total,
+          currency: "EUR",
+          description: `Pedido Matica ${order.id.slice(0, 8)} - ${selectedCompany.name}`,
+          returnUrl: `${baseUrl}/api/sumup/webhook`,
+          redirectUrl: `${baseUrl}/empresa/${encodeURIComponent(companySlug)}?payment=processing&order=${encodeURIComponent(order.id)}`
+        });
+
+        onlineCheckout = {
+          id: sumUpCheckout.id,
+          url: sumUpCheckout.hostedCheckoutUrl
+        };
+
+        const { error: checkoutUpdateError } = await supabase
+          .from("orders")
+          .update({
+            payment_checkout_id: sumUpCheckout.id
+          })
+          .eq("id", order.id);
+
+        if (checkoutUpdateError) {
+          throw new Error(checkoutUpdateError.message);
+        }
+      } else {
+        const stripeSession = await createStripeCheckoutSession({
+          amount: total,
+          companyName: selectedCompany.name,
+          companySlug,
+          customerEmail,
+          orderId: order.id,
+          baseUrl,
+          paymentMethod: requestedPaymentMethod
+        });
+
+        onlineCheckout = stripeSession;
+
+        const stripeUpdate = await supabase
+          .from("orders")
+          .update({
+            payment_checkout_id: stripeSession.id,
+            stripe_checkout_session_id: stripeSession.id
+          })
+          .eq("id", order.id);
+
+        if (stripeUpdate.error && isMissingDatabaseColumn(stripeUpdate.error, PAYMENT_COLUMNS)) {
+          const { error: legacyStripeUpdateError } = await supabase
+            .from("orders")
+            .update({
+              stripe_checkout_session_id: stripeSession.id
+            })
+            .eq("id", order.id);
+
+          if (legacyStripeUpdateError) {
+            throw new Error(legacyStripeUpdateError.message);
+          }
+        } else if (stripeUpdate.error) {
+          throw new Error(stripeUpdate.error.message);
+        }
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : "No se pudo iniciar el pago.";
+      const providerLabel = paymentProvider === "sumup" ? "SumUp" : "Stripe";
 
       await supabase
         .from("orders")
@@ -463,7 +567,7 @@ export async function POST(request: NextRequest) {
           status: "cancelado",
           status_updated_at: new Date().toISOString(),
           payment_status: "failed",
-          notes: `${notes ? `${notes}\n` : ""}Error iniciando pago Stripe: ${message}`
+          notes: `${notes ? `${notes}\n` : ""}Error iniciando pago ${providerLabel}: ${message}`
         })
         .eq("id", order.id);
 
@@ -496,10 +600,10 @@ export async function POST(request: NextRequest) {
     },
     payment: isOnlinePayment
       ? {
-          provider: "stripe",
+          provider: paymentProvider,
           method: requestedPaymentMethod,
           status: "pending",
-          redirect_url: stripeSession?.url ?? null
+          redirect_url: onlineCheckout?.url ?? null
         }
       : {
           provider: "manual",

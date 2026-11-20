@@ -9,7 +9,7 @@ import {
   isBureauVeritasInvoiceCandidate,
   type InvoiceBranch
 } from "@/lib/invoice-consolidation";
-import { getSupabaseServerClient } from "@/lib/supabase/server";
+import { getSupabaseAdminClient } from "@/lib/supabase/server";
 import type { AdminOrder, CompanyBranch, OrderStatus, Company } from "@/lib/types";
 import { buildStyledWorksheetXml } from "@/lib/xlsx-worksheet";
 
@@ -264,7 +264,7 @@ function reportPinEnvName(slug: string) {
 
 async function authorizeReportRequest(
   request: NextRequest,
-  supabase: NonNullable<ReturnType<typeof getSupabaseServerClient>>
+  supabase: NonNullable<ReturnType<typeof getSupabaseAdminClient>>
 ): Promise<{ auth: ReportAuth } | { error: NextResponse }> {
   const requestedAdminPin = request.headers.get("x-admin-pin") ?? "";
 
@@ -1354,7 +1354,7 @@ function slugify(value: string) {
     .replace(/^-+|-+$/g, "") || "informe";
 }
 
-async function getReportOptions(supabase: NonNullable<ReturnType<typeof getSupabaseServerClient>>, companyId = "") {
+async function getReportOptions(supabase: NonNullable<ReturnType<typeof getSupabaseAdminClient>>, companyId = "") {
   let companiesQuery = supabase.from("companies").select("*").order("name", { ascending: true });
   let branchesQuery = supabase.from("company_branches").select("*").order("name", { ascending: true });
 
@@ -1380,7 +1380,7 @@ async function getReportOptions(supabase: NonNullable<ReturnType<typeof getSupab
   };
 }
 
-async function getReportOrders(supabase: NonNullable<ReturnType<typeof getSupabaseServerClient>>, filters: ReportFilters) {
+async function getReportOrders(supabase: NonNullable<ReturnType<typeof getSupabaseAdminClient>>, filters: ReportFilters) {
   const start = madridDateToUtcIso(filters.dateFrom);
   const end = madridDateToUtcIso(addDays(filters.dateTo, 1));
 
@@ -1449,7 +1449,7 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  const supabase = getSupabaseServerClient();
+  const supabase = getSupabaseAdminClient();
 
   if (!supabase) {
     return NextResponse.json({ error: "Configura Supabase para usar el panel." }, { status: 503 });

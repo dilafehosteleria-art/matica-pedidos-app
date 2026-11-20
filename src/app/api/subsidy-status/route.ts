@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { toDateInputValue } from "@/lib/format";
 import { isSubsidyConsumingOrder } from "@/lib/order-validity";
-import { getSupabaseServerClient } from "@/lib/supabase/server";
+import { getSupabaseAdminClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ used: false });
   }
 
-  const supabase = getSupabaseServerClient();
+  const supabase = getSupabaseAdminClient();
 
   if (!supabase) {
     return NextResponse.json({ used: false, source: "seed" });

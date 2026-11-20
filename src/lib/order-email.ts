@@ -282,7 +282,11 @@ export async function sendOrderNotificationEmail(order: AdminOrder) {
   }
 
   const results = await Promise.allSettled(messages.map((message) => sendResendEmail(message)));
-  const sent = results.some((result) => result.status === "fulfilled" && result.value.sent);
+  const resultWasSent = (result: PromiseSettledResult<{ sent: boolean } | { sent: boolean; reason: string }>) =>
+    result.status === "fulfilled" && result.value.sent;
+  const maticaSent = resultWasSent(results[0]);
+  const customerSent = customerEnabled ? resultWasSent(results[1]) : false;
+  const sent = maticaSent || customerSent;
 
   for (const result of results) {
     if (result.status === "rejected") {
@@ -292,6 +296,8 @@ export async function sendOrderNotificationEmail(order: AdminOrder) {
 
   return {
     sent,
+    matica_sent: maticaSent,
+    customer_sent: customerSent,
     recipients: messages.map((message) => message.to),
     matica_subject: messages[0].subject,
     customer_subject: customerEnabled ? `Confirmación de pedido Matica #${reference}` : null,

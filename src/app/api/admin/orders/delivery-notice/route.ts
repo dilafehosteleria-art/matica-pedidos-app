@@ -7,20 +7,20 @@ import {
   summarizeDeliveryNoticeCandidates
 } from "@/lib/delivery-notice";
 import { isResendEmailConfigured, sendDeliveryNoticeEmail } from "@/lib/order-email";
-import { getSupabaseServerClient } from "@/lib/supabase/server";
+import { getSupabaseAdminClient } from "@/lib/supabase/server";
 import type { AdminOrder } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 const ORDER_SELECT = "*,delivery_notice_sent_at,order_items(*),companies(name,delivery_address),company_branches(name)";
 
 export async function POST(request: NextRequest) {
-  const adminError = assertAdmin(request);
+  const adminError = await assertAdmin(request);
 
   if (adminError) {
     return adminError;
   }
 
-  const supabase = getSupabaseServerClient();
+  const supabase = getSupabaseAdminClient();
 
   if (!supabase) {
     return NextResponse.json({ error: "Configura Supabase para usar el panel." }, { status: 503 });

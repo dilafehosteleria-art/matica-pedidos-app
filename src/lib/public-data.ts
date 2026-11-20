@@ -12,7 +12,12 @@ import { mergeCatalogDefaults } from "@/lib/catalog";
 import { readActiveDailyMenu } from "@/lib/active-daily-menu";
 import { toDateInputValue } from "@/lib/format";
 import { getGlobalSchedule } from "@/lib/global-settings";
-import { publicStripePaymentsEnabled } from "@/lib/payment";
+import {
+  activeOnlinePaymentProvider,
+  publicOnlinePaymentsEnabled,
+  publicStripePaymentsEnabled,
+  publicSumUpPaymentsEnabled
+} from "@/lib/payment";
 import { DEFAULT_GLOBAL_SCHEDULE } from "@/lib/schedule";
 import { normalizeMenuSaladChoice } from "@/lib/salad-config";
 import { normalizeDrinkChoice } from "@/lib/drink-options";
@@ -73,10 +78,15 @@ export function seedCompanyData(slug = "bureau-veritas"): PublicData | null {
     return null;
   }
 
+  const onlinePaymentProvider = activeOnlinePaymentProvider();
+
   return {
     company: {
       ...company,
-      stripe_payments_enabled: publicStripePaymentsEnabled()
+      online_payment_provider: onlinePaymentProvider,
+      online_payments_enabled: publicOnlinePaymentsEnabled(),
+      stripe_payments_enabled: publicStripePaymentsEnabled(),
+      sumup_payments_enabled: publicSumUpPaymentsEnabled()
     },
     branches: company.slug === ICF_COMPANY.slug ? ICF_BRANCHES : BUREAU_VERITAS_BRANCHES,
     categories: [...CATEGORIES].sort((a, b) => a.sort_order - b.sort_order),
@@ -196,11 +206,15 @@ export async function getPublicCompanyData(slug: string): Promise<PublicData | n
   }
 
   const catalog = mergeCatalogDefaults(categories.data ?? [], products.data ?? []);
+  const onlinePaymentProvider = activeOnlinePaymentProvider();
 
   return {
     company: {
       ...company,
-      stripe_payments_enabled: publicStripePaymentsEnabled()
+      online_payment_provider: onlinePaymentProvider,
+      online_payments_enabled: publicOnlinePaymentsEnabled(),
+      stripe_payments_enabled: publicStripePaymentsEnabled(),
+      sumup_payments_enabled: publicSumUpPaymentsEnabled()
     },
     branches: branches.data ?? [],
     categories: catalog.categories.filter((category) => category.active),

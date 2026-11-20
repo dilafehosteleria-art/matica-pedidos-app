@@ -69,7 +69,11 @@ const EMPTY_CUSTOMER: CustomerForm = {
 };
 
 function publicPaymentOptions(company: PublicData["company"] | null | undefined): PublicPaymentOption[] {
-  const stripeEnabled = Boolean(company?.stripe_payments_enabled);
+  const onlinePaymentsEnabled = Boolean(
+    company?.online_payments_enabled ?? company?.stripe_payments_enabled
+  );
+  const onlinePaymentProvider =
+    company?.online_payment_provider ?? (company?.stripe_payments_enabled ? "stripe" : null);
   const options: PublicPaymentOption[] = [];
 
   if (company?.allow_pay_on_delivery) {
@@ -83,7 +87,15 @@ function publicPaymentOptions(company: PublicData["company"] | null | undefined)
     });
   }
 
-  if (stripeEnabled && company?.allow_card_payment) {
+  if (onlinePaymentsEnabled && onlinePaymentProvider === "sumup" && company?.allow_card_payment) {
+    options.push({
+      method: "sumup_card",
+      label: "Pago online con SumUp",
+      description: "Completarás el pago con tarjeta a través de SumUp."
+    });
+  }
+
+  if (onlinePaymentsEnabled && onlinePaymentProvider === "stripe" && company?.allow_card_payment) {
     options.push({
       method: "stripe_card",
       label: "Pago online Stripe",
@@ -97,6 +109,8 @@ function publicPaymentOptions(company: PublicData["company"] | null | undefined)
 type SubmitState =
   | { status: "idle" }
   | { status: "loading" }
+  | { status: "verifying"; message: string }
+  | { status: "processing"; message: string }
   | { status: "success"; message: string }
   | { status: "error"; message: string };
 
@@ -108,6 +122,17 @@ type PublicPaymentOption = {
   method: PaymentMethod;
   label: string;
   description: string;
+};
+
+type PaymentStatusPayload = {
+  order?: {
+    id?: string;
+  };
+  payment?: {
+    status?: "pending" | "paid" | "failed" | "cancelled";
+    provider?: "stripe" | "sumup" | null;
+  };
+  error?: string;
 };
 
 type Option = {
@@ -741,34 +766,158 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
 
   useEffect(() => {
     const url = new URL(window.location.href);
-    const paymentStatus = url.searchParams.get("payment");
-    const orderId = url.searchParams.get("order") ?? "";
+    const paymentReturn = url.searchParams.get("payment");
+    const orderId = url.searchParams.get("order")?.trim() ?? "";
 
-    if (paymentStatus !== "success" && paymentStatus !== "cancelled") {
+    if (!["processing", "success", "cancelled"].includes(paymentReturn ?? "")) {
       return;
     }
+
+    const clearPaymentReturn = () => {
+      const cleanUrl = new URL(window.location.href);
+      cleanUrl.searchParams.delete("payment");
+      cleanUrl.searchParams.delete("order");
+      window.history.replaceState(null, "", `${cleanUrl.pathname}${cleanUrl.search}${cleanUrl.hash}`);
+    };
 
     setCart([]);
     setNotes("");
     setConfiguring(null);
     setLastOrder(orderId ? { id: orderId, total: 0 } : null);
-    setSubmitState(
-      paymentStatus === "success"
-        ? {
-            status: "success",
-            message: "Gracias, hemos recibido tu pedido correctamente."
-          }
-        : {
-            status: "error",
-            message: "Pago cancelado. Tu pedido no se ha confirmado."
-          }
-    );
     setStep("confirmation");
     window.scrollTo({ top: 0 });
 
-    url.searchParams.delete("payment");
-    url.searchParams.delete("order");
-    window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+    if (paymentReturn === "cancelled") {
+      setSubmitState({
+        status: "error",
+        message: "Pago cancelado. Tu pedido no se ha confirmado."
+      });
+      clearPaymentReturn();
+      return;
+    }
+
+    if (!orderId) {
+      setSubmitState({
+        status: "error",
+        message: "No hemos podido identificar el pedido para verificar el pago."
+      });
+      clearPaymentReturn();
+      return;
+    }
+
+    const controller = new AbortController();
+    let pollTimer: number | undefined;
+    let pollAttempt = 0;
+    const pollingStartedAt = Date.now();
+    const maxPollingDurationMs = 2 * 60 * 1000;
+
+    const scheduleNextCheck = () => {
+      if (Date.now() - pollingStartedAt >= maxPollingDurationMs) {
+        setSubmitState({
+          status: "processing",
+          message:
+            "El pago sigue pendiente de confirmación. Puedes cerrar esta página; el pedido se confirmará automáticamente cuando responda el proveedor."
+        });
+        clearPaymentReturn();
+        return;
+      }
+
+      const delay = Math.min(1_800 * 2 ** pollAttempt, 15_000);
+      pollAttempt += 1;
+      pollTimer = window.setTimeout(() => {
+        void checkPaymentStatus();
+      }, delay);
+    };
+
+    const checkPaymentStatus = async () => {
+      setSubmitState({
+        status: "verifying",
+        message: "Estamos verificando el pago con el proveedor. No cierres esta página."
+      });
+
+      try {
+        const response = await fetch(`/api/payments/status?order=${encodeURIComponent(orderId)}`, {
+          cache: "no-store",
+          signal: controller.signal
+        });
+        const payload = (await response.json().catch(() => ({}))) as PaymentStatusPayload;
+
+        if (response.status === 404) {
+          setSubmitState({
+            status: "error",
+            message: "No encontramos el pedido y no hemos podido confirmar el pago."
+          });
+          clearPaymentReturn();
+          return;
+        }
+
+        if (!response.ok) {
+          if (response.status >= 400 && response.status < 500) {
+            setSubmitState({
+              status: "error",
+              message: payload.error ?? "No hemos podido verificar el pago de este pedido."
+            });
+            clearPaymentReturn();
+            return;
+          }
+
+          throw new Error(payload.error ?? "No se pudo consultar el estado del pago.");
+        }
+
+        if (payload.payment?.status === "paid") {
+          setLastOrder({ id: payload.order?.id ?? orderId, total: 0 });
+          setSubmitState({
+            status: "success",
+            message: "Pago confirmado. Hemos recibido tu pedido correctamente."
+          });
+          clearPaymentReturn();
+          return;
+        }
+
+        if (payload.payment?.status === "failed" || payload.payment?.status === "cancelled") {
+          setSubmitState({
+            status: "error",
+            message:
+              payload.payment.status === "cancelled"
+                ? "Pago cancelado. Tu pedido no se ha confirmado."
+                : "El pago ha fallado y el pedido no se ha confirmado."
+          });
+          clearPaymentReturn();
+          return;
+        }
+
+        if (payload.payment?.status !== "pending") {
+          throw new Error("El servidor ha devuelto un estado de pago no reconocido.");
+        }
+
+        setSubmitState({
+          status: "verifying",
+          message: "El pago sigue procesándose. Lo comprobaremos de nuevo automáticamente."
+        });
+        scheduleNextCheck();
+      } catch (error) {
+        if (controller.signal.aborted) {
+          return;
+        }
+
+        console.warn("[payment-status] No se pudo verificar el pago todavía.", error);
+        setSubmitState({
+          status: "verifying",
+          message: "Aún no podemos comprobar el pago. Seguimos reintentándolo automáticamente."
+        });
+        scheduleNextCheck();
+      }
+    };
+
+    void checkPaymentStatus();
+
+    return () => {
+      controller.abort();
+
+      if (pollTimer !== undefined) {
+        window.clearTimeout(pollTimer);
+      }
+    };
   }, []);
 
   useEffect(() => {
@@ -2122,7 +2271,7 @@ function CheckoutPanel({
                 ))
               ) : (
                 <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm font-bold text-red-700">
-                  El pago online con Stripe no esta disponible temporalmente.
+                  El pago online no está disponible temporalmente.
                 </div>
               )}
             </div>
@@ -2176,18 +2325,45 @@ function ConfirmationPanel({
   onBackToCatalog: () => void;
 }) {
   const isError = submitState.status === "error";
+  const isVerifying = submitState.status === "verifying";
+  const isProcessing = submitState.status === "processing";
+  const isSuccess = submitState.status === "success";
 
   return (
     <section className="mx-auto max-w-3xl px-4 py-10 sm:px-6 lg:px-8">
       <div className="rounded-lg border border-matica-line bg-white p-6 text-center shadow-soft">
-        <div className={`mx-auto grid h-14 w-14 place-items-center rounded-lg ${isError ? "bg-red-50 text-red-600" : "bg-matica-mint text-matica-green"}`}>
-          {isError ? <X className="h-8 w-8" /> : <CheckCircle2 className="h-8 w-8" />}
+        <div
+          className={`mx-auto grid h-14 w-14 place-items-center rounded-lg ${
+            isError
+              ? "bg-red-50 text-red-600"
+              : isVerifying || isProcessing
+                ? "bg-amber-50 text-amber-700"
+                : "bg-matica-mint text-matica-green"
+          }`}
+        >
+          {isError ? (
+            <X className="h-8 w-8" />
+          ) : isVerifying ? (
+            <Loader2 className="h-8 w-8 animate-spin" />
+          ) : isProcessing ? (
+            <Clock className="h-8 w-8" />
+          ) : (
+            <CheckCircle2 className="h-8 w-8" />
+          )}
         </div>
-        <h2 className="mt-4 text-3xl font-black">{isError ? "Pago cancelado" : "Pedido confirmado"}</h2>
+        <h2 className="mt-4 text-3xl font-black">
+          {isError
+            ? "Pago no confirmado"
+            : isVerifying
+              ? "Verificando el pago"
+              : isProcessing
+                ? "Pago en proceso"
+                : "Pedido confirmado"}
+        </h2>
         <p className="mx-auto mt-2 max-w-xl text-sm font-semibold leading-6 text-matica-ink/65">
-          {submitState.status === "success" || submitState.status === "error" ? submitState.message : "Hemos recibido tu pedido."}
+          {"message" in submitState ? submitState.message : "Estamos procesando tu pedido."}
         </p>
-        {!isError ? (
+        {isSuccess ? (
           <>
             <p className="mx-auto mt-2 max-w-xl text-sm font-semibold leading-6 text-matica-ink/65">
               Recibirás un email de confirmación con el detalle del pedido.
@@ -2205,12 +2381,22 @@ function ConfirmationPanel({
         <div className="mt-5 rounded-lg border border-matica-line bg-matica-soft p-4 text-left">
           <div className="flex items-center gap-2 font-black">
             <CreditCard className="h-5 w-5 text-matica-green" />
-            {isError ? "Pago no confirmado" : "Confirmación enviada"}
+            {isError
+              ? "Pago no confirmado"
+              : isVerifying
+                ? "Verificación en curso"
+                : isProcessing
+                  ? "Confirmación pendiente"
+                  : "Confirmación enviada"}
           </div>
           <p className="mt-1 text-sm font-semibold text-matica-ink/60">
             {isError
               ? "Si quieres finalizar el pedido, vuelve a la carta y repite el pago."
-              : "Si has pagado online, Stripe ya ha confirmado el pedido y el equipo de Matica ha recibido el aviso."}
+              : isVerifying
+                ? "Esperaremos la confirmación del proveedor antes de enviar el pedido al equipo de Matica."
+                : isProcessing
+                  ? "No repetiremos el cobro. El servidor seguirá esperando la confirmación del proveedor."
+                  : "El servidor ha confirmado el pago y el equipo de Matica ha recibido el aviso."}
           </p>
         </div>
 

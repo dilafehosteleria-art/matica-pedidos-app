@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { assertAdmin } from "@/lib/admin";
 import { isVisibleAdminOrder } from "@/lib/order-validity";
-import { getSupabaseServerClient } from "@/lib/supabase/server";
+import { getSupabaseAdminClient } from "@/lib/supabase/server";
 import type { AdminOrder, OrderStatus } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -102,13 +102,13 @@ function filterHistoryOrders(orders: AdminOrder[], request: NextRequest) {
 }
 
 export async function GET(request: NextRequest) {
-  const adminError = assertAdmin(request);
+  const adminError = await assertAdmin(request);
 
   if (adminError) {
     return adminError;
   }
 
-  const supabase = getSupabaseServerClient();
+  const supabase = getSupabaseAdminClient();
 
   if (!supabase) {
     return NextResponse.json({ error: "Configura Supabase para usar el panel." }, { status: 503 });

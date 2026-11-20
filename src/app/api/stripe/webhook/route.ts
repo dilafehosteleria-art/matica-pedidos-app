@@ -1,7 +1,8 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { sendOrderNotificationEmail } from "@/lib/order-email";
-import { getSupabaseServerClient } from "@/lib/supabase/server";
+import { isMissingDatabaseColumn } from "@/lib/supabase/errors";
+import { getSupabaseAdminClient } from "@/lib/supabase/server";
 import type { AdminOrder } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -24,6 +25,8 @@ type StripeEvent = {
 function jsonError(message: string, status = 400) {
   return NextResponse.json({ error: message }, { status });
 }
+
+const GENERIC_PAYMENT_COLUMNS = ["payment_checkout_id", "payment_transaction_id"] as const;
 
 function parseStripeSignature(header: string | null) {
   const parts = (header ?? "").split(",").map((part) => part.trim());
@@ -57,7 +60,7 @@ function verifySignature(rawBody: string, signatureHeader: string | null) {
 }
 
 async function loadOrder(orderId: string) {
-  const supabase = getSupabaseServerClient();
+  const supabase = getSupabaseAdminClient();
 
   if (!supabase) {
     return null;
@@ -78,7 +81,7 @@ async function loadOrder(orderId: string) {
 }
 
 async function markCheckoutCompleted(session: StripeEvent["data"]["object"]) {
-  const supabase = getSupabaseServerClient();
+  const supabase = getSupabaseAdminClient();
 
   if (!supabase) {
     throw new Error("Supabase no esta configurado.");
@@ -108,18 +111,35 @@ async function markCheckoutCompleted(session: StripeEvent["data"]["object"]) {
     return;
   }
 
-  const { error } = await supabase
+  let { error } = await supabase
     .from("orders")
     .update({
       status: "nuevo",
       status_updated_at: new Date().toISOString(),
       payment_status: "paid",
       payment_provider: "stripe",
+      payment_checkout_id: session.id ?? null,
+      payment_transaction_id: session.payment_intent ?? null,
       stripe_checkout_session_id: session.id ?? null,
       stripe_payment_intent_id: session.payment_intent ?? null,
       paid_at: new Date().toISOString()
     })
     .eq("id", orderId);
+
+  if (error && isMissingDatabaseColumn(error, GENERIC_PAYMENT_COLUMNS)) {
+    ({ error } = await supabase
+      .from("orders")
+      .update({
+        status: "nuevo",
+        status_updated_at: new Date().toISOString(),
+        payment_status: "paid",
+        payment_provider: "stripe",
+        stripe_checkout_session_id: session.id ?? null,
+        stripe_payment_intent_id: session.payment_intent ?? null,
+        paid_at: new Date().toISOString()
+      })
+      .eq("id", orderId));
+  }
 
   if (error) {
     throw new Error(error.message);
@@ -133,7 +153,7 @@ async function markCheckoutCompleted(session: StripeEvent["data"]["object"]) {
 }
 
 async function markCheckoutFailed(session: StripeEvent["data"]["object"]) {
-  const supabase = getSupabaseServerClient();
+  const supabase = getSupabaseAdminClient();
 
   if (!supabase) {
     throw new Error("Supabase no esta configurado.");

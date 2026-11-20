@@ -113,6 +113,22 @@ test("una empresa con ambas opciones cobra al empleado cuando elige Stripe", () 
   assert.equal(totals.companyInvoiceTotal, 0);
 });
 
+test("una empresa con ambas opciones cobra al empleado cuando elige SumUp", () => {
+  const company: Company = {
+    id: "both-sumup",
+    name: "Empresa mixta",
+    slug: "empresa-mixta",
+    active: true,
+    billing_type: "company",
+    subsidy_rules: []
+  };
+
+  const totals = calculateCartTotals([menu], company, false, "sumup_card");
+
+  assert.equal(totals.employeeTotal, 13);
+  assert.equal(totals.companyInvoiceTotal, 0);
+});
+
 test("una empresa estándar no aplica subvención ni factura a empresa", () => {
   const company: Company = {
     id: "standard",

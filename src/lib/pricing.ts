@@ -29,7 +29,9 @@ export function calculateCartTotals(
     }
   }
 
-  const companyPaysAll = company?.billing_type === "company" && paymentMethod !== "stripe_card" && paymentMethod !== "stripe_bizum";
+  const companyPaysAll =
+    company?.billing_type === "company" &&
+    (paymentMethod === undefined || paymentMethod === "pay_on_delivery");
   const employeeTotal = companyPaysAll ? 0 : Math.max(subtotal - subsidyTotal, 0);
   const companyInvoiceTotal = companyPaysAll ? subtotal : subsidyTotal;
 

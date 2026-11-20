@@ -147,7 +147,7 @@ export function thermalPaymentLabel(
     return "Pago a cargo de empresa";
   }
 
-  if (order.payment_method === "stripe_card" || order.payment_method === "stripe_bizum") {
+  if (order.payment_method && order.payment_method !== "pay_on_delivery") {
     return order.payment_status === "paid" ? "Pago online" : operationalPaymentLabel(order);
   }
 

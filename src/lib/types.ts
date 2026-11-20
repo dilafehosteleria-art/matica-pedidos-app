@@ -17,7 +17,10 @@ export type OrderStatus =
 export type PaymentMethod =
   | "pay_on_delivery"
   | "stripe_card"
-  | "stripe_bizum";
+  | "stripe_bizum"
+  | "sumup_card";
+
+export type OnlinePaymentProvider = "stripe" | "sumup";
 
 export type PaymentStatus =
   | "pending"
@@ -44,6 +47,9 @@ export type Company = {
     active: boolean;
   }[];
   stripe_payments_enabled?: boolean;
+  sumup_payments_enabled?: boolean;
+  online_payments_enabled?: boolean;
+  online_payment_provider?: OnlinePaymentProvider | null;
   active: boolean;
   created_at?: string;
 };
@@ -172,6 +178,10 @@ export type AdminOrder = {
   payment_method?: PaymentMethod | null;
   payment_status?: PaymentStatus | null;
   payment_provider?: string | null;
+  payment_checkout_id?: string | null;
+  payment_transaction_id?: string | null;
+  payment_notification_sent_at?: string | null;
+  payment_notification_claimed_at?: string | null;
   stripe_checkout_session_id?: string | null;
   stripe_payment_intent_id?: string | null;
   paid_at?: string | null;

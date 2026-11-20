@@ -493,6 +493,7 @@ export function ReportsPanel({
           >
             <option value="">Todos</option>
             <option value="stripe_card">Stripe</option>
+            <option value="sumup_card">SumUp</option>
             <option value="pay_on_delivery">Pago empresa / entrega</option>
           </select>
         </label>

@@ -1,9 +1,10 @@
-import type { PaymentMethod, PaymentStatus } from "@/lib/types";
+import type { PaymentMethod, PaymentStatus } from "./types";
 
 const PAYMENT_LABELS: Record<PaymentMethod, string> = {
   pay_on_delivery: "Pago a la entrega",
   stripe_card: "Pago online Stripe",
-  stripe_bizum: "Bizum"
+  stripe_bizum: "Bizum",
+  sumup_card: "Pago online SumUp"
 };
 
 const PAYMENT_STATUS_LABELS: Record<PaymentStatus, string> = {

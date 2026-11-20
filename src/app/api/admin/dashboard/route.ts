@@ -9,7 +9,7 @@ import {
   madridDateToUtcIso,
   previousPeriod
 } from "@/lib/business-dashboard";
-import { getSupabaseServerClient } from "@/lib/supabase/server";
+import { getSupabaseAdminClient } from "@/lib/supabase/server";
 import type { Company, CompanyBranch } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -36,13 +36,13 @@ function readPeriod(request: NextRequest) {
 }
 
 export async function GET(request: NextRequest) {
-  const adminError = assertAdmin(request);
+  const adminError = await assertAdmin(request);
 
   if (adminError) {
     return adminError;
   }
 
-  const supabase = getSupabaseServerClient();
+  const supabase = getSupabaseAdminClient();
 
   if (!supabase) {
     return NextResponse.json({ error: "Configura Supabase para usar el dashboard." }, { status: 503 });

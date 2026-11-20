@@ -83,7 +83,7 @@ function safePathSegment(value: string) {
 }
 
 export async function POST(request: NextRequest) {
-  const adminError = assertAdmin(request);
+  const adminError = await assertAdmin(request);
 
   if (adminError) {
     return adminError;

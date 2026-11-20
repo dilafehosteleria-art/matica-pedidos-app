@@ -233,7 +233,7 @@ function CompaniesEditor({ pin, clearPin }: { pin: string; clearPin: () => void 
                   value={newCompany.payment_mode}
                   onChange={(event) => updateNewCompany("payment_mode", event.target.value as NewCompanyDraft["payment_mode"])}
                 >
-                  <option value="stripe">Stripe</option>
+                  <option value="stripe">Pago online</option>
                   <option value="company">Pago a la entrega / a cargo de empresa</option>
                   <option value="both">Ambas opciones</option>
                 </select>
@@ -335,18 +335,18 @@ function CompaniesEditor({ pin, clearPin }: { pin: string; clearPin: () => void 
                       onChange={(value) => updatePaymentDraft(company.id, "allow_pay_on_delivery", value)}
                     />
                     <Toggle
-                      label="Stripe / tarjeta"
+                      label="Pago online / tarjeta"
                       checked={draft.allow_card_payment}
                       onChange={(value) => updatePaymentDraft(company.id, "allow_card_payment", value)}
                     />
                     <Toggle
-                      label="Bizum por Stripe"
+                      label="Bizum (según pasarela)"
                       checked={draft.allow_bizum_payment}
                       onChange={(value) => updatePaymentDraft(company.id, "allow_bizum_payment", value)}
                     />
                   </div>
                   <p className="mt-2 text-xs font-bold text-matica-ink/50">
-                    La forma de pago visible en la carta depende de esta configuración. Las nuevas empresas quedan preparadas para Stripe sin subvención.
+                    La forma de pago visible en la carta depende de esta configuración. Las nuevas empresas quedan preparadas para pago online sin subvención.
                   </p>
                 </div>
 

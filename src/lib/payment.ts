@@ -1,7 +1,8 @@
-import type { Company, PaymentMethod } from "@/lib/types";
-import { paymentMethodLabel as getPaymentMethodLabel } from "@/lib/payment-display";
+import { isSumUpConfigured } from "./sumup-hosted-checkout.ts";
+import type { Company, OnlinePaymentProvider, PaymentMethod } from "./types";
+import { paymentMethodLabel as getPaymentMethodLabel } from "./payment-display.ts";
 
-export { operationalPaymentLabel, paymentMethodLabel, paymentStatusLabel } from "@/lib/payment-display";
+export { operationalPaymentLabel, paymentMethodLabel, paymentStatusLabel } from "./payment-display.ts";
 
 export type PaymentOption = {
   method: PaymentMethod;
@@ -31,8 +32,54 @@ export function isStripeConfigured() {
   return Boolean(process.env.STRIPE_SECRET_KEY);
 }
 
+export function activeOnlinePaymentProvider(): OnlinePaymentProvider | null {
+  const configuredProvider = process.env.ONLINE_PAYMENT_PROVIDER?.trim().toLowerCase();
+
+  if (!configuredProvider || configuredProvider === "stripe") {
+    return "stripe";
+  }
+
+  if (configuredProvider === "sumup") {
+    return "sumup";
+  }
+
+  return null;
+}
+
+export function isOnlinePaymentProviderConfigured(provider = activeOnlinePaymentProvider()) {
+  if (!provider) {
+    return false;
+  }
+
+  return provider === "sumup" ? isSumUpConfigured() : isStripeConfigured();
+}
+
+export function publicOnlinePaymentsEnabled() {
+  return isOnlinePaymentProviderConfigured();
+}
+
 export function publicStripePaymentsEnabled() {
-  return Boolean(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY && process.env.STRIPE_SECRET_KEY);
+  return activeOnlinePaymentProvider() === "stripe" && isStripeConfigured();
+}
+
+export function publicSumUpPaymentsEnabled() {
+  return activeOnlinePaymentProvider() === "sumup" && isSumUpConfigured();
+}
+
+export function onlinePaymentMethodForProvider(provider: OnlinePaymentProvider): PaymentMethod {
+  return provider === "sumup" ? "sumup_card" : "stripe_card";
+}
+
+export function paymentProviderForMethod(method: PaymentMethod): OnlinePaymentProvider | null {
+  if (method === "sumup_card") {
+    return "sumup";
+  }
+
+  if (method === "stripe_card" || method === "stripe_bizum") {
+    return "stripe";
+  }
+
+  return null;
 }
 
 function companyAllows(
@@ -46,10 +93,11 @@ function companyAllows(
 export function paymentOptionsForCompany(
   company: Pick<Company, "allow_pay_on_delivery" | "allow_card_payment" | "allow_bizum_payment">
 ): PaymentOption[] {
-  const stripeEnabled = isStripeConfigured();
+  const provider = activeOnlinePaymentProvider();
+  const onlinePaymentsEnabled = isOnlinePaymentProviderConfigured(provider);
   const options: PaymentOption[] = [];
 
-  if (companyAllows(company, "allow_pay_on_delivery", true) || !stripeEnabled) {
+  if (companyAllows(company, "allow_pay_on_delivery", true)) {
     options.push({
       method: "pay_on_delivery",
       label: getPaymentMethodLabel("pay_on_delivery"),
@@ -58,38 +106,45 @@ export function paymentOptionsForCompany(
     });
   }
 
-  if (stripeEnabled && companyAllows(company, "allow_card_payment", false)) {
+  if (provider && onlinePaymentsEnabled && companyAllows(company, "allow_card_payment", false)) {
+    const method = onlinePaymentMethodForProvider(provider);
+
     options.push({
-      method: "stripe_card",
-      label: getPaymentMethodLabel("stripe_card"),
-      description: "Stripe mostrara tarjeta, Bizum y monederos disponibles.",
+      method,
+      label: getPaymentMethodLabel(method),
+      description:
+        provider === "sumup"
+          ? "SumUp mostrara las formas de pago disponibles."
+          : "Stripe mostrara tarjeta, Bizum y monederos disponibles.",
       online: true
     });
   }
 
-  return options.length ? options : [{
-    method: "pay_on_delivery",
-    label: getPaymentMethodLabel("pay_on_delivery"),
-    description: "Confirmas ahora y pagas en el punto de entrega.",
-    online: false
-  }];
+  return options;
 }
 
 export function publicCheckoutPaymentOptions(): PaymentOption[] {
-  if (!isStripeConfigured()) {
+  const provider = activeOnlinePaymentProvider();
+
+  if (!provider || !isOnlinePaymentProviderConfigured(provider)) {
     return [];
   }
 
+  const method = onlinePaymentMethodForProvider(provider);
+
   return [{
-    method: "stripe_card",
-    label: "Stripe Checkout",
-    description: "Stripe mostrara tarjeta, Apple Pay, Google Pay y Bizum cuando esten disponibles.",
+    method,
+    label: provider === "sumup" ? "SumUp Hosted Checkout" : "Stripe Checkout",
+    description:
+      provider === "sumup"
+        ? "SumUp mostrara las formas de pago disponibles."
+        : "Stripe mostrara tarjeta, Apple Pay, Google Pay y Bizum cuando esten disponibles.",
     online: true
   }];
 }
 
 export function isOnlinePaymentMethod(method: PaymentMethod) {
-  return method === "stripe_card" || method === "stripe_bizum";
+  return paymentProviderForMethod(method) !== null;
 }
 
 function amountToCents(amount: number) {
@@ -128,17 +183,26 @@ function normalizeBaseUrl(value: string | undefined) {
   }
 }
 
-export function resolveStripeReturnBaseUrl(requestBaseUrl: string) {
-  return (
+export function resolvePaymentReturnBaseUrl(requestBaseUrl: string) {
+  const configuredBaseUrl =
     normalizeBaseUrl(process.env.APP_URL) ??
-    normalizeBaseUrl(process.env.NEXT_PUBLIC_APP_URL) ??
-    normalizeBaseUrl(requestBaseUrl) ??
-    PRODUCTION_APP_URL
-  );
+    normalizeBaseUrl(process.env.NEXT_PUBLIC_APP_URL);
+
+  if (configuredBaseUrl) {
+    return configuredBaseUrl;
+  }
+
+  if (process.env.NODE_ENV === "production") {
+    return PRODUCTION_APP_URL;
+  }
+
+  return normalizeBaseUrl(requestBaseUrl) ?? PRODUCTION_APP_URL;
 }
 
+export const resolveStripeReturnBaseUrl = resolvePaymentReturnBaseUrl;
+
 function checkoutReturnUrl(baseUrl: string, status: "success" | "cancelled", orderId: string, companySlug: string) {
-  const safeBaseUrl = resolveStripeReturnBaseUrl(baseUrl);
+  const safeBaseUrl = resolvePaymentReturnBaseUrl(baseUrl);
 
   return `${safeBaseUrl}/empresa/${encodeURIComponent(companySlug)}?payment=${status}&order=${encodeURIComponent(orderId)}`;
 }

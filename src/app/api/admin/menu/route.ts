@@ -3,7 +3,7 @@ import { assertAdmin } from "@/lib/admin";
 import { toDateInputValue } from "@/lib/format";
 import { CUSTOM_SALAD_CHOICE_LABEL, normalizeMenuSaladChoice } from "@/lib/salad-config";
 import { normalizeDrinkChoice } from "@/lib/drink-options";
-import { getSupabaseServerClient } from "@/lib/supabase/server";
+import { getSupabaseAdminClient } from "@/lib/supabase/server";
 import type { DailyMenuCourse } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -21,13 +21,13 @@ function sanitizeSecondCourses(value: unknown): DailyMenuCourse[] {
 }
 
 export async function GET(request: NextRequest) {
-  const adminError = assertAdmin(request);
+  const adminError = await assertAdmin(request);
 
   if (adminError) {
     return adminError;
   }
 
-  const supabase = getSupabaseServerClient();
+  const supabase = getSupabaseAdminClient();
 
   if (!supabase) {
     return NextResponse.json({ error: "Configura Supabase para usar el panel." }, { status: 503 });
@@ -59,13 +59,13 @@ export async function GET(request: NextRequest) {
 }
 
 export async function PUT(request: NextRequest) {
-  const adminError = assertAdmin(request);
+  const adminError = await assertAdmin(request);
 
   if (adminError) {
     return adminError;
   }
 
-  const supabase = getSupabaseServerClient();
+  const supabase = getSupabaseAdminClient();
 
   if (!supabase) {
     return NextResponse.json({ error: "Configura Supabase para usar el panel." }, { status: 503 });
