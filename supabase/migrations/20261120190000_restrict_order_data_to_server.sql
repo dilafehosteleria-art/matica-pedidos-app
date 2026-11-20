@@ -39,4 +39,3 @@ revoke execute on function public.submit_b2b_order(jsonb)
 from public, anon, authenticated;
 
 commit;
-
