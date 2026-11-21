@@ -1,4 +1,24 @@
 import type { GlobalSchedule } from "./types";
+import {
+  resolveOperatingCalendar,
+  type CalendarClosure,
+  type ScheduleException
+} from "./operating-calendar.ts";
+
+export type DeliveryCalendarContext = {
+  closures?: CalendarClosure[] | null;
+  exceptions?: ScheduleException[] | null;
+  companyId?: string | null;
+  localOnlyDays?: number[] | null;
+  available?: boolean;
+};
+
+export type OrderWindowState = {
+  open: boolean;
+  message: string;
+  deliveryStartTime: string;
+  deliveryEndTime: string;
+};
 
 const DAY_NAMES = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"];
 
@@ -32,30 +52,6 @@ export function normalizeGlobalSchedule(value?: Partial<GlobalSchedule> | null):
     delivery_start_time: normalizeTime(value?.delivery_start_time, DEFAULT_GLOBAL_SCHEDULE.delivery_start_time),
     delivery_end_time: normalizeTime(value?.delivery_end_time, DEFAULT_GLOBAL_SCHEDULE.delivery_end_time),
     updated_at: value?.updated_at
-  };
-}
-
-function timeToMinutes(value: string) {
-  const [hour, minute] = value.split(":").map(Number);
-
-  return hour * 60 + minute;
-}
-
-function getMadridParts(date = new Date()) {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: "Europe/Madrid",
-    weekday: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23"
-  }).formatToParts(date);
-  const get = (type: string) => parts.find((part) => part.type === type)?.value ?? "";
-  const weekday = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].indexOf(get("weekday")) + 1;
-
-  return {
-    weekday,
-    hour: Number(get("hour")),
-    minute: Number(get("minute"))
   };
 }
 
@@ -97,31 +93,91 @@ export function orderWindowMessage(schedule: GlobalSchedule = DEFAULT_GLOBAL_SCH
 
 export const ORDER_WINDOW_MESSAGE = orderWindowMessage(DEFAULT_GLOBAL_SCHEDULE);
 
-export function isOrderWindowOpen(date = new Date(), schedule: GlobalSchedule = DEFAULT_GLOBAL_SCHEDULE) {
+function resolveDeliveryWindow(
+  date: Date,
+  schedule: GlobalSchedule,
+  calendar?: DeliveryCalendarContext
+) {
   const normalized = normalizeGlobalSchedule(schedule);
 
-  if (!normalized.active) {
-    return false;
+  if (calendar?.available === false) {
+    return null;
   }
 
-  const { weekday, hour, minute } = getMadridParts(date);
-  const minutes = hour * 60 + minute;
-
-  return (
-    normalized.active_days.includes(weekday) &&
-    minutes >= timeToMinutes(normalized.order_open_time) &&
-    minutes < timeToMinutes(normalized.order_close_time)
-  );
+  return resolveOperatingCalendar({
+    now: date,
+    channel: "delivery",
+    companyId: calendar?.companyId,
+    weeklySchedule: normalized,
+    closures: calendar?.closures,
+    exceptions: calendar?.exceptions,
+    localOnlyDays: calendar?.localOnlyDays
+  });
 }
 
-export function getOrderWindowState(date = new Date(), schedule: GlobalSchedule = DEFAULT_GLOBAL_SCHEDULE) {
+export function isOrderWindowOpen(
+  date = new Date(),
+  schedule: GlobalSchedule = DEFAULT_GLOBAL_SCHEDULE,
+  calendar?: DeliveryCalendarContext
+) {
+  const state = resolveDeliveryWindow(date, schedule, calendar);
+
+  return state?.open === true;
+}
+
+export function getOrderWindowState(
+  date = new Date(),
+  schedule: GlobalSchedule = DEFAULT_GLOBAL_SCHEDULE,
+  calendar?: DeliveryCalendarContext
+): OrderWindowState {
   const normalized = normalizeGlobalSchedule(schedule);
-  const open = isOrderWindowOpen(date, normalized);
+  const state = resolveDeliveryWindow(date, normalized, calendar);
+  const deliveryTimes = {
+    deliveryStartTime: state?.serviceStart ?? normalized.delivery_start_time,
+    deliveryEndTime: state?.serviceEnd ?? normalized.delivery_end_time
+  };
+
+  if (!state) {
+    return {
+      open: false,
+      message: "No podemos comprobar ahora el calendario de aperturas. Inténtalo de nuevo en unos minutos.",
+      ...deliveryTimes
+    };
+  }
+
+  if (state.open) {
+    return {
+      open: true,
+      message: `Delivery abierto hasta las ${state.closeTime ?? normalized.order_close_time}.`,
+      ...deliveryTimes
+    };
+  }
+
+  if (state.reason === "holiday") {
+    return {
+      open: false,
+      message: `Hoy no hay delivery por ${state.closureName ?? "festivo"}.`,
+      ...deliveryTimes
+    };
+  }
+
+  if (state.reason === "exception_closed") {
+    return { open: false, message: "El delivery está cerrado hoy por una configuración puntual.", ...deliveryTimes };
+  }
+
+  if (state.reason === "local_only") {
+    return {
+      open: false,
+      message: "Hoy no hay delivery para esta empresa. Puedes comer o recoger en el local.",
+      ...deliveryTimes
+    };
+  }
 
   return {
-    open,
-    message: open
-      ? `Pedidos abiertos hasta las ${normalized.order_close_time}.`
-      : orderWindowMessage(normalized)
+    open: false,
+    message: state.source === "exception" && state.openTime && state.closeTime
+      ? `El delivery de hoy está disponible de ${state.openTime} a ${state.closeTime}.`
+      : orderWindowMessage(normalized),
+    ...deliveryTimes
   };
 }

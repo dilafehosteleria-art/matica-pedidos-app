@@ -1,3 +1,5 @@
+import type { CalendarClosure, ScheduleException } from "./operating-calendar.ts";
+
 export type ProductType =
   | "daily_menu"
   | "half_menu"
@@ -171,6 +173,9 @@ export type PublicData = {
   products: Product[];
   dailyMenu: DailyMenu | null;
   schedule: GlobalSchedule;
+  calendarClosures: CalendarClosure[];
+  scheduleExceptions: ScheduleException[];
+  operatingCalendarAvailable: boolean;
   source: "supabase" | "seed";
 };
 

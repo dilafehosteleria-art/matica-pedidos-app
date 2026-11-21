@@ -1,6 +1,13 @@
+import {
+  resolveOperatingCalendar,
+  type CalendarClosure,
+  type ScheduleException
+} from "./operating-calendar.ts";
+
 export type LocalFulfillmentType = "dine_in" | "pickup";
 
 export type LocalOrderingCompany = {
+  id?: string | null;
   local_ordering_enabled?: boolean | null;
   local_order_days?: number[] | null;
   local_ordering_open_time?: string | null;
@@ -8,6 +15,12 @@ export type LocalOrderingCompany = {
   local_ordering_guarantee_cutoff?: string | null;
   local_orders_closed_on?: string | null;
   local_only_days?: number[] | null;
+};
+
+export type LocalCalendarContext = {
+  closures?: CalendarClosure[] | null;
+  exceptions?: ScheduleException[] | null;
+  available?: boolean;
 };
 
 export type LocalOrderState = {
@@ -261,66 +274,86 @@ export function localOrderWindowLabel(company: LocalOrderingCompany) {
   return `${activeDaysLabel(config.days)} de ${config.openTime} a ${config.closeTime}`;
 }
 
-export function getLocalOrderState(date: Date, company: LocalOrderingCompany): LocalOrderState {
+export function getLocalOrderState(
+  date: Date,
+  company: LocalOrderingCompany,
+  calendar?: LocalCalendarContext
+): LocalOrderState {
   const config = normalizedLocalOrdering(company);
-  const { weekday, localDate, currentTime, currentMinutes } = getMadridParts(date);
-  const openMinutes = timeToMinutes(config.openTime);
-  const closeMinutes = timeToMinutes(config.closeTime);
-  const guaranteeMinutes = timeToMinutes(config.guaranteeCutoff);
-  const afterGuaranteeCutoff = currentMinutes >= guaranteeMinutes;
+  const { localDate, currentTime } = getMadridParts(date);
   const baseState = {
     localDate,
     currentTime,
-    afterGuaranteeCutoff,
+    afterGuaranteeCutoff: timeToMinutes(currentTime) >= timeToMinutes(config.guaranteeCutoff),
     openTime: config.openTime,
     closeTime: config.closeTime
   };
 
-  if (!config.enabled) {
+  if (calendar?.available === false) {
     return {
       ...baseState,
       open: false,
-      message: "Los pedidos para comer o recoger en el local no están disponibles."
+      message: "No podemos comprobar ahora el calendario del local. Inténtalo de nuevo en unos minutos."
     };
   }
+
+  const exceptions = [...(calendar?.exceptions ?? [])];
 
   if (config.closedOn === localDate) {
-    return {
-      ...baseState,
-      open: false,
-      message: "Hoy no aceptamos pedidos para comer o recoger en el local."
-    };
+    exceptions.push({
+      date: localDate,
+      channel: "local",
+      company_id: company.id ?? null,
+      mode: "closed",
+      open_time: null,
+      close_time: null,
+      service_start: null,
+      service_end: null,
+      menu_guarantee_cutoff: null
+    });
   }
 
-  if (!config.days.includes(weekday)) {
-    return {
-      ...baseState,
-      open: false,
-      message: `Los pedidos para el local están disponibles ${localOrderWindowLabel(company)}.`
-    };
-  }
+  const resolved = resolveOperatingCalendar({
+    now: date,
+    channel: "local",
+    companyId: company.id,
+    weeklySchedule: company,
+    closures: calendar?.closures,
+    exceptions
+  });
+  const state = {
+    localDate: resolved.localDate || localDate,
+    currentTime: resolved.currentTime || currentTime,
+    afterGuaranteeCutoff: resolved.afterMenuGuaranteeCutoff,
+    openTime: resolved.openTime ?? config.openTime,
+    closeTime: resolved.closeTime ?? config.closeTime
+  };
 
-  if (currentMinutes < openMinutes) {
-    return {
-      ...baseState,
-      open: false,
-      message: `Los pedidos para el local abren a las ${config.openTime}.`
-    };
-  }
+  if (!resolved.open) {
+    const message = resolved.reason === "holiday"
+      ? `Hoy no aceptamos pedidos para el local por ${resolved.closureName ?? "festivo"}.`
+      : resolved.reason === "exception_closed"
+        ? "Hoy no aceptamos pedidos para comer o recoger por una configuración puntual."
+        : resolved.reason === "before_open"
+          ? `Los pedidos para el local abren a las ${state.openTime}.`
+          : resolved.reason === "after_close"
+            ? `Los pedidos para el local están disponibles hasta las ${state.closeTime}.`
+            : resolved.reason === "master_disabled"
+              ? "Los pedidos para comer o recoger en el local no están disponibles."
+              : `Los pedidos para el local están disponibles ${localOrderWindowLabel(company)}.`;
 
-  if (currentMinutes >= closeMinutes) {
     return {
-      ...baseState,
+      ...state,
       open: false,
-      message: `Los pedidos para el local están disponibles hasta las ${config.closeTime}.`
+      message
     };
   }
 
   return {
-    ...baseState,
+    ...state,
     open: true,
-    message: afterGuaranteeCutoff
+    message: resolved.afterMenuGuaranteeCutoff
       ? "Pedido en el local disponible. La elección de platos queda sujeta a disponibilidad."
-      : `Pedidos para el local abiertos hasta las ${config.closeTime}.`
+      : `Pedidos para el local abiertos hasta las ${state.closeTime}.`
   };
 }

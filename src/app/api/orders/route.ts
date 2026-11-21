@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { readActiveDailyMenu } from "@/lib/active-daily-menu";
-import { DELIVERY_WINDOW } from "@/lib/constants";
 import { getUnavailableMenuFields, isDailyMenuProduct } from "@/lib/daily-menu-courses";
 import { validateCompanyOrderEmail } from "@/lib/email-rules";
 import { toDateInputValue } from "@/lib/format";
@@ -8,14 +7,14 @@ import { getGlobalSchedule } from "@/lib/global-settings";
 import {
   getLocalOrderState,
   isLocalFulfillmentType,
-  isLocalOnlyDay,
   type LocalFulfillmentType,
   type LocalOrderingCompany
 } from "@/lib/local-ordering";
 import { isRequestedLocalTimeAllowed } from "@/lib/local-order-time";
+import { readOperatingCalendar } from "@/lib/operating-calendar-data";
 import { sendOrderNotificationEmail } from "@/lib/order-email";
 import { isSubsidyConsumingOrder } from "@/lib/order-validity";
-import { deliveryWindowLabel, isOrderWindowOpen, orderWindowMessage } from "@/lib/schedule";
+import { getOrderWindowState } from "@/lib/schedule";
 import {
   createStripeCheckoutSession,
   isOnlinePaymentMethod,
@@ -208,25 +207,33 @@ export async function POST(request: NextRequest) {
 
   const selectedCompany = company as SupabaseCompany;
   const now = new Date();
-  const localOrderState = fulfillmentType === "delivery"
-    ? null
-    : getLocalOrderState(now, selectedCompany);
+  const operatingCalendar = await readOperatingCalendar(supabase, {
+    companyId: selectedCompany.id,
+    date: toDateInputValue(now)
+  });
 
-  if (
-    fulfillmentType === "delivery" &&
-    selectedCompany.local_ordering_enabled &&
-    isLocalOnlyDay(now, selectedCompany)
-  ) {
+  if (!operatingCalendar.available) {
     return codedError(
-      "LOCAL_ONLY_DAY",
-      "Hoy no hay reparto para esta empresa. Puedes pedir para comer o recoger en el local.",
-      403,
-      { fulfillment_type: fulfillmentType }
+      "OPERATING_CALENDAR_UNAVAILABLE",
+      "No podemos comprobar ahora el calendario de aperturas. Inténtalo de nuevo en unos minutos.",
+      503
     );
   }
 
-  if (fulfillmentType === "delivery" && !isOrderWindowOpen(now, globalSchedule)) {
-    return codedError("ORDER_WINDOW_CLOSED", orderWindowMessage(globalSchedule), 403, {
+  const calendarContext = {
+    closures: operatingCalendar.closures,
+    exceptions: operatingCalendar.exceptions,
+    companyId: selectedCompany.id,
+    localOnlyDays: selectedCompany.local_only_days,
+    available: true
+  };
+  const deliveryOrderState = getOrderWindowState(now, globalSchedule, calendarContext);
+  const localOrderState = fulfillmentType === "delivery"
+    ? null
+    : getLocalOrderState(now, selectedCompany, calendarContext);
+
+  if (fulfillmentType === "delivery" && !deliveryOrderState.open) {
+    return codedError("ORDER_WINDOW_CLOSED", deliveryOrderState.message, 403, {
       fulfillment_type: fulfillmentType
     });
   }
@@ -595,7 +602,7 @@ export async function POST(request: NextRequest) {
   const isOnlinePayment = isOnlinePaymentMethod(requestedPaymentMethod);
   const initialStatus: OrderStatus = isOnlinePayment ? "pendiente_pago" : "nuevo";
   const serviceWindow = fulfillmentType === "delivery"
-    ? deliveryWindowLabel(globalSchedule) || selectedCompany.delivery_window || DELIVERY_WINDOW
+    ? `${deliveryOrderState.deliveryStartTime} a ${deliveryOrderState.deliveryEndTime}`
     : `En Matica · ${requestedTime}`;
 
   const orderPayload = {

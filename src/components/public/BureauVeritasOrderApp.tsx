@@ -40,7 +40,6 @@ import {
   getLocalOrderState,
   hasLateLocalMenuConfiguration,
   isLocalFulfillmentType,
-  isLocalOnlyDay,
   localOrderWindowLabel,
   type LocalOrderState
 } from "@/lib/local-ordering";
@@ -59,7 +58,7 @@ import {
   SALAD_TOPPING_OPTIONS,
   SMALL_SALAD_SIZE_LABEL
 } from "@/lib/salad-config";
-import { deliveryWindowLabel, getOrderWindowState } from "@/lib/schedule";
+import { getOrderWindowState, type OrderWindowState } from "@/lib/schedule";
 import type {
   CartItem,
   CompanyBranch,
@@ -697,9 +696,13 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
   const [lateAvailabilityAccepted, setLateAvailabilityAccepted] = useState(false);
   const [serverRequiresOnArrival, setServerRequiresOnArrival] = useState(false);
   const [customerLoaded, setCustomerLoaded] = useState(false);
-  const [orderWindow, setOrderWindow] = useState({ open: false, message: "" });
+  const [orderWindow, setOrderWindow] = useState<OrderWindowState>({
+    open: false,
+    message: "",
+    deliveryStartTime: "13:00",
+    deliveryEndTime: "13:30"
+  });
   const [localOrderState, setLocalOrderState] = useState<LocalOrderState>(EMPTY_LOCAL_ORDER_STATE);
-  const [localOnlyDay, setLocalOnlyDay] = useState(false);
   const [lastOrder, setLastOrder] = useState<{ id: string; total: number } | null>(null);
   const previousOrderWindow = useRef<boolean | null>(null);
   const menuRequest = useRef<AbortController | null>(null);
@@ -753,11 +756,25 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
   useEffect(() => {
     const refreshOrderWindow = () => {
       const now = new Date();
-      const next = getOrderWindowState(now, schedule);
-      setOrderWindow((current) => current.open === next.open && current.message === next.message ? current : next);
+      const calendar = data ? {
+        closures: data.calendarClosures,
+        exceptions: data.scheduleExceptions,
+        companyId: data.company.id,
+        localOnlyDays: data.company.local_only_days,
+        available: data.operatingCalendarAvailable
+      } : undefined;
+      const next = getOrderWindowState(now, schedule, calendar);
+      setOrderWindow((current) =>
+        current.open === next.open &&
+        current.message === next.message &&
+        current.deliveryStartTime === next.deliveryStartTime &&
+        current.deliveryEndTime === next.deliveryEndTime
+          ? current
+          : next
+      );
 
       if (data?.company) {
-        const nextLocal = getLocalOrderState(now, data.company);
+        const nextLocal = getLocalOrderState(now, data.company, calendar);
         setLocalOrderState((current) =>
           current.open === nextLocal.open &&
           current.afterGuaranteeCutoff === nextLocal.afterGuaranteeCutoff &&
@@ -769,10 +786,8 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
             ? current
             : nextLocal
         );
-        setLocalOnlyDay(isLocalOnlyDay(now, data.company));
       } else {
         setLocalOrderState(EMPTY_LOCAL_ORDER_STATE);
-        setLocalOnlyDay(false);
       }
     };
 
@@ -780,7 +795,7 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
     const interval = window.setInterval(refreshOrderWindow, 30_000);
 
     return () => window.clearInterval(interval);
-  }, [data?.company, schedule]);
+  }, [data, schedule]);
 
   useEffect(() => {
     if (!catalogLoaded) return;
@@ -1027,10 +1042,8 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
   const products = data?.products;
   const localOrderingEnabled = data?.company.local_ordering_enabled === true;
   const localFulfillment = isLocalFulfillmentType(fulfillmentType);
-  const deliveryAvailable = orderWindow.open && !(localOrderingEnabled && localOnlyDay);
-  const deliveryAvailabilityMessage = localOrderingEnabled && localOnlyDay
-    ? "Hoy no hay reparto para esta empresa. Puedes comer o recoger en el local."
-    : orderWindow.message;
+  const deliveryAvailable = orderWindow.open;
+  const deliveryAvailabilityMessage = orderWindow.message;
   const lateLocalMode = localFulfillment && (localOrderState.afterGuaranteeCutoff || serverRequiresOnArrival);
   const requestedTime = localFulfillment
     ? requestedTimeChoice === "now"
@@ -1131,9 +1144,9 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
   );
   const hasSubsidizedItem = cart.some((item) => getSubsidyAmount(item.product_type, data?.company) > 0);
   const companyName = data?.company.name ?? "tu empresa";
-  const deliveryWindow = data?.schedule
-    ? deliveryWindowLabel(data.schedule)
-    : data?.company.delivery_window ?? DELIVERY_WINDOW;
+  const deliveryWindow = data
+    ? `${orderWindow.deliveryStartTime} a ${orderWindow.deliveryEndTime}`
+    : DELIVERY_WINDOW;
   const selectedBranch = data?.branches.find((branch) => branch.id === customer.company_branch_id) ?? null;
   const emailValidation = validateCompanyOrderEmail(companySlug, customer.email);
   const canConfirmOrder =
@@ -1236,8 +1249,15 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
     }
 
     const now = new Date();
-    const currentLocalState = getLocalOrderState(now, data.company);
-    const currentLocalOnlyDay = data.company.local_ordering_enabled === true && isLocalOnlyDay(now, data.company);
+    const calendar = {
+      closures: data.calendarClosures,
+      exceptions: data.scheduleExceptions,
+      companyId: data.company.id,
+      localOnlyDays: data.company.local_only_days,
+      available: data.operatingCalendarAvailable
+    };
+    const currentDeliveryState = getOrderWindowState(now, data.schedule, calendar);
+    const currentLocalState = getLocalOrderState(now, data.company, calendar);
     const currentLateLocalMode = localFulfillment && (currentLocalState.afterGuaranteeCutoff || serverRequiresOnArrival);
     const currentLateCartNeedsReview = currentLateLocalMode && cart.some((item) =>
       !isDailyMenuProduct(item.product_type) || hasLateLocalMenuConfiguration(item.metadata)
@@ -1248,10 +1268,10 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
         : requestedTimeChoice
       : null;
 
-    if (!localFulfillment && (!orderWindow.open || currentLocalOnlyDay)) {
+    if (!localFulfillment && !currentDeliveryState.open) {
       setSubmitState({
         status: "error",
-        message: currentLocalOnlyDay ? deliveryAvailabilityMessage : orderWindow.message
+        message: currentDeliveryState.message
       });
       return;
     }
