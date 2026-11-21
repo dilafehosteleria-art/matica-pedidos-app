@@ -15,7 +15,7 @@ test("cerca del cierre conserva únicamente la opción Ahora de la interfaz", ()
   assert.deepEqual(buildLocalRequestedTimeOptions("15:00", "15:00"), []);
 });
 
-test("una apertura extraordinaria anticipada acepta Ahora y respeta su cierre", () => {
+test("una apertura local anticipada acepta Ahora y respeta su cierre", () => {
   assert.equal(isRequestedLocalTimeAllowed("08:36", "08:36", "08:30", "12:40"), true);
   assert.equal(isRequestedLocalTimeAllowed("08:31", "08:36", "08:30", "12:40"), true);
   assert.equal(isRequestedLocalTimeAllowed("08:30", "08:36", "08:30", "12:40"), false);

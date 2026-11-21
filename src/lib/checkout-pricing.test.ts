@@ -36,7 +36,6 @@ type CheckoutHarnessOptions = {
     currentTime: string;
     openTime?: string;
     closeTime?: string;
-    openedByGlobalSchedule?: boolean;
     message: string;
   };
   orderInsertErrors?: (DatabaseError | null)[];
@@ -227,7 +226,6 @@ function checkoutHarness(
       getLocalOrderState: () => ({
         openTime: "09:30",
         closeTime: "15:00",
-        openedByGlobalSchedule: false,
         ...localState
       })
     },
@@ -524,7 +522,7 @@ test("la opción Ahora tolera cinco minutos mientras el cliente termina el check
   assert.equal((await response.json()).order.requested_time, "12:05");
 });
 
-test("una apertura extraordinaria anticipada permite confirmar Ahora en el local", async (t) => {
+test("una apertura local anticipada permite confirmar Ahora en el local", async (t) => {
   const h = checkoutHarness(t, halfMenu, "bureau-veritas", true, [halfMenu], {
     localState: {
       open: true,
@@ -533,8 +531,7 @@ test("una apertura extraordinaria anticipada permite confirmar Ahora en el local
       currentTime: "08:36",
       openTime: "08:30",
       closeTime: "12:40",
-      openedByGlobalSchedule: true,
-      message: "Apertura extraordinaria activa."
+      message: "Horario local anticipado activo."
     }
   });
   const response = await h.submitItems([{
@@ -545,6 +542,30 @@ test("una apertura extraordinaria anticipada permite confirmar Ahora en el local
 
   assert.equal(response.status, 200, JSON.stringify(await response.clone().json()));
   assert.equal((await response.json()).order.requested_time, "08:36");
+});
+
+test("una apertura global no reabre un horario local cerrado", async (t) => {
+  const h = checkoutHarness(t, halfMenu, "bureau-veritas", true, [halfMenu], {
+    deliveryOpen: true,
+    localState: {
+      open: false,
+      afterGuaranteeCutoff: false,
+      localDate: "2026-11-21",
+      currentTime: "08:36",
+      openTime: "09:30",
+      closeTime: "15:00",
+      message: "Los pedidos para el local están disponibles de lunes a viernes."
+    }
+  });
+  const response = await h.submitItems([{
+    product_id: halfMenu.id,
+    quantity: 1,
+    metadata: { plate: "Pasta", _configured_unit_price: "10.00" }
+  }], { fulfillment_type: "pickup", requested_time: "10:00" });
+
+  assert.equal(response.status, 403);
+  assert.equal((await response.json()).code, "LOCAL_ORDER_WINDOW_CLOSED");
+  assert.equal(h.writes.length, 0);
 });
 
 test("un día configurado como sólo local bloquea reparto pero mantiene las modalidades locales", async (t) => {

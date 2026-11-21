@@ -86,7 +86,6 @@ const EMPTY_LOCAL_ORDER_STATE: LocalOrderState = {
   currentTime: "",
   openTime: "09:30",
   closeTime: "15:00",
-  openedByGlobalSchedule: false,
   message: ""
 };
 function lateLocalNotice(cutoff: string) {
@@ -758,7 +757,7 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
       setOrderWindow((current) => current.open === next.open && current.message === next.message ? current : next);
 
       if (data?.company) {
-        const nextLocal = getLocalOrderState(now, data.company, schedule);
+        const nextLocal = getLocalOrderState(now, data.company);
         setLocalOrderState((current) =>
           current.open === nextLocal.open &&
           current.afterGuaranteeCutoff === nextLocal.afterGuaranteeCutoff &&
@@ -766,7 +765,6 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
           current.currentTime === nextLocal.currentTime &&
           current.openTime === nextLocal.openTime &&
           current.closeTime === nextLocal.closeTime &&
-          current.openedByGlobalSchedule === nextLocal.openedByGlobalSchedule &&
           current.message === nextLocal.message
             ? current
             : nextLocal
@@ -1041,11 +1039,7 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
     : null;
   const localCloseTime = localOrderState.closeTime || data?.company.local_ordering_close_time?.slice(0, 5) || "15:00";
   const localGuaranteeCutoff = data?.company.local_ordering_guarantee_cutoff?.slice(0, 5) || "13:30";
-  const localWindowLabelForDisplay = data
-    ? localOrderState.openedByGlobalSchedule
-      ? `apertura extraordinaria de ${localOrderState.openTime} a ${localOrderState.closeTime}`
-      : localOrderWindowLabel(data.company)
-    : "";
+  const localWindowLabelForDisplay = data ? localOrderWindowLabel(data.company) : "";
   const localRequestedTimeOptions = useMemo(
     () => buildLocalRequestedTimeOptions(localOrderState.currentTime, localCloseTime),
     [localCloseTime, localOrderState.currentTime]
@@ -1242,7 +1236,7 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
     }
 
     const now = new Date();
-    const currentLocalState = getLocalOrderState(now, data.company, data.schedule);
+    const currentLocalState = getLocalOrderState(now, data.company);
     const currentLocalOnlyDay = data.company.local_ordering_enabled === true && isLocalOnlyDay(now, data.company);
     const currentLateLocalMode = localFulfillment && (currentLocalState.afterGuaranteeCutoff || serverRequiresOnArrival);
     const currentLateCartNeedsReview = currentLateLocalMode && cart.some((item) =>
