@@ -80,6 +80,7 @@ const CUSTOMER_STORAGE_MAX_AGE_SECONDS = 60 * 60 * 24 * 180;
 const EMPTY_LOCAL_ORDER_STATE: LocalOrderState = {
   open: false,
   afterGuaranteeCutoff: false,
+  guaranteeCutoff: "12:40",
   localDate: "",
   currentTime: "",
   openTime: "09:30",
@@ -87,7 +88,7 @@ const EMPTY_LOCAL_ORDER_STATE: LocalOrderState = {
   message: ""
 };
 function lateLocalNotice(cutoff: string) {
-  return `A partir de las ${cutoff} puedes seguir reservando y pagando tu menú, pero los platos se eligen al llegar y están sujetos a disponibilidad.`;
+  return `Si haces el pedido a partir de las ${cutoff}, puedes consultar los platos de hoy y pagar tu menú, pero elegirás la comida al llegar según la disponibilidad del restaurante.`;
 }
 
 const EMPTY_CUSTOMER: CustomerForm = {
@@ -777,6 +778,7 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
         setLocalOrderState((current) =>
           current.open === nextLocal.open &&
           current.afterGuaranteeCutoff === nextLocal.afterGuaranteeCutoff &&
+          current.guaranteeCutoff === nextLocal.guaranteeCutoff &&
           current.localDate === nextLocal.localDate &&
           current.currentTime === nextLocal.currentTime &&
           current.openTime === nextLocal.openTime &&
@@ -1043,14 +1045,14 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
   const localFulfillment = isLocalFulfillmentType(fulfillmentType);
   const deliveryAvailable = orderWindow.open;
   const deliveryAvailabilityMessage = orderWindow.message;
-  const lateLocalMode = localFulfillment && (localOrderState.afterGuaranteeCutoff || serverRequiresOnArrival);
   const requestedTime = localFulfillment
     ? requestedTimeChoice === "now"
       ? localOrderState.currentTime
       : requestedTimeChoice
     : null;
   const localCloseTime = localOrderState.closeTime || data?.company.local_ordering_close_time?.slice(0, 5) || "15:00";
-  const localGuaranteeCutoff = data?.company.local_ordering_guarantee_cutoff?.slice(0, 5) || "13:30";
+  const localGuaranteeCutoff = localOrderState.guaranteeCutoff || data?.company.local_ordering_guarantee_cutoff?.slice(0, 5) || "12:40";
+  const lateLocalMode = localFulfillment && (localOrderState.afterGuaranteeCutoff || serverRequiresOnArrival);
   const localRequestedTimeOptions = useMemo(
     () => buildLocalRequestedTimeOptions(localOrderState.currentTime, localCloseTime),
     [localCloseTime, localOrderState.currentTime]
@@ -1059,17 +1061,25 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
     () => (categories && products ? buildPublicCatalogSections(categories, products) : []),
     [categories, products]
   );
-  const catalogSections = useMemo(
-    () => lateLocalMode
+  const catalogSections = useMemo(() => {
+    const fulfillmentSections = localFulfillment
       ? publicSections
+          .map((section) => ({
+            ...section,
+            products: section.products.filter((product) => !isMenuSaladSandwichProduct(product))
+          }))
+          .filter((section) => section.products.length > 0)
+      : publicSections;
+
+    return lateLocalMode
+      ? fulfillmentSections
           .map((section) => ({
             ...section,
             products: section.products.filter((product) => isDailyMenuProduct(product.product_type))
           }))
           .filter((section) => section.products.length > 0)
-      : publicSections,
-    [lateLocalMode, publicSections]
-  );
+      : fulfillmentSections;
+  }, [lateLocalMode, localFulfillment, publicSections]);
   const menuReviews = useMemo(() => {
     const reviews = new Map<string, MenuReview>();
 
@@ -1140,6 +1150,7 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
   const lateCartNeedsReview = lateLocalMode && cart.some((item) =>
     !isDailyMenuProduct(item.product_type) || hasLateLocalMenuConfiguration(item.metadata)
   );
+  const localCartHasExcludedProduct = localFulfillment && cart.some((item) => isMenuSaladSandwichProduct(item));
   const hasSubsidizedItem = cart.some((item) => getSubsidyAmount(item.product_type, data?.company) > 0);
   const companyName = data?.company.name ?? "tu empresa";
   const deliveryWindow = data
@@ -1156,6 +1167,7 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
     paymentOptions.some((option) => option.method === paymentMethod) &&
     (localFulfillment ? localOrderState.open : deliveryAvailable) &&
     (!localFulfillment || Boolean(requestedTime)) &&
+    !localCartHasExcludedProduct &&
     (!lateLocalMode || lateAvailabilityAccepted) &&
     !lateCartNeedsReview &&
     menuReviews.size === 0 &&
@@ -1170,10 +1182,16 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
       return;
     }
 
+    const nextIsLocal = isLocalFulfillmentType(next);
     setFulfillmentType(next);
     setLateAvailabilityAccepted(false);
     setServerRequiresOnArrival(false);
-    setSubmitState({ status: "idle" });
+    setSubmitState(nextIsLocal && cart.some((item) => isMenuSaladSandwichProduct(item))
+      ? {
+          status: "error",
+          message: "El Menú de ensalada pequeña con bocadillo no está disponible para comer o recoger en el restaurante porque no tiene subvención. Retíralo de la cesta para continuar."
+        }
+      : { status: "idle" });
   }
 
   function adaptCartForLateLocal() {
@@ -1256,15 +1274,15 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
     };
     const currentDeliveryState = getOrderWindowState(now, data.schedule, calendar);
     const currentLocalState = getLocalOrderState(now, data.company, calendar);
-    const currentLateLocalMode = localFulfillment && (currentLocalState.afterGuaranteeCutoff || serverRequiresOnArrival);
-    const currentLateCartNeedsReview = currentLateLocalMode && cart.some((item) =>
-      !isDailyMenuProduct(item.product_type) || hasLateLocalMenuConfiguration(item.metadata)
-    );
     const requestedTimeForSubmit = localFulfillment
       ? requestedTimeChoice === "now"
         ? currentLocalState.currentTime
         : requestedTimeChoice
       : null;
+    const currentLateLocalMode = localFulfillment && (currentLocalState.afterGuaranteeCutoff || serverRequiresOnArrival);
+    const currentLateCartNeedsReview = currentLateLocalMode && cart.some((item) =>
+      !isDailyMenuProduct(item.product_type) || hasLateLocalMenuConfiguration(item.metadata)
+    );
 
     if (!localFulfillment && !currentDeliveryState.open) {
       setSubmitState({
@@ -1282,6 +1300,14 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
 
     if (localFulfillment && !requestedTimeForSubmit) {
       setSubmitState({ status: "error", message: "Indica a qué hora vendrás al restaurante." });
+      return;
+    }
+
+    if (localFulfillment && cart.some((item) => isMenuSaladSandwichProduct(item))) {
+      setSubmitState({
+        status: "error",
+        message: "El Menú de ensalada pequeña con bocadillo no está disponible para comer o recoger en el restaurante porque no tiene subvención. Retíralo de la cesta para continuar."
+      });
       return;
     }
 
@@ -1499,9 +1525,26 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
       {step === "catalog" ? (
         <div className="mx-auto max-w-7xl px-4 py-5 sm:px-6 lg:px-8">
           <section className="space-y-5">
-          {lateCartNeedsReview ? (
+          {localCartHasExcludedProduct ? (
             <div className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm font-semibold text-amber-950">
-              <p className="font-black">La cesta contiene platos elegidos o productos no disponibles después de las {localGuaranteeCutoff}.</p>
+              <p className="font-black">El Menú de ensalada pequeña con bocadillo no está disponible para pedidos en el restaurante.</p>
+              <p className="mt-1">Este producto no tiene subvención. Retíralo de la cesta para continuar con esta modalidad.</p>
+              <button
+                type="button"
+                className="matica-focus mt-3 rounded-lg bg-amber-900 px-4 py-2 font-black text-white"
+                onClick={() => {
+                  setCart((current) => current.filter((item) => !isMenuSaladSandwichProduct(item)));
+                  setSubmitState({ status: "idle" });
+                }}
+              >
+                Retirar de la cesta
+              </button>
+            </div>
+          ) : null}
+
+          {lateCartNeedsReview && !localCartHasExcludedProduct ? (
+            <div className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm font-semibold text-amber-950">
+              <p className="font-black">La cesta contiene platos elegidos o productos no disponibles para pedidos realizados a partir de las {localGuaranteeCutoff}.</p>
               <p className="mt-1">Conservaremos únicamente Menú del día y Medio menú, sin selección de platos.</p>
               <button
                 type="button"
@@ -1511,6 +1554,10 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
                 Adaptar mi cesta
               </button>
             </div>
+          ) : null}
+
+          {lateLocalMode ? (
+            <LateLocalMenuPreview menu={dailyMenu} cutoff={localGuaranteeCutoff} />
           ) : null}
 
           {data ? (
@@ -1731,6 +1778,44 @@ function InputField({
         required={required}
       />
     </label>
+  );
+}
+
+function LateLocalMenuPreview({ menu, cutoff }: { menu: DailyMenu | null; cutoff: string }) {
+  const courses = getDailyMenuCourses(menu);
+  const hasCourses = courses.first.length > 0 || courses.second.length > 0;
+
+  return (
+    <section className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-amber-950 sm:p-5">
+      <h2 className="text-lg font-black">Consulta los platos de hoy</h2>
+      <p className="mt-1 text-sm font-semibold leading-5">
+        Como el pedido se realiza a partir de las {cutoff}, esta oferta es orientativa. Añade y paga Menú del día o Medio menú; elegirás los platos en el restaurante según disponibilidad.
+      </p>
+      {hasCourses ? (
+        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+          <div className="rounded-lg border border-amber-200 bg-white p-3">
+            <h3 className="font-black">Primeros platos</h3>
+            {courses.first.length ? (
+              <ul className="mt-2 space-y-1 text-sm font-semibold">
+                {courses.first.map((course, index) => <li key={`${course}-${index}`}>• {course}</li>)}
+              </ul>
+            ) : <p className="mt-2 text-sm font-semibold text-amber-950/65">Sin información publicada.</p>}
+          </div>
+          <div className="rounded-lg border border-amber-200 bg-white p-3">
+            <h3 className="font-black">Segundos platos</h3>
+            {courses.second.length ? (
+              <ul className="mt-2 space-y-1 text-sm font-semibold">
+                {courses.second.map((course, index) => <li key={`${course}-${index}`}>• {course}</li>)}
+              </ul>
+            ) : <p className="mt-2 text-sm font-semibold text-amber-950/65">Sin información publicada.</p>}
+          </div>
+        </div>
+      ) : (
+        <p className="mt-3 rounded-lg border border-amber-200 bg-white p-3 text-sm font-semibold">
+          La oferta de hoy aún no está publicada. Podrás elegir los platos disponibles cuando llegues.
+        </p>
+      )}
+    </section>
   );
 }
 

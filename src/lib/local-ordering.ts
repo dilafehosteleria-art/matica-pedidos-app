@@ -26,6 +26,7 @@ export type LocalCalendarContext = {
 export type LocalOrderState = {
   open: boolean;
   afterGuaranteeCutoff: boolean;
+  guaranteeCutoff: string;
   localDate: string;
   currentTime: string;
   openTime: string;
@@ -50,7 +51,7 @@ export type LocalOrderingSettingsValidation =
 const DEFAULT_LOCAL_ORDERING_DAYS = [1, 2, 3, 4, 5];
 const DEFAULT_LOCAL_ORDERING_OPEN_TIME = "09:30";
 const DEFAULT_LOCAL_ORDERING_CLOSE_TIME = "15:00";
-const DEFAULT_LOCAL_ORDERING_GUARANTEE_CUTOFF = "13:30";
+const DEFAULT_LOCAL_ORDERING_GUARANTEE_CUTOFF = "12:40";
 const DAY_NAMES = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"];
 
 export function isLocalFulfillmentType(value: unknown): value is LocalFulfillmentType {
@@ -285,6 +286,7 @@ export function getLocalOrderState(
     localDate,
     currentTime,
     afterGuaranteeCutoff: timeToMinutes(currentTime) >= timeToMinutes(config.guaranteeCutoff),
+    guaranteeCutoff: config.guaranteeCutoff,
     openTime: config.openTime,
     closeTime: config.closeTime
   };
@@ -325,6 +327,7 @@ export function getLocalOrderState(
     localDate: resolved.localDate || localDate,
     currentTime: resolved.currentTime || currentTime,
     afterGuaranteeCutoff: resolved.afterMenuGuaranteeCutoff,
+    guaranteeCutoff: resolved.menuGuaranteeCutoff ?? config.guaranteeCutoff,
     openTime: resolved.openTime ?? config.openTime,
     closeTime: resolved.closeTime ?? config.closeTime
   };

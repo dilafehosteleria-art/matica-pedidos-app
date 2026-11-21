@@ -82,6 +82,12 @@ function loadCheckout(mocks: Record<string, unknown>, routePath = "src/app/api/o
 const dailyMenu: Product = { id: "menu", name: "Menú del día", product_type: "daily_menu", base_price: "13.50" };
 const halfMenu: Product = { id: "half", name: "Medio menú", product_type: "half_menu", base_price: "10.00" };
 const bowl: Product = { id: "bowl", name: "Caesar Crunch Chicken Bowl", product_type: "standard", base_price: "10.50" };
+const saladSandwichMenu: Product = {
+  id: "salad-sandwich-menu",
+  name: "Menú ensalada pequeña + bocadillo",
+  product_type: "standard",
+  base_price: "10.00"
+};
 
 function resolveCatalogIdentity(product: Product): Product {
   const expectedName = product.product_type === "drink"
@@ -186,7 +192,7 @@ function checkoutHarness(
               local_order_days: [1, 2, 3, 4, 5, 6, 7],
               local_ordering_open_time: "09:30:00",
               local_ordering_close_time: "15:00:00",
-              local_ordering_guarantee_cutoff: "13:30:00",
+              local_ordering_guarantee_cutoff: "12:40:00",
               local_only_days: localOnlyDay ? [4] : []
             },
             company_branches: { id: "branch" },
@@ -251,6 +257,8 @@ function checkoutHarness(
     "@/lib/local-ordering": {
       isLocalFulfillmentType: (value: unknown) => value === "dine_in" || value === "pickup",
       isLocalOnlyDay: () => localOnlyDay,
+      hasLateLocalMenuConfiguration: (metadata: Record<string, string> | null | undefined) =>
+        Object.keys(metadata ?? {}).some((key) => !key.startsWith("_")),
       getLocalOrderState: () => ({
         openTime: "09:30",
         closeTime: "15:00",
@@ -392,19 +400,72 @@ test("pedido para comer en Matica antes del corte: exige hora, revalida platos y
       second_course: "Merluza",
       _configured_unit_price: "13.50"
     }
-  }], { fulfillment_type: "dine_in", requested_time: "14:15" });
+  }], { fulfillment_type: "dine_in", requested_time: "13:15" });
 
   assert.equal(response.status, 200, JSON.stringify(await response.clone().json()));
   const payload = await response.json();
   assert.equal(payload.order.fulfillment_type, "dine_in");
-  assert.equal(payload.order.requested_time, "14:15");
+  assert.equal(payload.order.requested_time, "13:15");
   assert.equal(payload.order.menu_selection_mode, "confirmed");
   assert.deepEqual(h.menuReads, [{ date: publishedMenu.date, active: true }]);
   const saved = h.writes.find((write) => write.table === "orders" && write.action === "insert")?.value as Row;
   assert.equal(saved.fulfillment_type, "dine_in");
-  assert.equal(saved.requested_time, "14:15");
+  assert.equal(saved.requested_time, "13:15");
   assert.equal(saved.menu_selection_mode, "confirmed");
-  assert.equal(saved.delivery_window, "En Matica · 14:15");
+  assert.equal(saved.delivery_window, "En Matica · 13:15");
+});
+
+test("una llegada posterior conserva la selección si el pedido se hizo antes de las 12:40", async (t) => {
+  const h = checkoutHarness(t, dailyMenu, "bureau-veritas", true, [dailyMenu], {
+    localState: {
+      open: true,
+      afterGuaranteeCutoff: false,
+      localDate: "2026-11-12",
+      currentTime: "12:10",
+      message: "Pedidos para el local disponibles."
+    }
+  });
+  const response = await h.submitItems([{
+    product_id: dailyMenu.id,
+    quantity: 1,
+    metadata: {
+      first_course: "Pasta",
+      second_course: "Merluza",
+      _configured_unit_price: "13.50"
+    }
+  }], {
+    fulfillment_type: "dine_in",
+    requested_time: "14:15"
+  });
+
+  assert.equal(response.status, 200, JSON.stringify(await response.clone().json()));
+  const payload = await response.json();
+  assert.equal(payload.order.menu_selection_mode, "confirmed");
+  assert.deepEqual(h.menuReads, [{ date: publishedMenu.date, active: true }]);
+});
+
+test("el menú de ensalada pequeña con bocadillo no se admite en pedidos locales", async (t) => {
+  const h = checkoutHarness(t, saladSandwichMenu, "bureau-veritas", true, [saladSandwichMenu], {
+    localState: {
+      open: true,
+      afterGuaranteeCutoff: false,
+      localDate: "2026-11-12",
+      currentTime: "12:10",
+      message: "Pedidos para el local disponibles."
+    }
+  });
+  const response = await h.submitItems([{
+    product_id: saladSandwichMenu.id,
+    quantity: 1,
+    metadata: { _configured_unit_price: "10.00" }
+  }], { fulfillment_type: "dine_in", requested_time: "13:15" });
+
+  assert.equal(response.status, 409);
+  const payload = await response.json();
+  assert.equal(payload.code, "LOCAL_PRODUCT_NOT_AVAILABLE");
+  assert.equal(h.writes.length, 0);
+  assert.equal(h.stripeRequests.length, 0);
+  assert.equal(h.menuReads.length, 0);
 });
 
 test("pedido local después del corte: acepta sólo menú sin platos y los deja para elegir al llegar", async (t) => {
@@ -413,14 +474,14 @@ test("pedido local después del corte: acepta sólo menú sin platos y los deja 
       open: true,
       afterGuaranteeCutoff: true,
       localDate: "2026-11-12",
-      currentTime: "13:35",
+      currentTime: "12:40",
       message: "Pedidos para el local disponibles."
     }
   });
   const response = await h.submitItems([{
     product_id: halfMenu.id,
     quantity: 1,
-    metadata: { display_name: "Medio menú", _configured_unit_price: "10.00" }
+    metadata: { _configured_unit_price: "10.00" }
   }], { fulfillment_type: "pickup", requested_time: "14:30", availability_acknowledged: true });
 
   assert.equal(response.status, 200, JSON.stringify(await response.clone().json()));
@@ -445,7 +506,7 @@ test("pedido local tardío exige aceptar expresamente que los platos se eligen s
   const response = await h.submitItems([{
     product_id: halfMenu.id,
     quantity: 1,
-    metadata: { display_name: "Medio menú", _configured_unit_price: "10.00" }
+    metadata: { _configured_unit_price: "10.00" }
   }], { fulfillment_type: "pickup", requested_time: "14:30" });
 
   assert.equal(response.status, 409);
@@ -462,7 +523,7 @@ test("al cruzar el corte devuelve una transición explícita si el carrito aún 
       open: true,
       afterGuaranteeCutoff: true,
       localDate: "2026-11-12",
-      currentTime: "13:31",
+      currentTime: "12:40",
       message: "Pedidos para el local disponibles."
     }
   });
@@ -476,6 +537,33 @@ test("al cruzar el corte devuelve una transición explícita si el carrito aún 
   const payload = await response.json();
   assert.equal(payload.code, "LOCAL_SELECTION_CHANGED");
   assert.equal(payload.menu_selection_mode, "on_arrival");
+  assert.equal(h.writes.length, 0);
+  assert.equal(h.stripeRequests.length, 0);
+});
+
+test("después del corte el servidor rechaza cualquier otra elección del menú", async (t) => {
+  const h = checkoutHarness(t, dailyMenu, "bureau-veritas", true, [dailyMenu], {
+    localState: {
+      open: true,
+      afterGuaranteeCutoff: true,
+      localDate: "2026-11-12",
+      currentTime: "12:40",
+      message: "Pedidos para el local disponibles."
+    }
+  });
+  const response = await h.submitItems([{
+    product_id: dailyMenu.id,
+    quantity: 1,
+    metadata: { drink_or_dessert: "Agua", _configured_unit_price: "13.50" }
+  }], {
+    fulfillment_type: "dine_in",
+    requested_time: "14:00",
+    availability_acknowledged: true
+  });
+
+  assert.equal(response.status, 409);
+  const payload = await response.json();
+  assert.equal(payload.code, "LOCAL_SELECTION_CHANGED");
   assert.equal(h.writes.length, 0);
   assert.equal(h.stripeRequests.length, 0);
 });
@@ -709,7 +797,7 @@ test("despliegue gradual: un pedido local nunca pierde su modalidad si faltan co
     product_id: halfMenu.id,
     quantity: 1,
     metadata: { plate: "Pasta", _configured_unit_price: "10.00" }
-  }], { fulfillment_type: "pickup", requested_time: "14:00" });
+  }], { fulfillment_type: "pickup", requested_time: "13:15" });
   assert.equal(localResponse.status, 503);
   assert.equal((await localResponse.json()).code, "LOCAL_ORDERING_NOT_READY");
   assert.equal(local.orderInsertAttempts(), 1);
@@ -731,7 +819,7 @@ const saladCheckoutCases = [
   { product: halfMenu, size: "Tamaño Mediano 1000ML", singleAllowed: false, price: 10, course: { plate: "Ensalada a tu manera" } },
   { product: { id: "salad", name: "Diseña tu ensalada", product_type: "standard", base_price: 7.5 }, size: "Tamaño Mediano 1000ML", singleAllowed: false, price: 7.5 },
   { product: { id: "salad", name: "Diseña tu ensalada", product_type: "standard", base_price: 7.5 }, size: "Tamaño Grande 1500ML", singleAllowed: false, price: 9.5 },
-  { product: { id: "combo", name: "Menú ensalada pequeña + bocadillo", product_type: "standard", base_price: 10 }, size: "Tamaño Pequeño 750ML", singleAllowed: true, price: 10 }
+  { product: saladSandwichMenu, size: "Tamaño Pequeño 750ML", singleAllowed: true, price: 10 }
 ];
 
 for (const scenario of saladCheckoutCases) {
@@ -741,7 +829,7 @@ for (const scenario of saladCheckoutCases) {
       ...(scenario.course as Record<string, string> | undefined),
       salad_size: scenario.size, protein: "Pollo", toppings: "Garbanzos, Tomate, Pepino",
       dressing: "Vinagreta balsámica",
-      ...(scenario.product.id === "combo" ? { sandwich: "Bocadillo de jamón serrano" } : {})
+      ...(scenario.product === saladSandwichMenu ? { sandwich: "Bocadillo de jamón serrano" } : {})
     };
     const restricted = ["Quinoa", "Arroz blanco", "Arroz integral", "Garbanzos", "Lentejas"];
     const rejected = ["Quinoa, Quinoa", "Garbanzos, Garbanzos", "Quinoa, Pasta, Lentejas", ...(!scenario.singleAllowed ? restricted : [])];

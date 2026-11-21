@@ -144,7 +144,7 @@ export function isCustomWrapProduct(product: Product) {
   return name.includes("disena tu wrap") || name.includes("wrap a tu manera");
 }
 
-export function isMenuSaladSandwichProduct(product: Product) {
+export function isMenuSaladSandwichProduct(product: Pick<Product, "name">) {
   const name = normalizeCatalogText(product.name);
 
   return name.includes("ensalada pequena") && name.includes("bocadillo");
