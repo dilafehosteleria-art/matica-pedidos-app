@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { assertAdmin } from "@/lib/admin";
 import { getGlobalSchedule } from "@/lib/global-settings";
 import { validateLocalOrderingSettings } from "@/lib/local-ordering";
+import { syncOfficialHolidayCalendars } from "@/lib/official-holiday-sync";
 import { deliveryWindowLabel, orderWindowLabel } from "@/lib/schedule";
 import { getSupabaseAdminClient } from "@/lib/supabase/server";
 import type { GlobalSchedule } from "@/lib/types";
@@ -289,15 +290,17 @@ export async function GET(request: NextRequest) {
   if (adminError) return adminError;
   const supabase = getSupabaseAdminClient();
   if (!supabase) return NextResponse.json({ error: "Configura Supabase para usar el panel." }, { status: 503 });
-  const [schedule, companyResult, exceptionsResult, holidaysResult] = await Promise.all([
+  const [schedule, companyResult, exceptionsResult, holidaysResult, holidaySyncResult] = await Promise.all([
     getGlobalSchedule(supabase),
     getLocalCompany(supabase),
     supabase.from("schedule_exceptions").select("*").order("date", { ascending: true }).order("channel", { ascending: true }),
-    supabase.from("calendar_closures").select("*").order("date", { ascending: true })
+    supabase.from("calendar_closures").select("*").order("date", { ascending: true }),
+    supabase.from("official_calendar_syncs").select("*").order("year", { ascending: true })
   ]);
   if (companyResult.error) return NextResponse.json({ error: companyResult.error.message }, { status: 400 });
   if (exceptionsResult.error) return NextResponse.json({ error: exceptionsResult.error.message }, { status: 400 });
   if (holidaysResult.error) return NextResponse.json({ error: holidaysResult.error.message }, { status: 400 });
+  if (holidaySyncResult.error) return NextResponse.json({ error: holidaySyncResult.error.message }, { status: 400 });
   const company = isObject(companyResult.data) ? companyResult.data : null;
   const exceptions = (exceptionsResult.data ?? []) as JsonObject[];
   const holidays = (holidaysResult.data ?? []) as JsonObject[];
@@ -307,7 +310,8 @@ export async function GET(request: NextRequest) {
     localCompanyId: typeof company?.id === "string" ? company.id : null,
     exceptions,
     holidays,
-    holidayCoverage: holidayCoverage(holidays)
+    holidayCoverage: holidayCoverage(holidays),
+    holidaySync: holidaySyncResult.data ?? []
   });
 }
 
@@ -349,6 +353,12 @@ export async function POST(request: NextRequest) {
   if (!supabase) return NextResponse.json({ error: "Configura Supabase para usar el panel." }, { status: 503 });
   const body = await readBody(request);
   if (!body) return NextResponse.json({ error: "La solicitud no tiene un formato válido." }, { status: 400 });
+  if (body.resource === "sync_official_holidays") {
+    const results = await syncOfficialHolidayCalendars(supabase);
+    const failed = results.find((result) => result.status === "error");
+    if (failed) return NextResponse.json({ error: failed.message, results }, { status: 502 });
+    return NextResponse.json({ results });
+  }
   if (body.resource === "exception") {
     const requestedException = isObject(body.exception) ? body.exception : null;
     const requestedChannel = requestedException?.channel;

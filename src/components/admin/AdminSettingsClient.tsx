@@ -1,7 +1,7 @@
 "use client";
 
 import {
-  AlertCircle, CalendarDays, CheckCircle2, Clock3, Loader2, Pencil, Save,
+  AlertCircle, CalendarDays, CheckCircle2, Clock3, Loader2, Pencil, RefreshCw, Save,
   Trash2, Truck, Utensils
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
@@ -47,6 +47,15 @@ type Closure = {
   closes_local: boolean;
 };
 
+type CalendarSyncStatus = {
+  year: number;
+  complete: boolean;
+  official_count: number;
+  last_checked_at: string | null;
+  last_success_at: string | null;
+  last_error: string | null;
+};
+
 type ExceptionDraft = {
   id?: string;
   date: string;
@@ -67,6 +76,7 @@ type SettingsResponse = {
   exceptions: AdminException[];
   holidays: Closure[];
   holidayCoverage: { timezone: string; years: number[]; officialYears?: number[] };
+  holidaySync: CalendarSyncStatus[];
   error?: string;
 };
 
@@ -106,6 +116,13 @@ function formattedDate(date: string) {
   }).format(new Date(`${date}T00:00:00Z`));
 }
 
+function formattedDateTime(value: string | null | undefined) {
+  if (!value) return "aún no se ha comprobado";
+  return new Intl.DateTimeFormat("es-ES", {
+    timeZone: "Europe/Madrid", day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit"
+  }).format(new Date(value));
+}
+
 const SCOPE_LABEL = {
   national: "Nacional", regional: "Comunidad de Madrid", local: "Madrid capital", special: "Día especial"
 };
@@ -127,6 +144,7 @@ function SettingsEditor({ pin, clearPin }: { pin: string; clearPin: () => void }
   const [localCompanyId, setLocalCompanyId] = useState<string | null>(null);
   const [exceptions, setExceptions] = useState<AdminException[]>([]);
   const [closures, setClosures] = useState<Closure[]>([]);
+  const [holidaySync, setHolidaySync] = useState<CalendarSyncStatus[]>([]);
   const [coverage, setCoverage] = useState({ timezone: "Europe/Madrid", years: [] as number[], officialYears: [] as number[] });
   const [exception, setException] = useState<ExceptionDraft>(() => initialException());
   const [special, setSpecial] = useState({ date: today(), name: "", closes_delivery: true, closes_local: true });
@@ -150,6 +168,7 @@ function SettingsEditor({ pin, clearPin }: { pin: string; clearPin: () => void }
     setLocalCompanyId(data.localCompanyId);
     setExceptions(data.exceptions ?? []);
     setClosures(data.holidays ?? []);
+    setHolidaySync(data.holidaySync ?? []);
     setCoverage({
       ...data.holidayCoverage,
       officialYears: data.holidayCoverage.officialYears ?? data.holidayCoverage.years
@@ -227,6 +246,14 @@ function SettingsEditor({ pin, clearPin }: { pin: string; clearPin: () => void }
     });
   }
 
+  function syncHolidays() {
+    void run("holiday-sync", async () => {
+      await send("POST", { resource: "sync_official_holidays" });
+      await load();
+      setSuccess("Calendario oficial comprobado y actualizado.");
+    });
+  }
+
   function remove(resource: "exception" | "special_day", id: string) {
     void run(id, async () => {
       await send("DELETE", { resource, id }); await load();
@@ -249,6 +276,15 @@ function SettingsEditor({ pin, clearPin }: { pin: string; clearPin: () => void }
 
   const upcoming = useMemo(() => exceptions.filter((item) => item.date >= today()), [exceptions]);
   const yearClosures = useMemo(() => closures.filter((item) => item.date.startsWith(`${year}-`)), [closures, year]);
+  const currentYear = Number(today().slice(0, 4));
+  const nextYear = currentYear + 1;
+  const currentSync = holidaySync.find((item) => item.year === currentYear);
+  const nextSync = holidaySync.find((item) => item.year === nextYear);
+  const lastChecked = holidaySync
+    .map((item) => item.last_checked_at)
+    .filter((value): value is string => Boolean(value))
+    .sort()
+    .at(-1);
   if (loading) return <Loading />;
 
   return (
@@ -306,7 +342,14 @@ function SettingsEditor({ pin, clearPin }: { pin: string; clearPin: () => void }
 
       <Card>
         <Heading number="4" icon={<CalendarDays />} title="Festivos y días especiales">Los festivos oficiales de Madrid cierran delivery y local por defecto. Para trabajar uno, crea una apertura puntual arriba.</Heading>
-        <div className="mt-5 flex flex-col gap-3 rounded-lg bg-matica-soft p-4 sm:flex-row sm:items-center sm:justify-between"><div><b>Calendario oficial cargado hasta {coverage.officialYears.at(-1) ?? "—"}</b><p>Nacional, Comunidad de Madrid y Madrid capital · {coverage.timezone}</p></div><select className="rounded-lg border border-matica-line bg-white px-3 py-2 font-black" value={year} onChange={(event) => setYear(Number(event.target.value))}>{coverage.years.map((item) => <option key={item}>{item}</option>)}</select></div>
+        <div className="mt-5 rounded-lg bg-matica-soft p-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div><b>Actualización automática semanal · cargado hasta {coverage.officialYears.at(-1) ?? "—"}</b><p>Nacional, Comunidad de Madrid y Madrid capital · {coverage.timezone}</p><p className="mt-1 text-xs font-semibold text-matica-ink/55">Última comprobación: {formattedDateTime(lastChecked)}</p></div>
+            <button type="button" className="flex min-h-11 items-center justify-center gap-2 rounded-lg border border-matica-green bg-white px-4 font-black text-matica-green disabled:opacity-50" disabled={saving === "holiday-sync"} onClick={syncHolidays}>{saving === "holiday-sync" ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}Actualizar ahora</button>
+          </div>
+          {!currentSync?.complete ? <p className="mt-3 rounded-lg bg-red-100 p-3 text-xs font-bold text-red-800">Atención: falta validar el calendario oficial de {currentYear}. La app conservará el último calendario bueno y seguirá reintentándolo.</p> : nextSync?.complete ? <p className="mt-3 rounded-lg bg-emerald-100 p-3 text-xs font-bold text-emerald-800">El calendario de {nextYear} ya está completo: {nextSync.official_count} festivos verificados.</p> : <p className="mt-3 rounded-lg bg-amber-100 p-3 text-xs font-bold text-amber-900">El calendario de {nextYear} aún no está publicado o completo. Se volverá a comprobar automáticamente cada semana.</p>}
+        </div>
+        <div className="mt-4 flex justify-end"><select aria-label="Año del calendario" className="rounded-lg border border-matica-line bg-white px-3 py-2 font-black" value={year} onChange={(event) => setYear(Number(event.target.value))}>{coverage.years.map((item) => <option key={item}>{item}</option>)}</select></div>
         <div className="mt-4 space-y-2">{yearClosures.length ? yearClosures.map((item) => <Row key={item.id}><div><b>{formattedDate(item.date)}</b> · {item.name} <Badge>{SCOPE_LABEL[item.scope]}</Badge><p>Cierra {item.closes_delivery && item.closes_local ? "delivery y local" : item.closes_delivery ? "delivery" : "local"}.</p></div>{item.source === "manual" ? <IconButton danger label="Eliminar cierre especial" onClick={() => remove("special_day", item.id)}><Trash2 /></IconButton> : <Badge>Oficial</Badge>}</Row>) : <Empty>No hay cierres cargados para este año.</Empty>}</div>
         <h3 className="mt-7 border-t border-matica-line pt-5 font-black">Añadir cierre especial</h3>
         <div className="mt-3 grid gap-3 sm:grid-cols-2"><Field label="Fecha"><input type="date" value={special.date} onChange={(event) => setSpecial((value) => ({ ...value, date: event.target.value }))} /></Field><Field label="Nombre"><input maxLength={160} placeholder="Cierre por puente" value={special.name} onChange={(event) => setSpecial((value) => ({ ...value, name: event.target.value }))} /></Field></div>
