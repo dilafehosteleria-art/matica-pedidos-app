@@ -331,16 +331,16 @@ export function getLocalOrderState(
 
   if (!resolved.open) {
     const message = resolved.reason === "holiday"
-      ? `Hoy no aceptamos pedidos para el local por ${resolved.closureName ?? "festivo"}.`
+      ? `Hoy no admitimos pedidos para el restaurante por ${resolved.closureName ?? "festivo"}.`
       : resolved.reason === "exception_closed"
-        ? "Hoy no aceptamos pedidos para comer o recoger por una configuración puntual."
+        ? "Hoy no admitimos pedidos para el restaurante por un cierre puntual."
         : resolved.reason === "before_open"
-          ? `Los pedidos para el local abren a las ${state.openTime}.`
+          ? `Los pedidos para comer en el restaurante o recoger estarán disponibles hoy de ${state.openTime} a ${state.closeTime}.`
           : resolved.reason === "after_close"
-            ? `Los pedidos para el local están disponibles hasta las ${state.closeTime}.`
+            ? `El horario de pedidos para el restaurante ha terminado hoy a las ${state.closeTime}.`
             : resolved.reason === "master_disabled"
-              ? "Los pedidos para comer o recoger en el local no están disponibles."
-              : `Los pedidos para el local están disponibles ${localOrderWindowLabel(company)}.`;
+              ? "Los pedidos para comer en el restaurante o recoger no están disponibles."
+              : `Esta opción está disponible ${localOrderWindowLabel(company)}.`;
 
     return {
       ...state,
@@ -353,7 +353,7 @@ export function getLocalOrderState(
     ...state,
     open: true,
     message: resolved.afterMenuGuaranteeCutoff
-      ? "Pedido en el local disponible. La elección de platos queda sujeta a disponibilidad."
-      : `Pedidos para el local abiertos hasta las ${state.closeTime}.`
+      ? `Puedes pedir hasta las ${state.closeTime}. Los platos del menú se elegirán al llegar según disponibilidad.`
+      : `Puedes pedir para comer en el restaurante o recoger hasta las ${state.closeTime}.`
   };
 }

@@ -43,6 +43,7 @@ test("abre a las 09:30 y mantiene garantizada la selección antes de las 13:30",
   assert.equal(state.afterGuaranteeCutoff, false);
   assert.equal(state.localDate, "2026-06-19");
   assert.equal(state.currentTime, "09:30");
+  assert.equal(state.message, "Puedes pedir para comer en el restaurante o recoger hasta las 15:00.");
 });
 
 test("a las 13:30 sigue abierto pero la selección deja de estar garantizada", () => {
@@ -59,7 +60,10 @@ test("a las 13:30 sigue abierto pero la selección deja de estar garantizada", (
   assert.equal(beforeCutoff.afterGuaranteeCutoff, false);
   assert.equal(atCutoff.open, true);
   assert.equal(atCutoff.afterGuaranteeCutoff, true);
-  assert.match(atCutoff.message, /sujeta a disponibilidad/i);
+  assert.equal(
+    atCutoff.message,
+    "Puedes pedir hasta las 15:00. Los platos del menú se elegirán al llegar según disponibilidad."
+  );
 });
 
 test("permite hasta las 14:59 y cierra de forma exclusiva a las 15:00", () => {
@@ -75,6 +79,7 @@ test("permite hasta las 14:59 y cierra de forma exclusiva a las 15:00", () => {
   assert.equal(beforeClose.open, true);
   assert.equal(atClose.open, false);
   assert.equal(atClose.afterGuaranteeCutoff, true);
+  assert.equal(atClose.message, "El horario de pedidos para el restaurante ha terminado hoy a las 15:00.");
 });
 
 test("viernes está activo y se identifica como día solo local", () => {
@@ -98,7 +103,10 @@ test("antes de la apertura local permanece cerrado aunque el reparto tenga otro 
   assert.equal(state.currentTime, "08:36");
   assert.equal(state.openTime, "09:30");
   assert.equal(state.closeTime, "15:00");
-  assert.match(state.message, /abren? a las 09:30/i);
+  assert.equal(
+    state.message,
+    "Los pedidos para comer en el restaurante o recoger estarán disponibles hoy de 09:30 a 15:00."
+  );
 });
 
 test("después del cierre de delivery mantiene la franja local hasta las 15:00", () => {
@@ -116,7 +124,7 @@ test("bloquea la modalidad local cuando está deshabilitada", () => {
   });
 
   assert.equal(state.open, false);
-  assert.match(state.message, /no están disponibles/i);
+  assert.equal(state.message, "Los pedidos para comer en el restaurante o recoger no están disponibles.");
 });
 
 test("el cierre manual afecta solo a la fecha indicada y reabre al día siguiente", () => {
@@ -128,8 +136,30 @@ test("el cierre manual afecta solo a la fecha indicada y reabre al día siguient
   const nextDay = getLocalOrderState(new Date("2026-06-18T10:00:00.000Z"), company);
 
   assert.equal(closedDay.open, false);
-  assert.match(closedDay.message, /hoy no aceptamos/i);
+  assert.equal(closedDay.message, "Hoy no admitimos pedidos para el restaurante por un cierre puntual.");
   assert.equal(nextDay.open, true);
+});
+
+test("explica el cierre por festivo con el nombre del día", () => {
+  const state = getLocalOrderState(
+    new Date("2026-06-19T10:00:00.000Z"),
+    bureauVeritasLocalOrdering,
+    {
+      closures: [{
+        id: "holiday-1",
+        date: "2026-06-19",
+        name: "Festivo local",
+        scope: "local",
+        source: "manual",
+        closes_delivery: true,
+        closes_local: true,
+        enabled: true
+      }]
+    }
+  );
+
+  assert.equal(state.open, false);
+  assert.equal(state.message, "Hoy no admitimos pedidos para el restaurante por Festivo local.");
 });
 
 test("describe la franja local normalizando horas de Supabase", () => {

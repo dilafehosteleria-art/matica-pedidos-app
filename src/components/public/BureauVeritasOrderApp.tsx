@@ -40,7 +40,6 @@ import {
   getLocalOrderState,
   hasLateLocalMenuConfiguration,
   isLocalFulfillmentType,
-  localOrderWindowLabel,
   type LocalOrderState
 } from "@/lib/local-ordering";
 import { buildLocalRequestedTimeOptions, timeToMinutes } from "@/lib/local-order-time";
@@ -144,7 +143,7 @@ type SubmitState =
   | { status: "success"; message: string }
   | { status: "error"; message: string };
 
-type PublicStep = "catalog" | "checkout" | "confirmation";
+type PublicStep = "fulfillment" | "catalog" | "checkout" | "confirmation";
 type RequestedTimeChoice = "now" | string;
 type ProductConfiguration = { product: Product; section: PublicSection };
 type MenuReview = { fields: MenuCourseField[]; replacement?: ProductConfiguration };
@@ -683,7 +682,7 @@ function getConfigSpec(
 
 export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { companySlug?: string }) {
   const [data, setData] = useState<PublicData | null>(null);
-  const [step, setStep] = useState<PublicStep>("catalog");
+  const [step, setStep] = useState<PublicStep>("fulfillment");
   const [customer, setCustomer] = useState<CustomerForm>(EMPTY_CUSTOMER);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [notes, setNotes] = useState("");
@@ -1052,7 +1051,6 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
     : null;
   const localCloseTime = localOrderState.closeTime || data?.company.local_ordering_close_time?.slice(0, 5) || "15:00";
   const localGuaranteeCutoff = data?.company.local_ordering_guarantee_cutoff?.slice(0, 5) || "13:30";
-  const localWindowLabelForDisplay = data ? localOrderWindowLabel(data.company) : "";
   const localRequestedTimeOptions = useMemo(
     () => buildLocalRequestedTimeOptions(localOrderState.currentTime, localCloseTime),
     [localCloseTime, localOrderState.currentTime]
@@ -1105,14 +1103,14 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
   useEffect(() => {
     if (!localOrderingEnabled) {
       setFulfillmentType("delivery");
-      return;
     }
+  }, [localOrderingEnabled]);
 
-    if (fulfillmentType === "delivery" && !deliveryAvailable && localOrderState.open) {
-      setFulfillmentType("dine_in");
-      setLateAvailabilityAccepted(false);
+  useEffect(() => {
+    if (data && !localOrderingEnabled && step === "fulfillment") {
+      setStep("catalog");
     }
-  }, [deliveryAvailable, fulfillmentType, localOrderState.open, localOrderingEnabled]);
+  }, [data, localOrderingEnabled, step]);
 
   useEffect(() => {
     if (
@@ -1283,7 +1281,7 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
     }
 
     if (localFulfillment && !requestedTimeForSubmit) {
-      setSubmitState({ status: "error", message: "Indica una hora aproximada para venir al restaurante." });
+      setSubmitState({ status: "error", message: "Indica a qué hora vendrás al restaurante." });
       return;
     }
 
@@ -1380,7 +1378,7 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
         payload.code === "LOCAL_REQUESTED_TIME_OUTSIDE_WINDOW"
       ) {
         void refreshPublicData().catch(() => { /* Conservamos el mensaje validado por el servidor. */ });
-        setSubmitState({ status: "error", message: payload.error ?? "La operativa acaba de cambiar. Revisa la modalidad y vuelve a intentarlo." });
+        setSubmitState({ status: "error", message: payload.error ?? "La operativa acaba de cambiar. Revisa cómo recibirás el pedido y vuelve a intentarlo." });
         return;
       }
 
@@ -1446,29 +1444,46 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
               <Leaf className="h-4 w-4" />
               Matica Fresh Food
             </div>
-            <h1 className="max-w-3xl text-2xl font-black tracking-normal sm:text-4xl">
-              Carta Matica para {companyName}
-            </h1>
-            <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-matica-ink/65 sm:text-base">
-              Elige por categorías y confirma el pedido en el checkout.
-            </p>
+            {step !== "fulfillment" ? (
+              <>
+                <h1 className="max-w-3xl text-2xl font-black tracking-normal sm:text-4xl">
+                  Nuestra carta
+                </h1>
+                <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-matica-ink/65 sm:text-base">
+                  Elige lo que te apetezca y prepara tu pedido.
+                </p>
+              </>
+            ) : null}
+            {data && localOrderingEnabled && step === "catalog" ? (
+              <div className="mt-4 max-w-2xl">
+                <FulfillmentSummary
+                  fulfillmentType={fulfillmentType}
+                  deliveryWindow={deliveryWindow}
+                  localOrderState={localOrderState}
+                  requestedTimeChoice={requestedTimeChoice}
+                  onChange={() => goToStep("fulfillment")}
+                />
+              </div>
+            ) : null}
           </div>
         </div>
       </header>
 
-      {step === "catalog" ? (
-        <div className="mx-auto max-w-7xl px-4 py-5 sm:px-6 lg:px-8">
-          <section className="space-y-5">
-          {data ? (
-            <FulfillmentSelector
-              enabled={localOrderingEnabled}
+      {step === "fulfillment" ? (
+        <div className="mx-auto max-w-3xl px-4 py-6 sm:px-6 sm:py-10 lg:px-8">
+          {!data ? (
+            <div className="flex min-h-72 items-center justify-center rounded-lg border border-matica-line bg-white">
+              <Loader2 className="h-7 w-7 animate-spin text-matica-green" />
+            </div>
+          ) : localOrderingEnabled ? (
+            <FulfillmentEntry
               fulfillmentType={fulfillmentType}
               onChange={updateFulfillmentType}
+              onContinue={() => goToStep("catalog")}
               deliveryAvailable={deliveryAvailable}
               deliveryMessage={deliveryAvailabilityMessage}
               deliveryWindow={deliveryWindow}
               localOrderState={localOrderState}
-              localWindowLabel={localWindowLabelForDisplay}
               guaranteeCutoff={localGuaranteeCutoff}
               requestedTimeChoice={requestedTimeChoice}
               requestedTimeOptions={localRequestedTimeOptions}
@@ -1478,7 +1493,12 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
               onLateAvailabilityAccepted={setLateAvailabilityAccepted}
             />
           ) : null}
+        </div>
+      ) : null}
 
+      {step === "catalog" ? (
+        <div className="mx-auto max-w-7xl px-4 py-5 sm:px-6 lg:px-8">
+          <section className="space-y-5">
           {lateCartNeedsReview ? (
             <div className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm font-semibold text-amber-950">
               <p className="font-black">La cesta contiene platos elegidos o productos no disponibles después de las {localGuaranteeCutoff}.</p>
@@ -1620,18 +1640,12 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
           deliveryAddress={data?.company.delivery_address ?? ""}
           localOrderingEnabled={localOrderingEnabled}
           fulfillmentType={fulfillmentType}
-          setFulfillmentType={updateFulfillmentType}
           deliveryAvailable={deliveryAvailable}
           deliveryAvailabilityMessage={deliveryAvailabilityMessage}
           localOrderState={localOrderState}
-          localWindowLabel={localWindowLabelForDisplay}
           guaranteeCutoff={localGuaranteeCutoff}
           requestedTimeChoice={requestedTimeChoice}
-          requestedTimeOptions={localRequestedTimeOptions}
-          setRequestedTimeChoice={setRequestedTimeChoice}
           lateLocalMode={lateLocalMode}
-          lateAvailabilityAccepted={lateAvailabilityAccepted}
-          setLateAvailabilityAccepted={setLateAvailabilityAccepted}
           lateCartNeedsReview={lateCartNeedsReview}
           adaptCartForLateLocal={adaptCartForLateLocal}
           totals={totals}
@@ -1656,6 +1670,7 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
           changeQuantity={changeQuantity}
           submitOrder={submitOrder}
           onBack={() => goToStep("catalog")}
+          onChangeFulfillment={() => goToStep("fulfillment")}
         />
       ) : null}
 
@@ -1719,31 +1734,28 @@ function InputField({
   );
 }
 
-function FulfillmentSelector({
-  enabled,
+function FulfillmentEntry({
   fulfillmentType,
   onChange,
   deliveryAvailable,
   deliveryMessage,
   deliveryWindow,
   localOrderState,
-  localWindowLabel,
   guaranteeCutoff,
   requestedTimeChoice,
   requestedTimeOptions,
   onRequestedTimeChange,
   lateLocalMode,
   lateAvailabilityAccepted,
-  onLateAvailabilityAccepted
+  onLateAvailabilityAccepted,
+  onContinue
 }: {
-  enabled: boolean;
   fulfillmentType: FulfillmentType;
   onChange: (value: FulfillmentType) => void;
   deliveryAvailable: boolean;
   deliveryMessage: string;
   deliveryWindow: string;
   localOrderState: LocalOrderState;
-  localWindowLabel: string;
   guaranteeCutoff: string;
   requestedTimeChoice: RequestedTimeChoice;
   requestedTimeOptions: string[];
@@ -1751,11 +1763,10 @@ function FulfillmentSelector({
   lateLocalMode: boolean;
   lateAvailabilityAccepted: boolean;
   onLateAvailabilityAccepted: (value: boolean) => void;
+  onContinue: () => void;
 }) {
-  if (!enabled) return null;
-
   const options: Array<{
-    type: FulfillmentType;
+    type: "delivery" | "dine_in";
     title: string;
     description: string;
     available: boolean;
@@ -1763,36 +1774,32 @@ function FulfillmentSelector({
     {
       type: "delivery",
       title: "Entrega en la empresa",
-      description: `Reparto ${deliveryWindow}`,
+      description: `Entrega prevista de ${deliveryWindow}`,
       available: deliveryAvailable
     },
     {
       type: "dine_in",
-      title: "Comer aquí",
-      description: "Te esperamos en el restaurante",
-      available: localOrderState.open
-    },
-    {
-      type: "pickup",
-      title: "Recoger",
-      description: "Pide y llévatelo",
+      title: "Comer en el restaurante",
+      description: "Si lo prefieres, también puedes pasar a recogerlo.",
       available: localOrderState.open
     }
   ];
   const localFulfillment = isLocalFulfillmentType(fulfillmentType);
+  const selectedAvailable = localFulfillment ? localOrderState.open : deliveryAvailable;
+  const canContinue = selectedAvailable && (!lateLocalMode || lateAvailabilityAccepted);
 
   return (
-    <section className="rounded-lg border border-matica-green/25 bg-white p-4 shadow-sm">
+    <section className="rounded-lg border border-matica-green/25 bg-white p-5 shadow-sm sm:p-7">
       <div>
-        <h2 className="text-xl font-black">¿Cómo quieres recibir tu pedido?</h2>
-        <p className="mt-1 text-sm font-semibold text-matica-ink/55">
-          Elige la modalidad antes de preparar la cesta.
+        <h2 className="text-2xl font-black sm:text-3xl">¿Cómo quieres recibir tu pedido?</h2>
+        <p className="mt-2 text-sm font-semibold text-matica-ink/60 sm:text-base">
+          Elige una opción para continuar.
         </p>
       </div>
 
-      <div className="mt-4 grid gap-2 sm:grid-cols-3">
+      <div className="mt-5 grid gap-3 sm:grid-cols-2">
         {options.map((option) => {
-          const selected = fulfillmentType === option.type;
+          const selected = option.type === "dine_in" ? localFulfillment : fulfillmentType === "delivery";
 
           return (
             <button
@@ -1801,15 +1808,18 @@ function FulfillmentSelector({
               aria-pressed={selected}
               disabled={!option.available}
               onClick={() => onChange(option.type)}
-              className={`matica-focus min-h-24 rounded-lg border p-3 text-left transition disabled:cursor-not-allowed disabled:opacity-55 ${
+              className={`matica-focus min-h-36 rounded-lg border p-4 text-left transition disabled:cursor-not-allowed disabled:opacity-55 ${
                 selected
                   ? "border-matica-green bg-matica-mint text-matica-green"
                   : "border-matica-line bg-white text-matica-ink"
               }`}
             >
-              <span className="block font-black">{option.title}</span>
-              <span className="mt-1 block text-xs font-semibold text-matica-ink/60">{option.description}</span>
-              <span className={`mt-2 inline-flex rounded-full px-2 py-1 text-[11px] font-black ${
+              <span className="flex items-start justify-between gap-3">
+                <span className="block text-lg font-black">{option.title}</span>
+                {selected ? <CheckCircle2 className="h-5 w-5 shrink-0" aria-hidden="true" /> : null}
+              </span>
+              <span className="mt-2 block text-sm font-semibold leading-5 text-matica-ink/60">{option.description}</span>
+              <span className={`mt-3 inline-flex rounded-full px-2 py-1 text-[11px] font-black ${
                 option.available ? "bg-matica-mint text-matica-green" : "bg-matica-ink/10 text-matica-ink/55"
               }`}>
                 {option.available ? "Disponible" : "No disponible ahora"}
@@ -1819,18 +1829,20 @@ function FulfillmentSelector({
         })}
       </div>
 
-      <div className="mt-3 rounded-lg bg-matica-soft px-3 py-2 text-xs font-bold text-matica-ink/65">
+      <div className="mt-4 rounded-lg bg-matica-soft px-4 py-3 text-sm font-bold leading-5 text-matica-ink/65">
         {localFulfillment
-          ? `${localOrderState.message} Horario: ${localWindowLabel}.`
+          ? localOrderState.open
+            ? `Puedes hacer tu pedido para el restaurante hasta las ${localOrderState.closeTime}.`
+            : localOrderState.message
           : deliveryAvailable
-            ? `Entrega disponible ${deliveryWindow}.`
+            ? `Puedes hacer tu pedido ahora. La entrega será de ${deliveryWindow}.`
             : deliveryMessage}
       </div>
 
       {localFulfillment ? (
         <div className="mt-4 space-y-3">
           <label className="block space-y-1">
-            <span className="text-sm font-black text-matica-ink">Hora aproximada</span>
+            <span className="text-sm font-black text-matica-ink">¿A qué hora vendrás al restaurante?</span>
             <select
               className="matica-focus w-full rounded-lg border border-matica-line bg-white px-3 py-3 font-bold"
               value={requestedTimeChoice}
@@ -1841,7 +1853,6 @@ function FulfillmentSelector({
                 <option key={time} value={time}>{time}</option>
               ))}
             </select>
-            <span className="block text-xs font-semibold text-matica-ink/50">Las horas son aproximadas y se muestran en franjas de 15 minutos.</span>
           </label>
 
           {lateLocalMode ? (
@@ -1861,7 +1872,59 @@ function FulfillmentSelector({
           ) : null}
         </div>
       ) : null}
+
+      <button
+        type="button"
+        className="matica-focus mt-5 flex min-h-12 w-full items-center justify-center rounded-lg bg-matica-green px-5 font-black text-white disabled:cursor-not-allowed disabled:bg-matica-ink/30"
+        disabled={!canContinue}
+        onClick={onContinue}
+      >
+        Ver la carta
+      </button>
     </section>
+  );
+}
+
+function FulfillmentSummary({
+  fulfillmentType,
+  deliveryWindow,
+  localOrderState,
+  requestedTimeChoice,
+  onChange
+}: {
+  fulfillmentType: FulfillmentType;
+  deliveryWindow: string;
+  localOrderState: LocalOrderState;
+  requestedTimeChoice: RequestedTimeChoice;
+  onChange: () => void;
+}) {
+  const localFulfillment = isLocalFulfillmentType(fulfillmentType);
+  const localArrival = requestedTimeChoice === "now"
+    ? localOrderState.currentTime
+      ? `Llegada ahora (${localOrderState.currentTime})`
+      : "Llegada ahora"
+    : `Llegada prevista: ${requestedTimeChoice}`;
+
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-lg border border-matica-line bg-matica-soft px-3 py-2.5">
+      <div className="min-w-0">
+        <p className="text-sm font-black text-matica-ink">
+          {localFulfillment ? "Comer en el restaurante" : "Entrega en la empresa"}
+        </p>
+        <p className="mt-0.5 text-xs font-semibold leading-5 text-matica-ink/60">
+          {localFulfillment
+            ? `${localArrival}. También puedes recogerlo.`
+            : `Entrega prevista de ${deliveryWindow}.`}
+        </p>
+      </div>
+      <button
+        type="button"
+        className="matica-focus shrink-0 rounded-lg border border-matica-line bg-white px-3 py-2 text-xs font-black text-matica-green"
+        onClick={onChange}
+      >
+        Cambiar
+      </button>
+    </div>
   );
 }
 
@@ -2489,18 +2552,12 @@ function CheckoutPanel({
   deliveryAddress,
   localOrderingEnabled,
   fulfillmentType,
-  setFulfillmentType,
   deliveryAvailable,
   deliveryAvailabilityMessage,
   localOrderState,
-  localWindowLabel,
   guaranteeCutoff,
   requestedTimeChoice,
-  requestedTimeOptions,
-  setRequestedTimeChoice,
   lateLocalMode,
-  lateAvailabilityAccepted,
-  setLateAvailabilityAccepted,
   lateCartNeedsReview,
   adaptCartForLateLocal,
   totals,
@@ -2520,7 +2577,8 @@ function CheckoutPanel({
   onRemoveMenuItem,
   changeQuantity,
   submitOrder,
-  onBack
+  onBack,
+  onChangeFulfillment
 }: {
   branches: CompanyBranch[];
   company?: PublicData["company"];
@@ -2532,18 +2590,12 @@ function CheckoutPanel({
   deliveryAddress: string;
   localOrderingEnabled: boolean;
   fulfillmentType: FulfillmentType;
-  setFulfillmentType: (value: FulfillmentType) => void;
   deliveryAvailable: boolean;
   deliveryAvailabilityMessage: string;
   localOrderState: LocalOrderState;
-  localWindowLabel: string;
   guaranteeCutoff: string;
   requestedTimeChoice: RequestedTimeChoice;
-  requestedTimeOptions: string[];
-  setRequestedTimeChoice: (value: RequestedTimeChoice) => void;
   lateLocalMode: boolean;
-  lateAvailabilityAccepted: boolean;
-  setLateAvailabilityAccepted: (value: boolean) => void;
   lateCartNeedsReview: boolean;
   adaptCartForLateLocal: () => void;
   totals: ReturnType<typeof calculateCartTotals>;
@@ -2564,12 +2616,16 @@ function CheckoutPanel({
   changeQuantity: (key: string, delta: number) => void;
   submitOrder: () => void;
   onBack: () => void;
+  onChangeFulfillment: () => void;
 }) {
   const companyPaidOrder =
     company?.billing_type === "company" &&
     paymentMethod === "pay_on_delivery";
   const displayTotal = companyPaidOrder ? totals.subtotal : totals.total;
   const localFulfillment = isLocalFulfillmentType(fulfillmentType);
+  const localArrival = requestedTimeChoice === "now"
+    ? `Llegada ahora (${localOrderState.currentTime})`
+    : `Llegada prevista: ${requestedTimeChoice}`;
 
   return (
     <section id="checkout" className="mx-auto max-w-6xl px-4 py-5 sm:px-6 lg:px-8">
@@ -2584,23 +2640,15 @@ function CheckoutPanel({
 
       <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
         <div className="space-y-5">
-          <FulfillmentSelector
-            enabled={localOrderingEnabled}
-            fulfillmentType={fulfillmentType}
-            onChange={setFulfillmentType}
-            deliveryAvailable={deliveryAvailable}
-            deliveryMessage={deliveryAvailabilityMessage}
-            deliveryWindow={deliveryWindow}
-            localOrderState={localOrderState}
-            localWindowLabel={localWindowLabel}
-            guaranteeCutoff={guaranteeCutoff}
-            requestedTimeChoice={requestedTimeChoice}
-            requestedTimeOptions={requestedTimeOptions}
-            onRequestedTimeChange={setRequestedTimeChoice}
-            lateLocalMode={lateLocalMode}
-            lateAvailabilityAccepted={lateAvailabilityAccepted}
-            onLateAvailabilityAccepted={setLateAvailabilityAccepted}
-          />
+          {localOrderingEnabled ? (
+            <FulfillmentSummary
+              fulfillmentType={fulfillmentType}
+              deliveryWindow={deliveryWindow}
+              localOrderState={localOrderState}
+              requestedTimeChoice={requestedTimeChoice}
+              onChange={onChangeFulfillment}
+            />
+          ) : null}
 
           {lateCartNeedsReview ? (
             <section className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm font-semibold text-amber-950">
@@ -2706,7 +2754,7 @@ function CheckoutPanel({
                 className="matica-focus min-h-24 w-full rounded-lg border border-matica-line px-3 py-3"
                 value={notes}
                 onChange={(event) => setNotes(event.target.value)}
-                placeholder="Sin cebolla, alergias, detalles de entrega..."
+                placeholder="Alergias u otras indicaciones..."
               />
             </label>
           </section>
@@ -2720,7 +2768,7 @@ function CheckoutPanel({
                 <h2 className="text-2xl font-black">Datos del cliente</h2>
                 <p className="text-sm font-semibold text-matica-ink/55">
                   {localFulfillment
-                    ? `${fulfillmentType === "dine_in" ? "Comer aquí" : "Recoger"} · ${requestedTimeChoice === "now" ? `Ahora (${localOrderState.currentTime})` : requestedTimeChoice}`
+                    ? `Comer en el restaurante · ${localArrival}`
                     : `Entrega ${companyName}, ${deliveryWindow}`}
                 </p>
                 {!localFulfillment && deliveryAddress ? <p className="text-sm font-semibold text-matica-ink/55">{deliveryAddress}</p> : null}
