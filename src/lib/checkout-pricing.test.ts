@@ -27,8 +27,14 @@ type CheckoutHarnessOptions = {
   menu?: DailyMenu | null;
   menuReadError?: boolean;
   deliveryOpen?: boolean;
+  globalSchedule?: Record<string, unknown>;
   localOnlyDay?: boolean;
   localOrderingEnabled?: boolean;
+  operatingCalendar?: {
+    available?: boolean;
+    closures?: Row[];
+    exceptions?: Row[];
+  };
   localState?: {
     open: boolean;
     afterGuaranteeCutoff: boolean;
@@ -115,8 +121,10 @@ function checkoutHarness(
     menu = publishedMenu,
     menuReadError = false,
     deliveryOpen = true,
+    globalSchedule = {},
     localOnlyDay = false,
     localOrderingEnabled = true,
+    operatingCalendar = {},
     localState = {
       open: true,
       afterGuaranteeCutoff: false,
@@ -175,9 +183,11 @@ function checkoutHarness(
               id: companySlug, name: companySlug, billing_type: companyPays ? "company" : "subsidized",
               allow_card_payment: !companyPays, allow_pay_on_delivery: companyPays,
               local_ordering_enabled: localOrderingEnabled,
+              local_order_days: [1, 2, 3, 4, 5, 6, 7],
               local_ordering_open_time: "09:30:00",
               local_ordering_close_time: "15:00:00",
-              local_ordering_guarantee_cutoff: "13:30:00"
+              local_ordering_guarantee_cutoff: "13:30:00",
+              local_only_days: localOnlyDay ? [4] : []
             },
             company_branches: { id: "branch" },
             products: available
@@ -219,7 +229,25 @@ function checkoutHarness(
       getSupabaseServerClient: () => supabase,
       getSupabaseAdminClient: () => supabase
     },
-    "@/lib/global-settings": { getGlobalSchedule: async () => ({}) },
+    "@/lib/global-settings": {
+      getGlobalSchedule: async () => ({
+        id: "global",
+        active: deliveryOpen,
+        active_days: [1, 2, 3, 4, 5, 6, 7],
+        order_open_time: "00:00",
+        order_close_time: "23:59",
+        delivery_start_time: "13:00",
+        delivery_end_time: "13:30",
+        ...globalSchedule
+      })
+    },
+    "@/lib/operating-calendar-data": {
+      readOperatingCalendar: async () => ({
+        available: operatingCalendar.available ?? true,
+        closures: operatingCalendar.closures ?? [],
+        exceptions: operatingCalendar.exceptions ?? []
+      })
+    },
     "@/lib/local-ordering": {
       isLocalFulfillmentType: (value: unknown) => value === "dine_in" || value === "pickup",
       isLocalOnlyDay: () => localOnlyDay,
@@ -228,11 +256,6 @@ function checkoutHarness(
         closeTime: "15:00",
         ...localState
       })
-    },
-    "@/lib/schedule": {
-      isOrderWindowOpen: () => deliveryOpen,
-      deliveryWindowLabel: () => "13:00 a 13:30",
-      orderWindowMessage: () => "Cerrado"
     },
     "@/lib/order-email": { sendOrderNotificationEmail: async () => { emailCalls += 1; } }
   });
@@ -573,9 +596,81 @@ test("un día configurado como sólo local bloquea reparto pero mantiene las mod
   const response = await h.submit("13.50");
   assert.equal(response.status, 403);
   const payload = await response.json();
-  assert.equal(payload.code, "LOCAL_ONLY_DAY");
-  assert.match(payload.error, /no hay reparto/i);
+  assert.equal(payload.code, "ORDER_WINDOW_CLOSED");
+  assert.match(payload.error, /no hay delivery/i);
   assert.equal(h.writes.length, 0);
+});
+
+test("un festivo oficial bloquea el delivery aunque el horario habitual esté abierto", async (t) => {
+  const h = checkoutHarness(t, dailyMenu, "bureau-veritas", true, [dailyMenu], {
+    operatingCalendar: {
+      closures: [{
+        id: "holiday",
+        date: "2026-11-12",
+        name: "Festivo de prueba",
+        scope: "local",
+        source: "official",
+        closes_delivery: true,
+        closes_local: true,
+        enabled: true
+      }]
+    }
+  });
+
+  const response = await h.submit("13.50");
+  assert.equal(response.status, 403);
+  const payload = await response.json();
+  assert.equal(payload.code, "ORDER_WINDOW_CLOSED");
+  assert.match(payload.error, /Festivo de prueba/i);
+  assert.equal(h.writes.length, 0);
+  assert.equal(h.stripeRequests.length, 0);
+});
+
+test("una excepción puntual abre el delivery y prevalece sobre festivo y día habitual cerrado", async (t) => {
+  const h = checkoutHarness(t, dailyMenu, "bureau-veritas", true, [dailyMenu], {
+    globalSchedule: { active_days: [1] },
+    operatingCalendar: {
+      closures: [{
+        id: "holiday",
+        date: "2026-11-12",
+        name: "Festivo de prueba",
+        scope: "local",
+        source: "official",
+        closes_delivery: true,
+        closes_local: true,
+        enabled: true
+      }],
+      exceptions: [{
+        id: "exception",
+        date: "2026-11-12",
+        channel: "delivery",
+        company_id: null,
+        mode: "custom_hours",
+        open_time: "00:00",
+        close_time: "23:59",
+        service_start: "14:00",
+        service_end: "14:30",
+        menu_guarantee_cutoff: null
+      }]
+    }
+  });
+
+  const response = await h.submit("13.50");
+  assert.equal(response.status, 200, JSON.stringify(await response.clone().json()));
+  const saved = h.writes.find((write) => write.table === "orders" && write.action === "insert")?.value as Row;
+  assert.equal(saved.delivery_window, "14:00 a 14:30");
+});
+
+test("si no se puede comprobar el calendario, el pedido se detiene antes de escribir o cobrar", async (t) => {
+  const h = checkoutHarness(t, dailyMenu, "bureau-veritas", true, [dailyMenu], {
+    operatingCalendar: { available: false }
+  });
+
+  const response = await h.submit("13.50");
+  assert.equal(response.status, 503);
+  assert.equal((await response.json()).code, "OPERATING_CALENDAR_UNAVAILABLE");
+  assert.equal(h.writes.length, 0);
+  assert.equal(h.stripeRequests.length, 0);
 });
 
 test("la entrega conserva su horario global aunque la modalidad local siga abierta", async (t) => {

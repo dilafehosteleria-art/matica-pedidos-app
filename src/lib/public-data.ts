@@ -9,6 +9,7 @@ import {
   PRODUCTS
 } from "@/lib/constants";
 import { mergeCatalogDefaults } from "@/lib/catalog";
+import { readOperatingCalendar } from "@/lib/operating-calendar-data";
 import { readActiveDailyMenu } from "@/lib/active-daily-menu";
 import { toDateInputValue } from "@/lib/format";
 import { getGlobalSchedule } from "@/lib/global-settings";
@@ -96,6 +97,11 @@ export function seedCompanyData(slug = "bureau-veritas"): PublicData | null {
       date: toDateInputValue()
     },
     schedule: DEFAULT_GLOBAL_SCHEDULE,
+    calendarClosures: [],
+    scheduleExceptions: [],
+    // Seed/fallback data cannot prove that today is not a holiday or exception.
+    // Keep fulfilment closed until the authoritative calendar can be read.
+    operatingCalendarAvailable: false,
     source: "seed"
   };
 }
@@ -194,12 +200,15 @@ export async function getPublicCompanyData(slug: string): Promise<PublicData | n
     return fallbackWithTodaysMenu;
   }
 
-  const branches = await supabase
-    .from("company_branches")
-    .select(BRANCH_FIELDS)
-    .eq("company_id", company.id)
-    .eq("active", true)
-    .order("name", { ascending: true });
+  const [branches, operatingCalendar] = await Promise.all([
+    supabase
+      .from("company_branches")
+      .select(BRANCH_FIELDS)
+      .eq("company_id", company.id)
+      .eq("active", true)
+      .order("name", { ascending: true }),
+    readOperatingCalendar(supabase, { companyId: company.id })
+  ]);
 
   if (branches.error || categories.error || products.error) {
     return fallbackWithTodaysMenu;
@@ -221,6 +230,9 @@ export async function getPublicCompanyData(slug: string): Promise<PublicData | n
     products: catalog.products.filter((product) => product.active),
     dailyMenu,
     schedule,
+    calendarClosures: operatingCalendar.closures,
+    scheduleExceptions: operatingCalendar.exceptions,
+    operatingCalendarAvailable: operatingCalendar.available,
     source: "supabase"
   } satisfies PublicData;
 }
