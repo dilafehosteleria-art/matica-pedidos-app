@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { readActiveDailyMenu } from "@/lib/active-daily-menu";
-import { isMenuSaladSandwichProduct } from "@/lib/catalog";
 import { getUnavailableMenuFields, isDailyMenuProduct } from "@/lib/daily-menu-courses";
 import { validateCompanyOrderEmail } from "@/lib/email-rules";
 import { toDateInputValue } from "@/lib/format";
@@ -387,23 +386,11 @@ export async function POST(request: NextRequest) {
 
   if (
     localOrderState &&
-    normalizedItems.some((item) => isMenuSaladSandwichProduct(productMap.get(item.product_id)!))
-  ) {
-    return codedError(
-      "LOCAL_PRODUCT_NOT_AVAILABLE",
-      "El Menú de ensalada pequeña con bocadillo no está disponible para comer o recoger en el restaurante porque no tiene subvención.",
-      409,
-      { fulfillment_type: fulfillmentType }
-    );
-  }
-
-  if (
-    menuSelectionMode === "on_arrival" &&
     normalizedItems.some((item) => !isDailyMenuProduct(productMap.get(item.product_id)!.product_type))
   ) {
     return codedError(
-      "LOCAL_MENU_CUTOFF",
-      `En los pedidos realizados a partir de las ${guaranteeCutoff}, solo puedes incluir Menú del día o Medio menú. Los platos se eligen al llegar, según disponibilidad.`,
+      "LOCAL_PRODUCT_NOT_AVAILABLE",
+      "Para comer o recoger en el restaurante solo puedes pedir Menú del día o Medio menú.",
       409,
       {
         fulfillment_type: fulfillmentType,
@@ -415,7 +402,6 @@ export async function POST(request: NextRequest) {
       }
     );
   }
-
 
   if (
     menuSelectionMode === "on_arrival" &&

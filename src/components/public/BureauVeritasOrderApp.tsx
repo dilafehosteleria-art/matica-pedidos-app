@@ -1062,24 +1062,15 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
     [categories, products]
   );
   const catalogSections = useMemo(() => {
-    const fulfillmentSections = localFulfillment
+    return localFulfillment
       ? publicSections
-          .map((section) => ({
-            ...section,
-            products: section.products.filter((product) => !isMenuSaladSandwichProduct(product))
-          }))
-          .filter((section) => section.products.length > 0)
-      : publicSections;
-
-    return lateLocalMode
-      ? fulfillmentSections
           .map((section) => ({
             ...section,
             products: section.products.filter((product) => isDailyMenuProduct(product.product_type))
           }))
           .filter((section) => section.products.length > 0)
-      : fulfillmentSections;
-  }, [lateLocalMode, localFulfillment, publicSections]);
+      : publicSections;
+  }, [localFulfillment, publicSections]);
   const menuReviews = useMemo(() => {
     const reviews = new Map<string, MenuReview>();
 
@@ -1150,7 +1141,7 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
   const lateCartNeedsReview = lateLocalMode && cart.some((item) =>
     !isDailyMenuProduct(item.product_type) || hasLateLocalMenuConfiguration(item.metadata)
   );
-  const localCartHasExcludedProduct = localFulfillment && cart.some((item) => isMenuSaladSandwichProduct(item));
+  const localCartHasUnavailableProduct = localFulfillment && cart.some((item) => !isDailyMenuProduct(item.product_type));
   const hasSubsidizedItem = cart.some((item) => getSubsidyAmount(item.product_type, data?.company) > 0);
   const companyName = data?.company.name ?? "tu empresa";
   const deliveryWindow = data
@@ -1167,7 +1158,7 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
     paymentOptions.some((option) => option.method === paymentMethod) &&
     (localFulfillment ? localOrderState.open : deliveryAvailable) &&
     (!localFulfillment || Boolean(requestedTime)) &&
-    !localCartHasExcludedProduct &&
+    !localCartHasUnavailableProduct &&
     (!lateLocalMode || lateAvailabilityAccepted) &&
     !lateCartNeedsReview &&
     menuReviews.size === 0 &&
@@ -1186,10 +1177,10 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
     setFulfillmentType(next);
     setLateAvailabilityAccepted(false);
     setServerRequiresOnArrival(false);
-    setSubmitState(nextIsLocal && cart.some((item) => isMenuSaladSandwichProduct(item))
+    setSubmitState(nextIsLocal && cart.some((item) => !isDailyMenuProduct(item.product_type))
       ? {
           status: "error",
-          message: "El Menú de ensalada pequeña con bocadillo no está disponible para comer o recoger en el restaurante porque no tiene subvención. Retíralo de la cesta para continuar."
+          message: "Para comer o recoger en el restaurante solo puedes pedir Menú del día o Medio menú. Retira los demás productos de la cesta para continuar."
         }
       : { status: "idle" });
   }
@@ -1303,10 +1294,10 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
       return;
     }
 
-    if (localFulfillment && cart.some((item) => isMenuSaladSandwichProduct(item))) {
+    if (localFulfillment && cart.some((item) => !isDailyMenuProduct(item.product_type))) {
       setSubmitState({
         status: "error",
-        message: "El Menú de ensalada pequeña con bocadillo no está disponible para comer o recoger en el restaurante porque no tiene subvención. Retíralo de la cesta para continuar."
+        message: "Para comer o recoger en el restaurante solo puedes pedir Menú del día o Medio menú. Retira los demás productos de la cesta para continuar."
       });
       return;
     }
@@ -1525,24 +1516,24 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
       {step === "catalog" ? (
         <div className="mx-auto max-w-7xl px-4 py-5 sm:px-6 lg:px-8">
           <section className="space-y-5">
-          {localCartHasExcludedProduct ? (
+          {localCartHasUnavailableProduct ? (
             <div className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm font-semibold text-amber-950">
-              <p className="font-black">El Menú de ensalada pequeña con bocadillo no está disponible para pedidos en el restaurante.</p>
-              <p className="mt-1">Este producto no tiene subvención. Retíralo de la cesta para continuar con esta modalidad.</p>
+              <p className="font-black">La cesta contiene productos que no están disponibles para pedidos en el restaurante.</p>
+              <p className="mt-1">En esta modalidad solo puedes pedir Menú del día o Medio menú.</p>
               <button
                 type="button"
                 className="matica-focus mt-3 rounded-lg bg-amber-900 px-4 py-2 font-black text-white"
                 onClick={() => {
-                  setCart((current) => current.filter((item) => !isMenuSaladSandwichProduct(item)));
+                  setCart((current) => current.filter((item) => isDailyMenuProduct(item.product_type)));
                   setSubmitState({ status: "idle" });
                 }}
               >
-                Retirar de la cesta
+                Dejar solo Menú y Medio menú
               </button>
             </div>
           ) : null}
 
-          {lateCartNeedsReview && !localCartHasExcludedProduct ? (
+          {lateCartNeedsReview && !localCartHasUnavailableProduct ? (
             <div className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm font-semibold text-amber-950">
               <p className="font-black">La cesta contiene platos elegidos o productos no disponibles para pedidos realizados a partir de las {localGuaranteeCutoff}.</p>
               <p className="mt-1">Conservaremos únicamente Menú del día y Medio menú, sin selección de platos.</p>
@@ -1865,7 +1856,7 @@ function FulfillmentEntry({
     {
       type: "dine_in",
       title: "Comer en el restaurante",
-      description: "Si lo prefieres, también puedes pasar a recogerlo.",
+      description: "Pide Menú del día o Medio menú. Si lo prefieres, también puedes pasar a recogerlo.",
       available: localOrderState.open
     }
   ];
@@ -1964,7 +1955,7 @@ function FulfillmentEntry({
         disabled={!canContinue}
         onClick={onContinue}
       >
-        Ver la carta
+        {localFulfillment ? "Ver Menú del día y Medio menú" : "Ver la carta"}
       </button>
     </section>
   );

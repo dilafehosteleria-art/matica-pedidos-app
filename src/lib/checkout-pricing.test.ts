@@ -468,6 +468,31 @@ test("el menú de ensalada pequeña con bocadillo no se admite en pedidos locale
   assert.equal(h.menuReads.length, 0);
 });
 
+test("antes del corte los pedidos locales solo admiten Menú del día o Medio menú", async (t) => {
+  const h = checkoutHarness(t, bowl, "bureau-veritas", true, [bowl], {
+    localState: {
+      open: true,
+      afterGuaranteeCutoff: false,
+      localDate: "2026-11-12",
+      currentTime: "12:10",
+      message: "Pedidos para el local disponibles."
+    }
+  });
+  const response = await h.submitItems([{
+    product_id: bowl.id,
+    quantity: 1,
+    metadata: { _configured_unit_price: "10.50" }
+  }], { fulfillment_type: "dine_in", requested_time: "13:15" });
+
+  assert.equal(response.status, 409);
+  const payload = await response.json();
+  assert.equal(payload.code, "LOCAL_PRODUCT_NOT_AVAILABLE");
+  assert.deepEqual(payload.allowed_product_types, ["daily_menu", "half_menu"]);
+  assert.equal(h.writes.length, 0);
+  assert.equal(h.stripeRequests.length, 0);
+  assert.equal(h.menuReads.length, 0);
+});
+
 test("pedido local después del corte: acepta sólo menú sin platos y los deja para elegir al llegar", async (t) => {
   const h = checkoutHarness(t, halfMenu, "bureau-veritas", true, [halfMenu], {
     localState: {
@@ -568,7 +593,7 @@ test("después del corte el servidor rechaza cualquier otra elección del menú"
   assert.equal(h.stripeRequests.length, 0);
 });
 
-test("después del corte rechaza productos de carta aunque el cliente los fuerce", async (t) => {
+test("después del corte también rechaza productos de carta aunque el cliente los fuerce", async (t) => {
   const h = checkoutHarness(t, bowl, "bureau-veritas", true, [bowl], {
     localState: {
       open: true,
@@ -584,7 +609,7 @@ test("después del corte rechaza productos de carta aunque el cliente los fuerce
 
   assert.equal(response.status, 409);
   const payload = await response.json();
-  assert.equal(payload.code, "LOCAL_MENU_CUTOFF");
+  assert.equal(payload.code, "LOCAL_PRODUCT_NOT_AVAILABLE");
   assert.deepEqual(payload.allowed_product_types, ["daily_menu", "half_menu"]);
   assert.equal(h.writes.length, 0);
 });
