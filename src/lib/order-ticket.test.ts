@@ -112,13 +112,15 @@ test("los pedidos locales destacan modalidad, hora y platos al llegar sin direcc
   const ticket = buildThermalOrderPlainText(localOrder);
 
   assert.match(plainText, /MODALIDAD\nLocal · Comer aquí/);
-  assert.match(plainText, /Hora aproximada: 14:15/);
+  assert.match(plainText, /Hora prevista de llegada: 14:15/);
   assert.match(plainText, /Se eligen al llegar según disponibilidad/);
   assert.doesNotMatch(plainText, /DIRECCIÓN DE ENTREGA/);
+  assert.doesNotMatch(plainText, /Estado pedido:/);
   assert.match(ticket, /LOCAL +COMER AQUI/);
-  assert.match(ticket, /HORA APROX\.\n> 14:15/);
+  assert.match(ticket, /HORA PREVISTA\n> 14:15/);
   assert.match(ticket, /ELEGIR AL LLEGAR SEGUN DISPONIBILIDAD/);
   assert.doesNotMatch(ticket, /DIRECCION\n/);
+  assert.doesNotMatch(ticket, /ESTADO PEDIDO:/);
 });
 
 test("el ticket termico mantiene guarnicion debajo del segundo plato", () => {

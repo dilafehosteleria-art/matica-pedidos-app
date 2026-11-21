@@ -209,7 +209,7 @@ export function buildOrderPlainText(order: AdminOrder) {
     "",
     "MODALIDAD",
     fulfillmentTypeLabel(order.fulfillment_type),
-    ...(localOrder ? [`Hora aproximada: ${requestedTimeLabel(order.requested_time)}`] : []),
+    ...(localOrder ? [`Hora prevista de llegada: ${requestedTimeLabel(order.requested_time)}`] : []),
     ...(orderHasDeferredMenuSelection(order)
       ? ["", "PLATOS", "Se eligen al llegar según disponibilidad"]
       : []),
@@ -249,8 +249,7 @@ export function buildOrderPlainText(order: AdminOrder) {
     "ESTADO DE PAGO",
     operationalPaymentLabel(order).toUpperCase(),
     "",
-    `Estado pedido: ${ORDER_STATUS_LABELS[order.status]}`,
-    "",
+    ...(!localOrder ? [`Estado pedido: ${ORDER_STATUS_LABELS[order.status]}`, ""] : []),
     "Gracias por confiar en Matica."
   );
 
@@ -271,7 +270,7 @@ export function buildThermalOrderPlainText(order: AdminOrder) {
     "",
     "MODALIDAD",
     `> ${thermalTicketText(fulfillmentTypeLabel(order.fulfillment_type)).toUpperCase()}`,
-    ...(localOrder ? ["HORA APROX.", `> ${thermalTicketText(requestedTimeLabel(order.requested_time))}`] : []),
+    ...(localOrder ? ["HORA PREVISTA", `> ${thermalTicketText(requestedTimeLabel(order.requested_time))}`] : []),
     ...(orderHasDeferredMenuSelection(order) ? ["PLATOS", "> ELEGIR AL LLEGAR SEGUN DISPONIBILIDAD"] : []),
     ...(!localOrder && companyAddress(order) ? ["", "DIRECCION", `> ${thermalTicketText(companyAddress(order))}`] : []),
     "------------------------------",
@@ -304,7 +303,7 @@ export function buildThermalOrderPlainText(order: AdminOrder) {
     "------------------------------",
     "ESTADO DE PAGO:",
     thermalTicketText(thermalPaymentLabel(order)).toUpperCase(),
-    `ESTADO PEDIDO: ${thermalTicketText(ORDER_STATUS_LABELS[order.status])}`,
+    ...(!localOrder ? [`ESTADO PEDIDO: ${thermalTicketText(ORDER_STATUS_LABELS[order.status])}`] : []),
     "------------------------------",
     "Gracias por confiar en Matica."
   );

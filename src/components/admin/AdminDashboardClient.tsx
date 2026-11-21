@@ -1019,16 +1019,14 @@ function OrderDetailModal({
             ) : null}
 
             <div className="flex flex-col gap-2">
-              {!localOrder ? (
-                <button
-                  className="matica-focus flex min-h-12 items-center justify-center gap-2 rounded-lg bg-matica-green px-4 font-black text-white"
-                  onClick={() => window.print()}
-                  type="button"
-                >
-                  <Printer className="h-5 w-5" />
-                  Imprimir ticket
-                </button>
-              ) : null}
+              <button
+                className="matica-focus flex min-h-12 items-center justify-center gap-2 rounded-lg bg-matica-green px-4 font-black text-white"
+                onClick={() => window.print()}
+                type="button"
+              >
+                <Printer className="h-5 w-5" />
+                Imprimir ticket
+              </button>
               <button
                 className="matica-focus flex min-h-12 items-center justify-center rounded-lg border border-matica-line bg-white px-4 font-black text-matica-ink"
                 onClick={onClose}
@@ -1039,7 +1037,7 @@ function OrderDetailModal({
             </div>
           </aside>
 
-          {!localOrder ? <ThermalTicket order={order} /> : null}
+          <ThermalTicket order={order} />
         </div>
       </div>
     </div>
