@@ -12,12 +12,16 @@ import { summarizeDeliveryNoticeCandidates, type DeliveryNoticeSummary } from "@
 import {
   formatCompanyDisplayName,
   formatOrderDateTime,
+  fulfillmentTypeLabel,
+  isLocalOrder,
   metadataEntryValues,
   ORDER_STATUS_LABELS,
   orderCompanyInvoiceTotal,
   orderEmployeeTotal,
+  orderHasDeferredMenuSelection,
   orderItemOptionLines,
-  orderReference
+  orderReference,
+  requestedTimeLabel
 } from "@/lib/order-ticket";
 import { operationalPaymentLabel } from "@/lib/payment-display";
 import type { AdminOrder, OrderStatus } from "@/lib/types";
@@ -712,6 +716,7 @@ function OrderCard({
   const branchName = formatCompanyDisplayName(order.company_branches?.name ?? "Sin empresa interna");
   const theme = STATUS_THEME[order.status] ?? STATUS_THEME.nuevo;
   const orderHasCutlery = order.order_items.some((item) => hasCutlery(item.metadata));
+  const localOrder = isLocalOrder(order);
 
   return (
     <article className={`rounded-lg border border-matica-line bg-white p-3 shadow-sm ${theme.card}`}>
@@ -733,6 +738,13 @@ function OrderCard({
         <p className="break-all">{order.customer_email}</p>
         <p className="font-black text-matica-ink">{operationalPaymentLabel(order)}</p>
       </div>
+
+      {localOrder ? (
+        <div className="mt-3 rounded-lg border border-matica-green/30 bg-matica-mint p-2 text-xs font-black uppercase text-matica-green">
+          {fulfillmentTypeLabel(order.fulfillment_type)} · {requestedTimeLabel(order.requested_time)}
+          {orderHasDeferredMenuSelection(order) ? <span className="mt-1 block">Platos al llegar</span> : null}
+        </div>
+      ) : null}
 
       {orderHasCutlery ? (
         <div className="mt-3 inline-flex rounded-lg bg-amber-100 px-3 py-1 text-xs font-black uppercase text-amber-900">
@@ -840,6 +852,7 @@ function OrderDetailModal({
   const companyName = order.companies?.name ?? "Cliente principal";
   const branchName = formatCompanyDisplayName(order.company_branches?.name ?? "Sin empresa interna");
   const orderHasCutlery = order.order_items.some((item) => hasCutlery(item.metadata));
+  const localOrder = isLocalOrder(order);
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-matica-ink/55 px-3 py-5 print:static print:bg-white print:p-0">
@@ -869,7 +882,9 @@ function OrderDetailModal({
                 <InfoRow label="Fecha y hora" value={formatOrderDateTime(order.created_at)} />
                 <InfoRow label="Cliente principal" value={companyName} />
                 <InfoRow label="Empresa interna" value={branchName} />
-                {order.companies?.delivery_address ? (
+                <InfoRow label="Modalidad" value={fulfillmentTypeLabel(order.fulfillment_type)} />
+                {localOrder ? <InfoRow label="Hora aproximada" value={requestedTimeLabel(order.requested_time)} /> : null}
+                {!localOrder && order.companies?.delivery_address ? (
                   <InfoRow label="Dirección de entrega" value={order.companies.delivery_address} />
                 ) : null}
                 <InfoRow label="Nombre" value={order.customer_name} />
@@ -881,6 +896,11 @@ function OrderDetailModal({
 
             <section className="rounded-lg border border-matica-line p-4">
               <h3 className="text-lg font-black">Productos</h3>
+              {orderHasDeferredMenuSelection(order) ? (
+                <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm font-black text-amber-950">
+                  PLATOS AL LLEGAR · Elegir según disponibilidad
+                </div>
+              ) : null}
               {orderHasCutlery ? (
                 <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm font-black text-amber-950">
                   <p className="uppercase">CUBIERTOS</p>

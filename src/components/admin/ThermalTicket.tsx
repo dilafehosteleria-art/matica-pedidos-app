@@ -2,12 +2,16 @@ import {
   formatCompanyDisplayName,
   formatOrderDateTime,
   formatThermalCurrency,
+  fulfillmentTypeLabel,
+  isLocalOrder,
   metadataEntryValues,
   ORDER_STATUS_LABELS,
+  orderHasDeferredMenuSelection,
   orderCompanyInvoiceTotal,
   orderEmployeeTotal,
   orderItemOptionLines,
   orderReference,
+  requestedTimeLabel,
   thermalPaymentLabel,
   thermalTicketText
 } from "@/lib/order-ticket";
@@ -21,6 +25,7 @@ type ThermalTicketProps = {
 export function ThermalTicket({ className = "hidden print:block thermal-ticket", order }: ThermalTicketProps) {
   const companyName = order.companies?.name ?? "Cliente principal";
   const branchName = formatCompanyDisplayName(order.company_branches?.name ?? "Sin empresa interna");
+  const localOrder = isLocalOrder(order);
 
   return (
     <section className={className}>
@@ -35,7 +40,23 @@ export function ThermalTicket({ className = "hidden print:block thermal-ticket",
         <p className="ticket-field-label">EMPRESA</p>
         <p className="ticket-field-value">&gt; {thermalTicketText(branchName)}</p>
       </div>
-      {order.companies?.delivery_address ? (
+      <div className="ticket-field-block">
+        <p className="ticket-field-label">MODALIDAD</p>
+        <p className="ticket-field-value">&gt; {thermalTicketText(fulfillmentTypeLabel(order.fulfillment_type)).toUpperCase()}</p>
+      </div>
+      {localOrder ? (
+        <div className="ticket-field-block">
+          <p className="ticket-field-label">HORA APROX.</p>
+          <p className="ticket-field-value">&gt; {thermalTicketText(requestedTimeLabel(order.requested_time))}</p>
+        </div>
+      ) : null}
+      {orderHasDeferredMenuSelection(order) ? (
+        <div className="ticket-field-block">
+          <p className="ticket-field-label">PLATOS</p>
+          <p className="ticket-field-value">&gt; ELEGIR AL LLEGAR SEGUN DISPONIBILIDAD</p>
+        </div>
+      ) : null}
+      {!localOrder && order.companies?.delivery_address ? (
         <div className="ticket-field-block">
           <p className="ticket-field-label">DIRECCION</p>
           <p className="ticket-field-value">&gt; {thermalTicketText(order.companies.delivery_address)}</p>

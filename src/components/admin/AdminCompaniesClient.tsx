@@ -1,10 +1,22 @@
 "use client";
 
-import { AlertCircle, ExternalLink, Loader2, Plus, Save } from "lucide-react";
+import { AlertCircle, Clock3, ExternalLink, Loader2, Plus, Save } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { AdminGate } from "./AdminGate";
+import { toDateInputValue } from "@/lib/format";
+import { localOrderWindowLabel } from "@/lib/local-ordering";
 import type { AdminCompany, CompanyDraft, NewCompanyDraft } from "@/lib/types";
+
+const LOCAL_DAYS = [
+  { value: 1, label: "Lunes" },
+  { value: 2, label: "Martes" },
+  { value: 3, label: "Miércoles" },
+  { value: 4, label: "Jueves" },
+  { value: 5, label: "Viernes" },
+  { value: 6, label: "Sábado" },
+  { value: 7, label: "Domingo" }
+];
 
 const EMPTY_NEW_COMPANY: NewCompanyDraft = {
   name: "",
@@ -24,6 +36,20 @@ function slugify(value: string) {
     .replace(/^-+|-+$/g, "");
 }
 
+function normalizeTimeInput(value: string | null | undefined, fallback: string) {
+  const time = value?.slice(0, 5) ?? "";
+
+  return /^\d{2}:\d{2}$/.test(time) ? time : fallback;
+}
+
+function normalizeDays(value: number[] | null | undefined, fallback: number[]) {
+  if (!Array.isArray(value)) return fallback;
+
+  return Array.from(new Set(value.map(Number).filter((day) => Number.isInteger(day) && day >= 1 && day <= 7))).sort(
+    (a, b) => a - b
+  );
+}
+
 export function AdminCompaniesClient() {
   return (
     <AdminGate title="Empresas" subtitle="Crea empresas, configura su acceso y gestiona las formas de pago.">
@@ -35,6 +61,8 @@ export function AdminCompaniesClient() {
 function getDraft(company: AdminCompany): CompanyDraft {
   const dailyRule = company.subsidy_rules?.find((rule) => rule.product_type === "daily_menu");
   const halfRule = company.subsidy_rules?.find((rule) => rule.product_type === "half_menu");
+  const localOrderDays = normalizeDays(company.local_order_days, [1, 2, 3, 4, 5]);
+  const localOnlyDays = normalizeDays(company.local_only_days, []).filter((day) => localOrderDays.includes(day));
 
   return {
     id: company.id,
@@ -49,7 +77,14 @@ function getDraft(company: AdminCompany): CompanyDraft {
     allow_pay_on_delivery: company.allow_pay_on_delivery ?? false,
     allow_card_payment: company.allow_card_payment ?? true,
     allow_bizum_payment: company.allow_bizum_payment ?? false,
-    billing_type: company.billing_type ?? "employee"
+    billing_type: company.billing_type ?? "employee",
+    local_ordering_enabled: company.local_ordering_enabled ?? false,
+    local_order_days: localOrderDays,
+    local_ordering_open_time: normalizeTimeInput(company.local_ordering_open_time, "09:30"),
+    local_ordering_close_time: normalizeTimeInput(company.local_ordering_close_time, "15:00"),
+    local_ordering_guarantee_cutoff: normalizeTimeInput(company.local_ordering_guarantee_cutoff, "13:30"),
+    local_orders_closed_on: company.local_orders_closed_on ?? null,
+    local_only_days: localOnlyDays
   };
 }
 
@@ -92,7 +127,7 @@ function CompaniesEditor({ pin, clearPin }: { pin: string; clearPin: () => void 
     loadCompanies();
   }, [loadCompanies]);
 
-  function updateDraft(companyId: string, field: keyof CompanyDraft, value: string | number | boolean | null) {
+  function updateDraft<K extends keyof CompanyDraft>(companyId: string, field: K, value: CompanyDraft[K]) {
     setDrafts((current) => ({
       ...current,
       [companyId]: {
@@ -100,6 +135,38 @@ function CompaniesEditor({ pin, clearPin }: { pin: string; clearPin: () => void 
         [field]: value
       }
     }));
+  }
+
+  function updateLocalDay(companyId: string, day: number, field: "local" | "local_only", checked: boolean) {
+    setDrafts((current) => {
+      const draft = current[companyId];
+      if (!draft) return current;
+
+      const localDays = new Set(draft.local_order_days);
+      const localOnlyDays = new Set(draft.local_only_days);
+
+      if (field === "local") {
+        if (checked) localDays.add(day);
+        else {
+          localDays.delete(day);
+          localOnlyDays.delete(day);
+        }
+      } else if (checked) {
+        localDays.add(day);
+        localOnlyDays.add(day);
+      } else {
+        localOnlyDays.delete(day);
+      }
+
+      return {
+        ...current,
+        [companyId]: {
+          ...draft,
+          local_order_days: Array.from(localDays).sort((a, b) => a - b),
+          local_only_days: Array.from(localOnlyDays).sort((a, b) => a - b)
+        }
+      };
+    });
   }
 
   function updatePaymentDraft(
@@ -119,8 +186,9 @@ function CompaniesEditor({ pin, clearPin }: { pin: string; clearPin: () => void 
     });
   }
 
-  async function saveCompany(companyId: string) {
-    const draft = drafts[companyId];
+  async function saveCompany(companyId: string, overrideDraft?: CompanyDraft) {
+    const draft = overrideDraft ?? drafts[companyId];
+    if (!draft) return false;
     setSavingId(companyId);
     setError("");
 
@@ -137,11 +205,50 @@ function CompaniesEditor({ pin, clearPin }: { pin: string; clearPin: () => void 
 
     if (!response.ok) {
       setError(payload.error ?? "No se pudo guardar la empresa.");
-      return;
+      return false;
     }
 
     setCompanies((current) => current.map((company) => (company.id === companyId ? payload.company : company)));
     setDrafts((current) => ({ ...current, [companyId]: getDraft(payload.company as AdminCompany) }));
+    return true;
+  }
+
+  async function toggleLocalOrdersToday(companyId: string, close: boolean) {
+    setSavingId(companyId);
+    setError("");
+    const response = await fetch("/api/admin/companies", {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        "x-admin-pin": pin
+      },
+      body: JSON.stringify({
+        id: companyId,
+        local_ordering_action: close ? "close_today" : "reopen_today"
+      })
+    });
+    const payload = await response.json();
+    setSavingId("");
+
+    if (!response.ok) {
+      setError(payload.error ?? "No se pudo actualizar la operativa local de hoy.");
+      return;
+    }
+
+    const company = payload.company as AdminCompany;
+    setCompanies((current) => current.map((item) => (item.id === companyId ? company : item)));
+    setDrafts((current) => {
+      const draft = current[companyId];
+      if (!draft) return current;
+
+      return {
+        ...current,
+        [companyId]: {
+          ...draft,
+          local_orders_closed_on: company.local_orders_closed_on
+        }
+      };
+    });
   }
 
   function updateNewCompany<K extends keyof NewCompanyDraft>(field: K, value: NewCompanyDraft[K]) {
@@ -270,6 +377,8 @@ function CompaniesEditor({ pin, clearPin }: { pin: string; clearPin: () => void 
               return null;
             }
 
+            const localClosedToday = draft.local_orders_closed_on === toDateInputValue();
+
             return (
               <article key={company.id} className="rounded-lg border border-matica-line bg-white p-4 shadow-sm">
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
@@ -325,6 +434,129 @@ function CompaniesEditor({ pin, clearPin }: { pin: string; clearPin: () => void 
                 <p className="mt-3 rounded-lg bg-matica-soft px-3 py-2 text-xs font-bold text-matica-ink/55">
                   Horario global actual: {draft.order_window} · Entrega {draft.delivery_window}. Se modifica desde Configuración.
                 </p>
+
+                <div className="mt-4 rounded-lg border border-matica-green/25 bg-matica-mint/35 p-3 sm:p-4">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <div className="flex items-center gap-2 text-matica-green">
+                        <Clock3 className="h-5 w-5" />
+                        <h3 className="text-base font-black">Pedidos para comer o recoger en el local</h3>
+                      </div>
+                      <p className="mt-1 text-sm font-semibold leading-5 text-matica-ink/60">
+                        Horario independiente del reparto. Después del corte, los platos elegidos quedan sujetos a disponibilidad.
+                      </p>
+                    </div>
+                    <span className={`w-fit rounded-full px-3 py-1 text-xs font-black ${
+                      localClosedToday
+                        ? "bg-red-100 text-red-700"
+                        : draft.local_ordering_enabled
+                          ? "bg-emerald-100 text-emerald-800"
+                          : "bg-matica-ink/10 text-matica-ink/55"
+                    }`}>
+                      {localClosedToday ? "Cerrado hoy" : draft.local_ordering_enabled ? "Habilitado" : "Desactivado"}
+                    </span>
+                  </div>
+
+                  <div className="mt-4">
+                    <Toggle
+                      label="Permitir pedidos para comer o recoger en el local"
+                      checked={draft.local_ordering_enabled}
+                      onChange={(value) => updateDraft(company.id, "local_ordering_enabled", value)}
+                    />
+                  </div>
+
+                  <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                    <Input
+                      label="Apertura local"
+                      type="time"
+                      value={draft.local_ordering_open_time}
+                      onChange={(value) => updateDraft(company.id, "local_ordering_open_time", value)}
+                    />
+                    <Input
+                      label="Corte garantía de platos"
+                      type="time"
+                      value={draft.local_ordering_guarantee_cutoff}
+                      onChange={(value) => updateDraft(company.id, "local_ordering_guarantee_cutoff", value)}
+                    />
+                    <Input
+                      label="Cierre local"
+                      type="time"
+                      value={draft.local_ordering_close_time}
+                      onChange={(value) => updateDraft(company.id, "local_ordering_close_time", value)}
+                    />
+                  </div>
+
+                  <div className="mt-4 overflow-hidden rounded-lg border border-matica-line bg-white">
+                    <div className="grid grid-cols-[minmax(0,1fr)_88px_112px] gap-2 border-b border-matica-line bg-matica-soft px-3 py-2 text-xs font-black uppercase text-matica-ink/50">
+                      <span>Día</span>
+                      <span className="text-center">Local</span>
+                      <span className="text-center">Solo local</span>
+                    </div>
+                    {LOCAL_DAYS.map((day) => {
+                      const localSelected = draft.local_order_days.includes(day.value);
+                      const localOnlySelected = draft.local_only_days.includes(day.value);
+
+                      return (
+                        <div
+                          key={day.value}
+                          className="grid min-h-11 grid-cols-[minmax(0,1fr)_88px_112px] items-center gap-2 border-b border-matica-line px-3 py-2 last:border-b-0"
+                        >
+                          <span className="text-sm font-bold">{day.label}</span>
+                          <label className="grid place-items-center">
+                            <input
+                              aria-label={`${day.label}: pedidos en local`}
+                              className="h-4 w-4 accent-matica-green"
+                              type="checkbox"
+                              checked={localSelected}
+                              disabled={localSelected && draft.local_order_days.length === 1}
+                              onChange={(event) => updateLocalDay(company.id, day.value, "local", event.target.checked)}
+                            />
+                          </label>
+                          <label className="grid place-items-center">
+                            <input
+                              aria-label={`${day.label}: solo pedidos en local`}
+                              className="h-4 w-4 accent-matica-green"
+                              type="checkbox"
+                              checked={localOnlySelected}
+                              onChange={(event) => updateLocalDay(company.id, day.value, "local_only", event.target.checked)}
+                            />
+                          </label>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <p className="mt-2 text-xs font-bold text-matica-ink/55">
+                    «Solo local» bloquea la entrega ese día y mantiene comer/recoger. Franja configurada: {localOrderWindowLabel(draft)}.
+                  </p>
+
+                  <div className={`mt-4 flex flex-col gap-3 rounded-lg border p-3 sm:flex-row sm:items-center sm:justify-between ${
+                    localClosedToday ? "border-red-200 bg-red-50" : "border-matica-line bg-white"
+                  }`}>
+                    <div>
+                      <p className="text-sm font-black">Control operativo de hoy</p>
+                      <p className="mt-0.5 text-xs font-semibold text-matica-ink/55">
+                        {localClosedToday
+                          ? "Los pedidos en local están cerrados hoy y se reabrirán automáticamente mañana."
+                          : "Puedes cerrar solo la operativa local de hoy sin cambiar el horario semanal."}
+                      </p>
+                    </div>
+                    <button
+                      className={`matica-focus min-h-11 shrink-0 rounded-lg px-4 text-sm font-black disabled:cursor-not-allowed disabled:opacity-40 ${
+                        localClosedToday ? "bg-matica-green text-white" : "border border-red-200 bg-white text-red-700"
+                      }`}
+                      disabled={savingId === company.id || (!draft.local_ordering_enabled && !localClosedToday)}
+                      onClick={() => toggleLocalOrdersToday(company.id, !localClosedToday)}
+                      type="button"
+                    >
+                      {savingId === company.id
+                        ? "Guardando..."
+                        : localClosedToday
+                          ? "Reabrir hoy"
+                          : "Cerrar pedidos en local hoy"}
+                    </button>
+                  </div>
+                </div>
 
                 <div className="mt-4 rounded-lg border border-matica-line bg-matica-soft p-3">
                   <h3 className="text-sm font-black uppercase text-matica-ink/45">Metodos de pago</h3>
@@ -399,7 +631,7 @@ function Input({
         className="matica-focus w-full rounded-lg border border-matica-line px-3 py-3"
         type={type}
         min={type === "number" ? 0 : undefined}
-        step={type === "number" ? "0.01" : undefined}
+        step={type === "number" ? "0.01" : type === "time" ? 60 : undefined}
         value={value}
         onChange={(event) => onChange(event.target.value)}
       />

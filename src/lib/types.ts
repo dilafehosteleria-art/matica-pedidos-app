@@ -22,6 +22,10 @@ export type PaymentMethod =
 
 export type OnlinePaymentProvider = "stripe" | "sumup";
 
+export type FulfillmentType = "delivery" | "dine_in" | "pickup";
+
+export type MenuSelectionMode = "confirmed" | "on_arrival";
+
 export type PaymentStatus =
   | "pending"
   | "paid"
@@ -50,6 +54,13 @@ export type Company = {
   sumup_payments_enabled?: boolean;
   online_payments_enabled?: boolean;
   online_payment_provider?: OnlinePaymentProvider | null;
+  local_ordering_enabled?: boolean | null;
+  local_order_days?: number[] | null;
+  local_ordering_open_time?: string | null;
+  local_ordering_close_time?: string | null;
+  local_ordering_guarantee_cutoff?: string | null;
+  local_orders_closed_on?: string | null;
+  local_only_days?: number[] | null;
   active: boolean;
   created_at?: string;
 };
@@ -67,7 +78,20 @@ export type GlobalSchedule = {
 
 export type PublicCompany = Pick<
   Company,
-  "id" | "name" | "slug" | "active" | "delivery_address" | "order_window" | "delivery_window"
+  | "id"
+  | "name"
+  | "slug"
+  | "active"
+  | "delivery_address"
+  | "order_window"
+  | "delivery_window"
+  | "local_ordering_enabled"
+  | "local_order_days"
+  | "local_ordering_open_time"
+  | "local_ordering_close_time"
+  | "local_ordering_guarantee_cutoff"
+  | "local_orders_closed_on"
+  | "local_only_days"
 >;
 
 export type CompanyBranch = {
@@ -174,6 +198,9 @@ export type AdminOrder = {
   customer_email: string;
   customer_phone: string;
   delivery_notice_sent_at?: string | null;
+  fulfillment_type?: FulfillmentType | null;
+  requested_time?: string | null;
+  menu_selection_mode?: MenuSelectionMode | null;
   status: OrderStatus;
   payment_method?: PaymentMethod | null;
   payment_status?: PaymentStatus | null;
@@ -205,6 +232,13 @@ export type AdminOrder = {
 };
 
 export type AdminCompany = Company & {
+  local_ordering_enabled: boolean;
+  local_order_days: number[];
+  local_ordering_open_time: string;
+  local_ordering_close_time: string;
+  local_ordering_guarantee_cutoff: string;
+  local_orders_closed_on: string | null;
+  local_only_days: number[];
 };
 
 export type CompanyDraft = Pick<
@@ -217,6 +251,13 @@ export type CompanyDraft = Pick<
   allow_card_payment: boolean;
   allow_bizum_payment: boolean;
   billing_type: CompanyBillingType;
+  local_ordering_enabled: boolean;
+  local_order_days: number[];
+  local_ordering_open_time: string;
+  local_ordering_close_time: string;
+  local_ordering_guarantee_cutoff: string;
+  local_orders_closed_on: string | null;
+  local_only_days: number[];
 };
 
 export type NewCompanyDraft = {

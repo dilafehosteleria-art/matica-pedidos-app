@@ -15,6 +15,13 @@ export const BUREAU_VERITAS_COMPANY: Company = {
   allow_card_payment: true,
   allow_bizum_payment: false,
   billing_type: "subsidized",
+  local_ordering_enabled: true,
+  local_order_days: [1, 2, 3, 4, 5],
+  local_ordering_open_time: "09:30",
+  local_ordering_close_time: "15:00",
+  local_ordering_guarantee_cutoff: "13:30",
+  local_orders_closed_on: null,
+  local_only_days: [5],
   subsidy_rules: [
     { product_type: "daily_menu", subsidy_amount: 4, active: true },
     { product_type: "half_menu", subsidy_amount: 3.5, active: true }

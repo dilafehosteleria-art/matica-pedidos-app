@@ -35,6 +35,16 @@ import { getDailyMenuCourses, getUnavailableMenuFields, isDailyMenuProduct, type
 import { validateCompanyOrderEmail } from "@/lib/email-rules";
 import { formatCurrency } from "@/lib/format";
 import { activeConfigFlowGroups, displayConfigFlowStep, nextConfigFlowStepIndex } from "@/lib/config-flow";
+import {
+  buildLateLocalMenuMetadata,
+  getLocalOrderState,
+  hasLateLocalMenuConfiguration,
+  isLocalFulfillmentType,
+  isLocalOnlyDay,
+  localOrderWindowLabel,
+  type LocalOrderState
+} from "@/lib/local-ordering";
+import { buildLocalRequestedTimeOptions, timeToMinutes } from "@/lib/local-order-time";
 import { calculateCartTotals, getSubsidyAmount } from "@/lib/pricing";
 import {
   CUSTOM_SALAD_DESCRIPTION,
@@ -50,7 +60,16 @@ import {
   SMALL_SALAD_SIZE_LABEL
 } from "@/lib/salad-config";
 import { deliveryWindowLabel, getOrderWindowState } from "@/lib/schedule";
-import type { CartItem, CompanyBranch, CustomerForm, DailyMenu, PaymentMethod, Product, PublicData } from "@/lib/types";
+import type {
+  CartItem,
+  CompanyBranch,
+  CustomerForm,
+  DailyMenu,
+  FulfillmentType,
+  PaymentMethod,
+  Product,
+  PublicData
+} from "@/lib/types";
 import {
   WRAP_BASE_OPTIONS,
   WRAP_PROTEIN_OPTIONS,
@@ -60,6 +79,16 @@ import {
 
 const STORAGE_KEY_PREFIX = "matica:customer";
 const CUSTOMER_STORAGE_MAX_AGE_SECONDS = 60 * 60 * 24 * 180;
+const EMPTY_LOCAL_ORDER_STATE: LocalOrderState = {
+  open: false,
+  afterGuaranteeCutoff: false,
+  localDate: "",
+  currentTime: "",
+  message: ""
+};
+function lateLocalNotice(cutoff: string) {
+  return `A partir de las ${cutoff} puedes seguir reservando y pagando tu menú, pero los platos se eligen al llegar y están sujetos a disponibilidad.`;
+}
 
 const EMPTY_CUSTOMER: CustomerForm = {
   name: "",
@@ -115,6 +144,7 @@ type SubmitState =
   | { status: "error"; message: string };
 
 type PublicStep = "catalog" | "checkout" | "confirmation";
+type RequestedTimeChoice = "now" | string;
 type ProductConfiguration = { product: Product; section: PublicSection };
 type MenuReview = { fields: MenuCourseField[]; replacement?: ProductConfiguration };
 
@@ -660,8 +690,14 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
   const [subsidyAlreadyUsed, setSubsidyAlreadyUsed] = useState(false);
   const [submitState, setSubmitState] = useState<SubmitState>({ status: "idle" });
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("pay_on_delivery");
+  const [fulfillmentType, setFulfillmentType] = useState<FulfillmentType>("delivery");
+  const [requestedTimeChoice, setRequestedTimeChoice] = useState<RequestedTimeChoice>("now");
+  const [lateAvailabilityAccepted, setLateAvailabilityAccepted] = useState(false);
+  const [serverRequiresOnArrival, setServerRequiresOnArrival] = useState(false);
   const [customerLoaded, setCustomerLoaded] = useState(false);
   const [orderWindow, setOrderWindow] = useState({ open: false, message: "" });
+  const [localOrderState, setLocalOrderState] = useState<LocalOrderState>(EMPTY_LOCAL_ORDER_STATE);
+  const [localOnlyDay, setLocalOnlyDay] = useState(false);
   const [lastOrder, setLastOrder] = useState<{ id: string; total: number } | null>(null);
   const previousOrderWindow = useRef<boolean | null>(null);
   const menuRequest = useRef<AbortController | null>(null);
@@ -696,6 +732,17 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
     }
   }, [updateDailyMenu]);
 
+  const refreshPublicData = useCallback(async () => {
+    const response = await fetch(`/api/public/companies/${companySlug}`, { cache: "no-store" });
+
+    if (!response.ok) {
+      throw new Error("Empresa no encontrada.");
+    }
+
+    const payload = await response.json() as PublicData;
+    setData(payload);
+  }, [companySlug]);
+
   useEffect(() => {
     setCustomer(readStoredCustomer(storageKey));
     setCustomerLoaded(true);
@@ -703,15 +750,33 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
 
   useEffect(() => {
     const refreshOrderWindow = () => {
-      const next = getOrderWindowState(new Date(), schedule);
+      const now = new Date();
+      const next = getOrderWindowState(now, schedule);
       setOrderWindow((current) => current.open === next.open && current.message === next.message ? current : next);
+
+      if (data?.company) {
+        const nextLocal = getLocalOrderState(now, data.company);
+        setLocalOrderState((current) =>
+          current.open === nextLocal.open &&
+          current.afterGuaranteeCutoff === nextLocal.afterGuaranteeCutoff &&
+          current.localDate === nextLocal.localDate &&
+          current.currentTime === nextLocal.currentTime &&
+          current.message === nextLocal.message
+            ? current
+            : nextLocal
+        );
+        setLocalOnlyDay(isLocalOnlyDay(now, data.company));
+      } else {
+        setLocalOrderState(EMPTY_LOCAL_ORDER_STATE);
+        setLocalOnlyDay(false);
+      }
     };
 
     refreshOrderWindow();
     const interval = window.setInterval(refreshOrderWindow, 30_000);
 
     return () => window.clearInterval(interval);
-  }, [schedule]);
+  }, [data?.company, schedule]);
 
   useEffect(() => {
     if (!catalogLoaded) return;
@@ -747,22 +812,32 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
   }, [dailyMenu]);
 
   useEffect(() => {
-    fetch(`/api/public/companies/${companySlug}`)
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error("Empresa no encontrada.");
-        }
-
-        return response.json();
-      })
-      .then((payload: PublicData) => setData(payload))
+    void refreshPublicData()
       .catch(() => {
         setSubmitState({
           status: "error",
           message: "No se pudo cargar la carta. Revisa la conexión e intenta de nuevo."
         });
       });
-  }, [companySlug]);
+  }, [refreshPublicData]);
+
+  useEffect(() => {
+    const refreshOperationalSettings = () => {
+      if (document.visibilityState === "visible") {
+        void refreshPublicData().catch(() => { /* El servidor mantiene la última configuración válida. */ });
+      }
+    };
+    const interval = window.setInterval(refreshOperationalSettings, 60_000);
+
+    window.addEventListener("focus", refreshOperationalSettings);
+    document.addEventListener("visibilitychange", refreshOperationalSettings);
+
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("focus", refreshOperationalSettings);
+      document.removeEventListener("visibilitychange", refreshOperationalSettings);
+    };
+  }, [refreshPublicData]);
 
   useEffect(() => {
     const url = new URL(window.location.href);
@@ -946,12 +1021,45 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
 
   const categories = data?.categories;
   const products = data?.products;
+  const localOrderingEnabled = data?.company.local_ordering_enabled === true;
+  const localFulfillment = isLocalFulfillmentType(fulfillmentType);
+  const deliveryAvailable = orderWindow.open && !(localOrderingEnabled && localOnlyDay);
+  const deliveryAvailabilityMessage = localOrderingEnabled && localOnlyDay
+    ? "Hoy no hay reparto para esta empresa. Puedes comer o recoger en el local."
+    : orderWindow.message;
+  const lateLocalMode = localFulfillment && (localOrderState.afterGuaranteeCutoff || serverRequiresOnArrival);
+  const requestedTime = localFulfillment
+    ? requestedTimeChoice === "now"
+      ? localOrderState.currentTime
+      : requestedTimeChoice
+    : null;
+  const localCloseTime = data?.company.local_ordering_close_time?.slice(0, 5) || "15:00";
+  const localGuaranteeCutoff = data?.company.local_ordering_guarantee_cutoff?.slice(0, 5) || "13:30";
+  const localRequestedTimeOptions = useMemo(
+    () => buildLocalRequestedTimeOptions(localOrderState.currentTime, localCloseTime),
+    [localCloseTime, localOrderState.currentTime]
+  );
   const publicSections = useMemo<PublicSection[]>(
     () => (categories && products ? buildPublicCatalogSections(categories, products) : []),
     [categories, products]
   );
+  const catalogSections = useMemo(
+    () => lateLocalMode
+      ? publicSections
+          .map((section) => ({
+            ...section,
+            products: section.products.filter((product) => isDailyMenuProduct(product.product_type))
+          }))
+          .filter((section) => section.products.length > 0)
+      : publicSections,
+    [lateLocalMode, publicSections]
+  );
   const menuReviews = useMemo(() => {
     const reviews = new Map<string, MenuReview>();
+
+    if (lateLocalMode) {
+      return reviews;
+    }
 
     for (const item of cart) {
       if (!isDailyMenuProduct(item.product_type)) continue;
@@ -967,7 +1075,7 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
     }
 
     return reviews;
-  }, [cart, dailyMenu, publicSections]);
+  }, [cart, dailyMenu, lateLocalMode, publicSections]);
   const paymentOptions = useMemo(() => publicPaymentOptions(data?.company), [data?.company]);
 
   useEffect(() => {
@@ -976,12 +1084,43 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
     }
   }, [paymentMethod, paymentOptions]);
 
+  useEffect(() => {
+    if (!localOrderingEnabled) {
+      setFulfillmentType("delivery");
+      return;
+    }
+
+    if (fulfillmentType === "delivery" && !deliveryAvailable && localOrderState.open) {
+      setFulfillmentType("dine_in");
+      setLateAvailabilityAccepted(false);
+    }
+  }, [deliveryAvailable, fulfillmentType, localOrderState.open, localOrderingEnabled]);
+
+  useEffect(() => {
+    if (
+      requestedTimeChoice !== "now" &&
+      timeToMinutes(requestedTimeChoice) < timeToMinutes(localOrderState.currentTime)
+    ) {
+      setRequestedTimeChoice("now");
+    }
+  }, [localOrderState.currentTime, requestedTimeChoice]);
+
+  useEffect(() => {
+    if (!lateLocalMode) {
+      setLateAvailabilityAccepted(false);
+      setServerRequiresOnArrival(false);
+    }
+  }, [lateLocalMode]);
+
   const totals = useMemo(
     () => calculateCartTotals(cart, data?.company, subsidyAlreadyUsed, paymentMethod),
     [cart, data?.company, paymentMethod, subsidyAlreadyUsed]
   );
   const displayTotal = totals.employeeTotal === 0 && totals.companyInvoiceTotal > 0 ? totals.subtotal : totals.total;
   const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
+  const lateCartNeedsReview = lateLocalMode && cart.some((item) =>
+    !isDailyMenuProduct(item.product_type) || hasLateLocalMenuConfiguration(item.metadata)
+  );
   const hasSubsidizedItem = cart.some((item) => getSubsidyAmount(item.product_type, data?.company) > 0);
   const companyName = data?.company.name ?? "tu empresa";
   const deliveryWindow = data?.schedule
@@ -996,12 +1135,51 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
     Boolean(customer.phone.trim()) &&
     Boolean(selectedBranch) &&
     paymentOptions.some((option) => option.method === paymentMethod) &&
-    orderWindow.open &&
+    (localFulfillment ? localOrderState.open : deliveryAvailable) &&
+    (!localFulfillment || Boolean(requestedTime)) &&
+    (!lateLocalMode || lateAvailabilityAccepted) &&
+    !lateCartNeedsReview &&
     menuReviews.size === 0 &&
     cart.length > 0;
 
   function updateCustomer(field: keyof CustomerForm, value: string) {
     setCustomer((current) => ({ ...current, [field]: value }));
+  }
+
+  function updateFulfillmentType(next: FulfillmentType) {
+    if (next !== "delivery" && !localOrderingEnabled) {
+      return;
+    }
+
+    setFulfillmentType(next);
+    setLateAvailabilityAccepted(false);
+    setServerRequiresOnArrival(false);
+    setSubmitState({ status: "idle" });
+  }
+
+  function adaptCartForLateLocal() {
+    if (!data) return;
+
+    const normalized = new Map<string, CartItem>();
+
+    for (const item of cart) {
+      if (!isDailyMenuProduct(item.product_type)) continue;
+      const product = data.products.find((candidate) => candidate.id === item.product_id);
+
+      if (!product) continue;
+
+      const basePrice = Number(product.base_price);
+      const nextItem = buildCartItem(product, buildLateLocalMenuMetadata(basePrice), item.name, basePrice);
+      const existing = normalized.get(nextItem.key);
+      normalized.set(nextItem.key, {
+        ...nextItem,
+        quantity: (existing?.quantity ?? 0) + item.quantity
+      });
+    }
+
+    setCart(Array.from(normalized.values()));
+    setLateAvailabilityAccepted(false);
+    setSubmitState({ status: "idle" });
   }
 
   function goToStep(nextStep: PublicStep) {
@@ -1044,8 +1222,58 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
     if (orderSubmitting.current || menuReviews.size) return;
     setSubmitState({ status: "idle" });
 
-    if (!orderWindow.open) {
-      setSubmitState({ status: "error", message: orderWindow.message });
+    if (!data) {
+      setSubmitState({ status: "error", message: "La carta todavía se está cargando." });
+      return;
+    }
+
+    const now = new Date();
+    const currentLocalState = getLocalOrderState(now, data.company);
+    const currentLocalOnlyDay = data.company.local_ordering_enabled === true && isLocalOnlyDay(now, data.company);
+    const currentLateLocalMode = localFulfillment && (currentLocalState.afterGuaranteeCutoff || serverRequiresOnArrival);
+    const currentLateCartNeedsReview = currentLateLocalMode && cart.some((item) =>
+      !isDailyMenuProduct(item.product_type) || hasLateLocalMenuConfiguration(item.metadata)
+    );
+    const requestedTimeForSubmit = localFulfillment
+      ? requestedTimeChoice === "now"
+        ? currentLocalState.currentTime
+        : requestedTimeChoice
+      : null;
+
+    if (!localFulfillment && (!orderWindow.open || currentLocalOnlyDay)) {
+      setSubmitState({
+        status: "error",
+        message: currentLocalOnlyDay ? deliveryAvailabilityMessage : orderWindow.message
+      });
+      return;
+    }
+
+    if (localFulfillment && !currentLocalState.open) {
+      setLocalOrderState(currentLocalState);
+      setSubmitState({ status: "error", message: currentLocalState.message });
+      return;
+    }
+
+    if (localFulfillment && !requestedTimeForSubmit) {
+      setSubmitState({ status: "error", message: "Indica una hora aproximada para venir al restaurante." });
+      return;
+    }
+
+    if (currentLateLocalMode && currentLateCartNeedsReview) {
+      setLocalOrderState(currentLocalState);
+      setServerRequiresOnArrival(true);
+      setLateAvailabilityAccepted(false);
+      setSubmitState({
+        status: "error",
+        message: `${lateLocalNotice(localGuaranteeCutoff)} Revisa y adapta la cesta antes de confirmar.`
+      });
+      return;
+    }
+
+    if (currentLateLocalMode && !lateAvailabilityAccepted) {
+      setLocalOrderState(currentLocalState);
+      setServerRequiresOnArrival(true);
+      setSubmitState({ status: "error", message: "Confirma que aceptas elegir los platos al llegar." });
       return;
     }
 
@@ -1089,7 +1317,10 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
             metadata: item.metadata ?? {}
           })),
           notes,
-          payment_method: paymentMethod
+          payment_method: paymentMethod,
+          fulfillment_type: fulfillmentType,
+          requested_time: requestedTimeForSubmit,
+          availability_acknowledged: currentLateLocalMode ? lateAvailabilityAccepted : false
         })
       });
       payload = await response.json();
@@ -1101,6 +1332,30 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
     }
 
     if (!response.ok) {
+      if (
+        payload.code === "LOCAL_SELECTION_CHANGED" ||
+        payload.code === "LOCAL_MENU_CUTOFF" ||
+        payload.code === "LOCAL_AVAILABILITY_ACK_REQUIRED"
+      ) {
+        setServerRequiresOnArrival(true);
+        setLateAvailabilityAccepted(false);
+        setSubmitState({
+          status: "error",
+          message: payload.error ?? `${lateLocalNotice(localGuaranteeCutoff)} Adapta la cesta y acepta la condición antes de continuar.`
+        });
+        return;
+      }
+
+      if (
+        payload.code === "LOCAL_ORDER_WINDOW_CLOSED" ||
+        payload.code === "LOCAL_ONLY_DAY" ||
+        payload.code === "LOCAL_REQUESTED_TIME_OUTSIDE_WINDOW"
+      ) {
+        void refreshPublicData().catch(() => { /* Conservamos el mensaje validado por el servidor. */ });
+        setSubmitState({ status: "error", message: payload.error ?? "La operativa acaba de cambiar. Revisa la modalidad y vuelve a intentarlo." });
+        return;
+      }
+
       if (payload.code === "MENU_CHANGED") {
         updateDailyMenu(payload.menu);
         setSubmitState({ status: "idle" });
@@ -1177,11 +1432,45 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
         <div className="mx-auto max-w-7xl px-4 py-5 sm:px-6 lg:px-8">
           <section className="space-y-5">
           {data ? (
+            <FulfillmentSelector
+              enabled={localOrderingEnabled}
+              fulfillmentType={fulfillmentType}
+              onChange={updateFulfillmentType}
+              deliveryAvailable={deliveryAvailable}
+              deliveryMessage={deliveryAvailabilityMessage}
+              deliveryWindow={deliveryWindow}
+              localOrderState={localOrderState}
+              localWindowLabel={localOrderWindowLabel(data.company)}
+              guaranteeCutoff={localGuaranteeCutoff}
+              requestedTimeChoice={requestedTimeChoice}
+              requestedTimeOptions={localRequestedTimeOptions}
+              onRequestedTimeChange={setRequestedTimeChoice}
+              lateLocalMode={lateLocalMode}
+              lateAvailabilityAccepted={lateAvailabilityAccepted}
+              onLateAvailabilityAccepted={setLateAvailabilityAccepted}
+            />
+          ) : null}
+
+          {lateCartNeedsReview ? (
+            <div className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm font-semibold text-amber-950">
+              <p className="font-black">La cesta contiene platos elegidos o productos no disponibles después de las {localGuaranteeCutoff}.</p>
+              <p className="mt-1">Conservaremos únicamente Menú del día y Medio menú, sin selección de platos.</p>
+              <button
+                type="button"
+                className="matica-focus mt-3 rounded-lg bg-amber-900 px-4 py-2 font-black text-white"
+                onClick={adaptCartForLateLocal}
+              >
+                Adaptar mi cesta
+              </button>
+            </div>
+          ) : null}
+
+          {data ? (
             <div className="sticky top-0 z-20 -mx-4 border-y border-matica-line bg-matica-soft/95 px-4 py-2 backdrop-blur sm:-mx-6 sm:px-6 lg:mx-0 lg:rounded-lg lg:border lg:bg-white lg:px-3">
               <div className="flex items-center gap-2">
                 <nav className="min-w-0 flex-1 overflow-x-auto pb-1 sm:pb-0" aria-label="Categorías">
                   <div className="flex w-max gap-1.5 pr-3">
-                    {publicSections.map((section) => (
+                    {catalogSections.map((section) => (
                       <a
                         key={section.slug}
                         className="matica-focus rounded-full border border-matica-line bg-white px-3 py-2 text-xs font-black text-matica-ink transition hover:border-matica-green hover:text-matica-green sm:px-4 sm:text-sm"
@@ -1213,7 +1502,7 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
             </div>
           ) : (
             <div className="space-y-10 sm:space-y-12">
-              {publicSections.map((section, index) => (
+              {catalogSections.map((section, index) => (
                 <section
                   key={section.slug}
                   id={section.slug}
@@ -1231,7 +1520,7 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
                       </p>
                     </div>
                   </div>
-                  {section.products.some((product) => isDailyMenuProduct(product.product_type) && !product.sold_out && !hasMenuChoices(product, dailyMenu)) ? (
+                  {!lateLocalMode && section.products.some((product) => isDailyMenuProduct(product.product_type) && !product.sold_out && !hasMenuChoices(product, dailyMenu)) ? (
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-matica-line bg-white p-3 text-sm font-semibold text-matica-ink/65">
                       <p>El menú de hoy aún no está disponible.</p>
                       <button type="button" className="matica-focus font-bold text-matica-green underline" onClick={() => void refreshDailyMenu()}>
@@ -1248,7 +1537,16 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
                         menu={data.dailyMenu}
                         company={data.company}
                         eagerImage={index === 0 && productIndex < 3}
-                        onOpen={() => setConfiguring({ product, section })}
+                        allowUnconfiguredMenu={lateLocalMode}
+                        onOpen={() => {
+                          if (lateLocalMode && isDailyMenuProduct(product.product_type)) {
+                            const basePrice = Number(product.base_price);
+                            addProduct(product, section, buildLateLocalMenuMetadata(basePrice), basePrice);
+                            return;
+                          }
+
+                          setConfiguring({ product, section });
+                        }}
                       />
                     ))}
                     {!section.products.length ? (
@@ -1292,6 +1590,22 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
           companyName={companyName}
           deliveryWindow={deliveryWindow}
           deliveryAddress={data?.company.delivery_address ?? ""}
+          localOrderingEnabled={localOrderingEnabled}
+          fulfillmentType={fulfillmentType}
+          setFulfillmentType={updateFulfillmentType}
+          deliveryAvailable={deliveryAvailable}
+          deliveryAvailabilityMessage={deliveryAvailabilityMessage}
+          localOrderState={localOrderState}
+          localWindowLabel={data ? localOrderWindowLabel(data.company) : ""}
+          guaranteeCutoff={localGuaranteeCutoff}
+          requestedTimeChoice={requestedTimeChoice}
+          requestedTimeOptions={localRequestedTimeOptions}
+          setRequestedTimeChoice={setRequestedTimeChoice}
+          lateLocalMode={lateLocalMode}
+          lateAvailabilityAccepted={lateAvailabilityAccepted}
+          setLateAvailabilityAccepted={setLateAvailabilityAccepted}
+          lateCartNeedsReview={lateCartNeedsReview}
+          adaptCartForLateLocal={adaptCartForLateLocal}
           totals={totals}
           notes={notes}
           setNotes={setNotes}
@@ -1302,7 +1616,6 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
           emailValidationMessage={emailValidation.valid ? "" : emailValidation.message}
           submitState={submitState}
           canConfirmOrder={canConfirmOrder}
-          orderWindow={orderWindow}
           hasSubsidizedItem={hasSubsidizedItem}
           subsidyAlreadyUsed={subsidyAlreadyUsed}
           menuReviews={menuReviews}
@@ -1326,7 +1639,7 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
         />
       ) : null}
 
-      {configuring && hasMenuChoices(configuring.product, dailyMenu) ? (
+      {configuring && !lateLocalMode && hasMenuChoices(configuring.product, dailyMenu) ? (
         <ConfigModal
           key={configuring.replaceItem?.key ?? `${configuring.product.id}:${getDisplayName(configuring.product, configuring.section.kind)}`}
           product={configuring.product}
@@ -1378,12 +1691,159 @@ function InputField({
   );
 }
 
+function FulfillmentSelector({
+  enabled,
+  fulfillmentType,
+  onChange,
+  deliveryAvailable,
+  deliveryMessage,
+  deliveryWindow,
+  localOrderState,
+  localWindowLabel,
+  guaranteeCutoff,
+  requestedTimeChoice,
+  requestedTimeOptions,
+  onRequestedTimeChange,
+  lateLocalMode,
+  lateAvailabilityAccepted,
+  onLateAvailabilityAccepted
+}: {
+  enabled: boolean;
+  fulfillmentType: FulfillmentType;
+  onChange: (value: FulfillmentType) => void;
+  deliveryAvailable: boolean;
+  deliveryMessage: string;
+  deliveryWindow: string;
+  localOrderState: LocalOrderState;
+  localWindowLabel: string;
+  guaranteeCutoff: string;
+  requestedTimeChoice: RequestedTimeChoice;
+  requestedTimeOptions: string[];
+  onRequestedTimeChange: (value: RequestedTimeChoice) => void;
+  lateLocalMode: boolean;
+  lateAvailabilityAccepted: boolean;
+  onLateAvailabilityAccepted: (value: boolean) => void;
+}) {
+  if (!enabled) return null;
+
+  const options: Array<{
+    type: FulfillmentType;
+    title: string;
+    description: string;
+    available: boolean;
+  }> = [
+    {
+      type: "delivery",
+      title: "Entrega en la empresa",
+      description: `Reparto ${deliveryWindow}`,
+      available: deliveryAvailable
+    },
+    {
+      type: "dine_in",
+      title: "Comer aquí",
+      description: "Te esperamos en el restaurante",
+      available: localOrderState.open
+    },
+    {
+      type: "pickup",
+      title: "Recoger",
+      description: "Pide y llévatelo",
+      available: localOrderState.open
+    }
+  ];
+  const localFulfillment = isLocalFulfillmentType(fulfillmentType);
+
+  return (
+    <section className="rounded-lg border border-matica-green/25 bg-white p-4 shadow-sm">
+      <div>
+        <h2 className="text-xl font-black">¿Cómo quieres recibir tu pedido?</h2>
+        <p className="mt-1 text-sm font-semibold text-matica-ink/55">
+          Elige la modalidad antes de preparar la cesta.
+        </p>
+      </div>
+
+      <div className="mt-4 grid gap-2 sm:grid-cols-3">
+        {options.map((option) => {
+          const selected = fulfillmentType === option.type;
+
+          return (
+            <button
+              key={option.type}
+              type="button"
+              aria-pressed={selected}
+              disabled={!option.available}
+              onClick={() => onChange(option.type)}
+              className={`matica-focus min-h-24 rounded-lg border p-3 text-left transition disabled:cursor-not-allowed disabled:opacity-55 ${
+                selected
+                  ? "border-matica-green bg-matica-mint text-matica-green"
+                  : "border-matica-line bg-white text-matica-ink"
+              }`}
+            >
+              <span className="block font-black">{option.title}</span>
+              <span className="mt-1 block text-xs font-semibold text-matica-ink/60">{option.description}</span>
+              <span className={`mt-2 inline-flex rounded-full px-2 py-1 text-[11px] font-black ${
+                option.available ? "bg-matica-mint text-matica-green" : "bg-matica-ink/10 text-matica-ink/55"
+              }`}>
+                {option.available ? "Disponible" : "No disponible ahora"}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="mt-3 rounded-lg bg-matica-soft px-3 py-2 text-xs font-bold text-matica-ink/65">
+        {localFulfillment
+          ? `${localOrderState.message} Horario: ${localWindowLabel}.`
+          : deliveryAvailable
+            ? `Entrega disponible ${deliveryWindow}.`
+            : deliveryMessage}
+      </div>
+
+      {localFulfillment ? (
+        <div className="mt-4 space-y-3">
+          <label className="block space-y-1">
+            <span className="text-sm font-black text-matica-ink">Hora aproximada</span>
+            <select
+              className="matica-focus w-full rounded-lg border border-matica-line bg-white px-3 py-3 font-bold"
+              value={requestedTimeChoice}
+              onChange={(event) => onRequestedTimeChange(event.target.value)}
+            >
+              <option value="now">Ahora ({localOrderState.currentTime || "hora actual"})</option>
+              {requestedTimeOptions.map((time) => (
+                <option key={time} value={time}>{time}</option>
+              ))}
+            </select>
+            <span className="block text-xs font-semibold text-matica-ink/50">Las horas son aproximadas y se muestran en franjas de 15 minutos.</span>
+          </label>
+
+          {lateLocalMode ? (
+            <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
+              <p className="font-black">Platos según disponibilidad</p>
+              <p className="mt-1 font-semibold leading-5">{lateLocalNotice(guaranteeCutoff)}</p>
+              <label className="mt-3 flex cursor-pointer items-start gap-2 rounded-lg border border-amber-300 bg-white p-3 font-black">
+                <input
+                  className="mt-0.5 h-4 w-4 accent-matica-green"
+                  type="checkbox"
+                  checked={lateAvailabilityAccepted}
+                  onChange={(event) => onLateAvailabilityAccepted(event.target.checked)}
+                />
+                <span>Acepto elegir los platos al llegar entre las opciones disponibles.</span>
+              </label>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 function ProductCard({
   product,
   section,
   menu,
   company,
   eagerImage = false,
+  allowUnconfiguredMenu = false,
   onOpen
 }: {
   product: Product;
@@ -1391,9 +1851,10 @@ function ProductCard({
   menu: DailyMenu | null;
   company: PublicData["company"];
   eagerImage?: boolean;
+  allowUnconfiguredMenu?: boolean;
   onOpen: () => void;
 }) {
-  const canAdd = !product.sold_out && hasMenuChoices(product, menu);
+  const canAdd = !product.sold_out && (allowUnconfiguredMenu || hasMenuChoices(product, menu));
   const subsidy = getSubsidyAmount(product.product_type, company);
   const employeePrice = employeeProductPrice(Number(product.base_price), product.product_type, company.billing_type === "subsidized" ? company.subsidy_rules : []);
   const displayName = getDisplayName(product, section.kind);
@@ -1477,7 +1938,7 @@ function ProductCard({
             type="button"
           >
             <Plus className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-            Elegir
+            {allowUnconfiguredMenu && isDailyMenuProduct(product.product_type) ? "Añadir menú" : "Elegir"}
           </button>
         </div>
       </div>
@@ -1998,6 +2459,22 @@ function CheckoutPanel({
   companyName,
   deliveryWindow,
   deliveryAddress,
+  localOrderingEnabled,
+  fulfillmentType,
+  setFulfillmentType,
+  deliveryAvailable,
+  deliveryAvailabilityMessage,
+  localOrderState,
+  localWindowLabel,
+  guaranteeCutoff,
+  requestedTimeChoice,
+  requestedTimeOptions,
+  setRequestedTimeChoice,
+  lateLocalMode,
+  lateAvailabilityAccepted,
+  setLateAvailabilityAccepted,
+  lateCartNeedsReview,
+  adaptCartForLateLocal,
   totals,
   notes,
   setNotes,
@@ -2008,7 +2485,6 @@ function CheckoutPanel({
   emailValidationMessage,
   submitState,
   canConfirmOrder,
-  orderWindow,
   hasSubsidizedItem,
   subsidyAlreadyUsed,
   menuReviews,
@@ -2026,6 +2502,22 @@ function CheckoutPanel({
   companyName: string;
   deliveryWindow: string;
   deliveryAddress: string;
+  localOrderingEnabled: boolean;
+  fulfillmentType: FulfillmentType;
+  setFulfillmentType: (value: FulfillmentType) => void;
+  deliveryAvailable: boolean;
+  deliveryAvailabilityMessage: string;
+  localOrderState: LocalOrderState;
+  localWindowLabel: string;
+  guaranteeCutoff: string;
+  requestedTimeChoice: RequestedTimeChoice;
+  requestedTimeOptions: string[];
+  setRequestedTimeChoice: (value: RequestedTimeChoice) => void;
+  lateLocalMode: boolean;
+  lateAvailabilityAccepted: boolean;
+  setLateAvailabilityAccepted: (value: boolean) => void;
+  lateCartNeedsReview: boolean;
+  adaptCartForLateLocal: () => void;
   totals: ReturnType<typeof calculateCartTotals>;
   notes: string;
   setNotes: (value: string) => void;
@@ -2036,7 +2528,6 @@ function CheckoutPanel({
   emailValidationMessage: string;
   submitState: SubmitState;
   canConfirmOrder: boolean;
-  orderWindow: { open: boolean; message: string };
   hasSubsidizedItem: boolean;
   subsidyAlreadyUsed: boolean;
   menuReviews: ReadonlyMap<string, MenuReview>;
@@ -2050,6 +2541,7 @@ function CheckoutPanel({
     company?.billing_type === "company" &&
     paymentMethod === "pay_on_delivery";
   const displayTotal = companyPaidOrder ? totals.subtotal : totals.total;
+  const localFulfillment = isLocalFulfillmentType(fulfillmentType);
 
   return (
     <section id="checkout" className="mx-auto max-w-6xl px-4 py-5 sm:px-6 lg:px-8">
@@ -2064,6 +2556,38 @@ function CheckoutPanel({
 
       <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
         <div className="space-y-5">
+          <FulfillmentSelector
+            enabled={localOrderingEnabled}
+            fulfillmentType={fulfillmentType}
+            onChange={setFulfillmentType}
+            deliveryAvailable={deliveryAvailable}
+            deliveryMessage={deliveryAvailabilityMessage}
+            deliveryWindow={deliveryWindow}
+            localOrderState={localOrderState}
+            localWindowLabel={localWindowLabel}
+            guaranteeCutoff={guaranteeCutoff}
+            requestedTimeChoice={requestedTimeChoice}
+            requestedTimeOptions={requestedTimeOptions}
+            onRequestedTimeChange={setRequestedTimeChoice}
+            lateLocalMode={lateLocalMode}
+            lateAvailabilityAccepted={lateAvailabilityAccepted}
+            onLateAvailabilityAccepted={setLateAvailabilityAccepted}
+          />
+
+          {lateCartNeedsReview ? (
+            <section className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm font-semibold text-amber-950">
+              <p className="font-black">Después de las {guaranteeCutoff}, adapta la cesta al modo de disponibilidad antes de confirmar.</p>
+              <p className="mt-1">Se conservarán los menús y se retirarán sus elecciones de platos; otros productos saldrán de la cesta.</p>
+              <button
+                type="button"
+                className="matica-focus mt-3 rounded-lg bg-amber-900 px-4 py-2 font-black text-white"
+                onClick={adaptCartForLateLocal}
+              >
+                Adaptar mi cesta
+              </button>
+            </section>
+          ) : null}
+
           <section className="rounded-lg border border-matica-line bg-white p-4 shadow-sm">
             <div className="flex items-center justify-between gap-3">
               <div>
@@ -2085,7 +2609,11 @@ function CheckoutPanel({
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <p className="font-black">{item.name}</p>
-                          <p className="mt-1 text-xs font-semibold leading-5 text-matica-ink/55">{metadataLabel(item.metadata)}</p>
+                          <p className="mt-1 text-xs font-semibold leading-5 text-matica-ink/55">
+                            {lateLocalMode && isDailyMenuProduct(item.product_type) && Object.keys(item.metadata ?? {}).length === 0
+                              ? "Platos a elegir al llegar según disponibilidad"
+                              : metadataLabel(item.metadata)}
+                          </p>
                         </div>
                         <p className="shrink-0 font-black">{formatCurrency(item.base_price * item.quantity)}</p>
                       </div>
@@ -2162,8 +2690,12 @@ function CheckoutPanel({
               </div>
               <div>
                 <h2 className="text-2xl font-black">Datos del cliente</h2>
-                <p className="text-sm font-semibold text-matica-ink/55">Entrega {companyName}, {deliveryWindow}</p>
-                {deliveryAddress ? <p className="text-sm font-semibold text-matica-ink/55">{deliveryAddress}</p> : null}
+                <p className="text-sm font-semibold text-matica-ink/55">
+                  {localFulfillment
+                    ? `${fulfillmentType === "dine_in" ? "Comer aquí" : "Recoger"} · ${requestedTimeChoice === "now" ? `Ahora (${localOrderState.currentTime})` : requestedTimeChoice}`
+                    : `Entrega ${companyName}, ${deliveryWindow}`}
+                </p>
+                {!localFulfillment && deliveryAddress ? <p className="text-sm font-semibold text-matica-ink/55">{deliveryAddress}</p> : null}
               </div>
             </div>
 
@@ -2294,9 +2826,9 @@ function CheckoutPanel({
             </p>
           ) : null}
 
-          {!orderWindow.open && orderWindow.message ? (
+          {!(localFulfillment ? localOrderState.open : deliveryAvailable) ? (
             <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm font-bold text-amber-900">
-              {orderWindow.message}
+              {localFulfillment ? localOrderState.message : deliveryAvailabilityMessage}
             </div>
           ) : null}
 

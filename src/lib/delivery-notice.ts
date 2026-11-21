@@ -1,4 +1,5 @@
 import { toDateInputValue } from "./format.ts";
+import { isLocalOrder } from "./order-ticket.ts";
 import { isConfirmedPayment } from "./order-validity.ts";
 import type { AdminOrder } from "./types.ts";
 
@@ -27,6 +28,7 @@ export type DeliveryNoticeOrder = Pick<
   | "created_at"
   | "customer_email"
   | "delivery_notice_sent_at"
+  | "fulfillment_type"
   | "payment_method"
   | "payment_status"
   | "status"
@@ -87,6 +89,10 @@ export function deliveryNoticeEligibility(order: DeliveryNoticeOrder, today = to
 
   if (toDateInputValue(new Date(order.created_at)) !== today) {
     return "not_today";
+  }
+
+  if (isLocalOrder(order)) {
+    return "not_preparing";
   }
 
   if (order.status !== "preparando") {
