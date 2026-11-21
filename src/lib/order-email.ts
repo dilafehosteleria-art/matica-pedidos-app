@@ -4,10 +4,14 @@ import { operationalPaymentLabel, paymentMethodLabel } from "@/lib/payment-displ
 import {
   formatCompanyDisplayName,
   formatOrderDateTime,
+  fulfillmentTypeLabel,
+  isLocalOrder,
   metadataEntryValues,
   orderCompanyInvoiceTotal,
   orderEmployeeTotal,
-  orderItemOptionLines
+  orderHasDeferredMenuSelection,
+  orderItemOptionLines,
+  requestedTimeLabel
 } from "@/lib/order-ticket";
 import type { AdminOrder } from "@/lib/types";
 
@@ -82,6 +86,8 @@ function buildOrderHtml(order: AdminOrder) {
   const paymentLabel = operationalPaymentLabel(order);
   const paymentMethod = paymentMethodLabel(order.payment_method);
   const notes = order.notes?.trim();
+  const localOrder = isLocalOrder(order);
+  const fulfillmentLabel = fulfillmentTypeLabel(order.fulfillment_type);
 
   return `<!doctype html>
 <html lang="es">
@@ -99,7 +105,7 @@ function buildOrderHtml(order: AdminOrder) {
             <tr>
               <td style="background:#174d32;color:#ffffff;padding:22px 24px;">
                 <div style="font-size:24px;font-weight:900;letter-spacing:.02em;">MATICA FRESH FOOD</div>
-                <div style="margin-top:4px;font-size:13px;font-weight:700;text-transform:uppercase;opacity:.9;">Servicio de entrega para empresas</div>
+                <div style="margin-top:4px;font-size:13px;font-weight:700;text-transform:uppercase;opacity:.9;">${escapeHtml(localOrder ? fulfillmentLabel : "Servicio de entrega para empresas")}</div>
               </td>
             </tr>
             <tr>
@@ -120,10 +126,20 @@ function buildOrderHtml(order: AdminOrder) {
                     <td style="padding:10px 0;border-top:1px solid #e5eee8;color:#66736b;font-size:13px;">Empresa</td>
                     <td style="padding:10px 0;border-top:1px solid #e5eee8;text-align:right;font-weight:800;">${escapeHtml(formatCompanyDisplayName(branchName(order)))}</td>
                   </tr>
-                  ${companyAddress(order) ? `
+                  ${!localOrder && companyAddress(order) ? `
                   <tr>
                     <td style="padding:10px 0;border-top:1px solid #e5eee8;color:#66736b;font-size:13px;">Dirección de entrega</td>
                     <td style="padding:10px 0;border-top:1px solid #e5eee8;text-align:right;font-weight:800;">${escapeHtml(companyAddress(order))}</td>
+                  </tr>
+                  ` : ""}
+                  <tr>
+                    <td style="padding:10px 0;border-top:1px solid #e5eee8;color:#66736b;font-size:13px;">Modalidad</td>
+                    <td style="padding:10px 0;border-top:1px solid #e5eee8;text-align:right;font-weight:800;">${escapeHtml(fulfillmentLabel)}</td>
+                  </tr>
+                  ${localOrder ? `
+                  <tr>
+                    <td style="padding:10px 0;border-top:1px solid #e5eee8;color:#66736b;font-size:13px;">Hora aproximada</td>
+                    <td style="padding:10px 0;border-top:1px solid #e5eee8;text-align:right;font-weight:800;">${escapeHtml(requestedTimeLabel(order.requested_time))}</td>
                   </tr>
                   ` : ""}
                   <tr>
@@ -142,11 +158,17 @@ function buildOrderHtml(order: AdminOrder) {
                     <td style="padding:10px 0;border-top:1px solid #e5eee8;color:#66736b;font-size:13px;">Método de pago</td>
                     <td style="padding:10px 0;border-top:1px solid #e5eee8;text-align:right;font-weight:800;">${escapeHtml(paymentMethod)} · ${escapeHtml(paymentLabel)}</td>
                   </tr>
-                  <tr>
+                  ${!localOrder ? `<tr>
                     <td style="padding:10px 0;border-top:1px solid #e5eee8;color:#66736b;font-size:13px;">Entrega</td>
                     <td style="padding:10px 0;border-top:1px solid #e5eee8;text-align:right;font-weight:800;">${escapeHtml(order.delivery_window)}</td>
-                  </tr>
+                  </tr>` : ""}
                 </table>
+
+                ${orderHasDeferredMenuSelection(order) ? `
+                  <div style="margin-top:18px;padding:14px;border-radius:10px;background:#fff8e6;border:1px solid #f3cf78;color:#6b4b00;font-weight:800;">
+                    Los platos se eligen al llegar, según disponibilidad.
+                  </div>
+                ` : ""}
 
                 <h2 style="margin:28px 0 10px;font-size:18px;color:#132018;">Detalle del pedido</h2>
                 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;">
@@ -259,11 +281,14 @@ export async function sendOrderNotificationEmail(order: AdminOrder) {
   const plainText = buildOrderPlainText(order);
   const html = buildOrderHtml(order);
   const customerEnabled = process.env.CUSTOMER_ORDER_CONFIRMATION_ENABLED === "true";
+  const internalSubjectPrefix = isLocalOrder(order)
+    ? fulfillmentTypeLabel(order.fulfillment_type).toUpperCase()
+    : "NUEVO PEDIDO";
   const messages: ResendEmailPayload[] = [
     {
       html,
       idempotencyKey: `matica-order-${order.id}-matica`,
-      subject: `NUEVO PEDIDO #${reference} - ${order.customer_name} - ${internalCompanyName}`,
+      subject: `${internalSubjectPrefix} #${reference} - ${order.customer_name} - ${internalCompanyName}`,
       text: plainText,
       to: MATICA_TO
     }

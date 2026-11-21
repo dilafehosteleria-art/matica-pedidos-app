@@ -1,11 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { assertAdmin } from "@/lib/admin";
+import { toDateInputValue } from "@/lib/format";
 import { getGlobalSchedule } from "@/lib/global-settings";
+import { validateLocalOrderingSettings } from "@/lib/local-ordering";
 import { deliveryWindowLabel, orderWindowLabel } from "@/lib/schedule";
 import { getSupabaseAdminClient } from "@/lib/supabase/server";
 import type { CompanyDraft, NewCompanyDraft } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
+
+type LocalOrderingActionRequest = {
+  id?: string;
+  local_ordering_action?: "close_today" | "reopen_today";
+};
 
 function isMissingPaymentSettingsColumn(message?: string) {
   return Boolean(
@@ -174,14 +181,83 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ error: "Configura Supabase para usar el panel." }, { status: 503 });
   }
 
-  const body = (await request.json()) as CompanyDraft;
+  const rawBody = (await request.json()) as unknown;
 
-  if (!body.id || !body.name?.trim() || !body.slug?.trim()) {
+  if (rawBody && typeof rawBody === "object" && !Array.isArray(rawBody) && "local_ordering_action" in rawBody) {
+    const actionBody = rawBody as LocalOrderingActionRequest;
+    const id = typeof actionBody.id === "string" ? actionBody.id.trim() : "";
+    const action = actionBody.local_ordering_action;
+
+    if (!id || (action !== "close_today" && action !== "reopen_today")) {
+      return NextResponse.json({ error: "Acción de pedidos en local no válida." }, { status: 400 });
+    }
+
+    const { data, error } = await supabase
+      .from("companies")
+      .update({ local_orders_closed_on: action === "close_today" ? toDateInputValue() : null })
+      .eq("id", id)
+      .select("*,subsidy_rules(product_type,subsidy_amount,active)")
+      .single();
+
+    if (error || !data) {
+      return NextResponse.json({ error: error?.message ?? "No se pudo actualizar la operativa local." }, { status: 400 });
+    }
+
+    return NextResponse.json({ company: data });
+  }
+
+  if (!rawBody || typeof rawBody !== "object" || Array.isArray(rawBody)) {
+    return NextResponse.json({ error: "La configuración de empresa no es válida." }, { status: 400 });
+  }
+
+  const body = rawBody as CompanyDraft;
+
+  if (
+    typeof body.id !== "string" ||
+    typeof body.name !== "string" ||
+    typeof body.slug !== "string" ||
+    !body.id.trim() ||
+    !body.name.trim() ||
+    !normalizeSlug(body.slug)
+  ) {
     return NextResponse.json({ error: "Empresa, nombre y slug requeridos." }, { status: 400 });
+  }
+
+  if (
+    typeof body.active !== "boolean" ||
+    typeof body.allow_pay_on_delivery !== "boolean" ||
+    typeof body.allow_card_payment !== "boolean" ||
+    typeof body.allow_bizum_payment !== "boolean" ||
+    (body.delivery_address != null && typeof body.delivery_address !== "string") ||
+    (body.order_window != null && typeof body.order_window !== "string") ||
+    (body.delivery_window != null && typeof body.delivery_window !== "string")
+  ) {
+    return NextResponse.json({ error: "La configuración de acceso o pago no es válida." }, { status: 400 });
+  }
+
+  if (!(["employee", "subsidized", "company"] as const).includes(body.billing_type)) {
+    return NextResponse.json({ error: "El tipo de facturación no es válido." }, { status: 400 });
+  }
+
+  if (
+    typeof body.daily_menu_subsidy !== "number" ||
+    typeof body.half_menu_subsidy !== "number" ||
+    !Number.isFinite(body.daily_menu_subsidy) ||
+    !Number.isFinite(body.half_menu_subsidy) ||
+    body.daily_menu_subsidy < 0 ||
+    body.half_menu_subsidy < 0
+  ) {
+    return NextResponse.json({ error: "Las subvenciones deben ser importes válidos y no negativos." }, { status: 400 });
   }
 
   if (!body.allow_pay_on_delivery && !body.allow_card_payment && !body.allow_bizum_payment) {
     return NextResponse.json({ error: "Selecciona al menos una forma de pago." }, { status: 400 });
+  }
+
+  const localOrdering = validateLocalOrderingSettings(body);
+
+  if (!localOrdering.valid) {
+    return NextResponse.json({ error: localOrdering.message }, { status: 400 });
   }
 
   const companyUpdate = {
@@ -191,10 +267,11 @@ export async function PATCH(request: NextRequest) {
     active: body.active,
     order_window: body.order_window?.trim() || null,
     delivery_window: body.delivery_window?.trim() || null,
-    allow_pay_on_delivery: Boolean(body.allow_pay_on_delivery),
-    allow_card_payment: Boolean(body.allow_card_payment),
-    allow_bizum_payment: Boolean(body.allow_bizum_payment),
-    billing_type: body.billing_type ?? "employee"
+    allow_pay_on_delivery: body.allow_pay_on_delivery,
+    allow_card_payment: body.allow_card_payment,
+    allow_bizum_payment: body.allow_bizum_payment,
+    billing_type: body.billing_type,
+    ...localOrdering.settings
   };
 
   let { error: companyError } = await supabase
@@ -226,14 +303,14 @@ export async function PATCH(request: NextRequest) {
       {
         company_id: body.id,
         product_type: "daily_menu",
-        subsidy_amount: Number(body.daily_menu_subsidy ?? 0),
+        subsidy_amount: body.daily_menu_subsidy,
         max_uses_per_customer_per_day: 1,
         active: body.billing_type === "subsidized"
       },
       {
         company_id: body.id,
         product_type: "half_menu",
-        subsidy_amount: Number(body.half_menu_subsidy ?? 0),
+        subsidy_amount: body.half_menu_subsidy,
         max_uses_per_customer_per_day: 1,
         active: body.billing_type === "subsidized"
       }

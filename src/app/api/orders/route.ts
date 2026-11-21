@@ -5,6 +5,13 @@ import { getUnavailableMenuFields, isDailyMenuProduct } from "@/lib/daily-menu-c
 import { validateCompanyOrderEmail } from "@/lib/email-rules";
 import { toDateInputValue } from "@/lib/format";
 import { getGlobalSchedule } from "@/lib/global-settings";
+import {
+  getLocalOrderState,
+  isLocalFulfillmentType,
+  isLocalOnlyDay,
+  type LocalFulfillmentType,
+  type LocalOrderingCompany
+} from "@/lib/local-ordering";
 import { sendOrderNotificationEmail } from "@/lib/order-email";
 import { isSubsidyConsumingOrder } from "@/lib/order-validity";
 import { deliveryWindowLabel, isOrderWindowOpen, orderWindowMessage } from "@/lib/schedule";
@@ -26,6 +33,9 @@ export const dynamic = "force-dynamic";
 
 type IncomingOrder = {
   company_slug?: string;
+  fulfillment_type?: "delivery" | LocalFulfillmentType;
+  requested_time?: unknown;
+  availability_acknowledged?: boolean;
   customer?: {
     name?: string;
     email?: string;
@@ -61,7 +71,7 @@ type ExistingSubsidyOrder = {
   order_items: { subsidy_amount: number | string }[] | null;
 };
 
-type SupabaseCompany = {
+type SupabaseCompany = LocalOrderingCompany & {
   id: string;
   name: string;
   delivery_window?: string | null;
@@ -71,8 +81,65 @@ type SupabaseCompany = {
   billing_type?: "employee" | "subsidized" | "company" | null;
 };
 
+type FulfillmentType = "delivery" | LocalFulfillmentType;
+type MenuSelectionMode = "confirmed" | "on_arrival";
+
 function badRequest(message: string, status = 400) {
   return NextResponse.json({ error: message }, { status });
+}
+
+function codedError(code: string, message: string, status: number, details: Record<string, unknown> = {}) {
+  return NextResponse.json({ code, error: message, ...details }, { status });
+}
+
+function normalizeRequestedTime(value: unknown) {
+  if (value === undefined || value === null || value === "") {
+    return { valid: true, value: null } as const;
+  }
+
+  if (typeof value !== "string") {
+    return { valid: false, value: null } as const;
+  }
+
+  const match = value.trim().match(/^([01]\d|2[0-3]):([0-5]\d)(?::[0-5]\d)?$/);
+  return match
+    ? { valid: true, value: `${match[1]}:${match[2]}` } as const
+    : { valid: false, value: null } as const;
+}
+
+function timeToMinutes(value: string | null | undefined) {
+  const match = value?.match(/^(\d{2}):(\d{2})/);
+
+  if (!match) {
+    return null;
+  }
+
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  return hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59
+    ? hours * 60 + minutes
+    : null;
+}
+
+function isRequestedLocalTimeAllowed(
+  requestedTime: string,
+  currentTime: string,
+  company: SupabaseCompany
+) {
+  const requested = timeToMinutes(requestedTime);
+  const current = timeToMinutes(currentTime);
+  const opens = timeToMinutes(company.local_ordering_open_time);
+  const closes = timeToMinutes(company.local_ordering_close_time);
+
+  return (
+    requested !== null &&
+    current !== null &&
+    opens !== null &&
+    closes !== null &&
+    requested >= current - 5 &&
+    requested >= opens &&
+    requested < closes
+  );
 }
 
 function sanitizeMetadata(value: unknown) {
@@ -121,6 +188,7 @@ const PAYMENT_COLUMNS = [
   "employee_total",
   "company_invoice_total"
 ] as const;
+const LOCAL_ORDER_COLUMNS = ["fulfillment_type", "requested_time", "menu_selection_mode"] as const;
 const PRODUCT_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export async function POST(request: NextRequest) {
@@ -130,13 +198,6 @@ export async function POST(request: NextRequest) {
     return badRequest("Ahora mismo no podemos registrar pedidos. Inténtalo de nuevo en unos minutos.", 503);
   }
 
-  const globalSchedule = await getGlobalSchedule(supabase);
-
-  const now = new Date();
-  if (!isOrderWindowOpen(now, globalSchedule)) {
-    return badRequest(orderWindowMessage(globalSchedule), 403);
-  }
-
   let body: IncomingOrder;
 
   try {
@@ -144,6 +205,109 @@ export async function POST(request: NextRequest) {
   } catch {
     return badRequest("El pedido no tiene un formato válido.");
   }
+
+  const companySlug = body.company_slug?.trim() || "bureau-veritas";
+  const rawFulfillmentType = body.fulfillment_type ?? "delivery";
+
+  if (rawFulfillmentType !== "delivery" && !isLocalFulfillmentType(rawFulfillmentType)) {
+    return codedError(
+      "INVALID_FULFILLMENT_TYPE",
+      "La modalidad del pedido no es válida. Elige entrega, comer en el local o recoger en el local.",
+      400
+    );
+  }
+
+  const fulfillmentType = rawFulfillmentType as FulfillmentType;
+  const requestedTimeResult = normalizeRequestedTime(body.requested_time);
+
+  if (!requestedTimeResult.valid) {
+    return codedError("INVALID_REQUESTED_TIME", "La hora solicitada debe tener formato HH:MM.", 400);
+  }
+
+  const requestedTime = fulfillmentType === "delivery" ? null : requestedTimeResult.value;
+  const companyQuery = supabase
+    .from("companies")
+    .select("*")
+    .eq("slug", companySlug)
+    .eq("active", true)
+    .maybeSingle();
+  const [{ data: company, error: companyError }, globalSchedule] = await Promise.all([
+    companyQuery,
+    getGlobalSchedule(supabase)
+  ]);
+
+  if (companyError || !company) {
+    return badRequest("Empresa no encontrada.");
+  }
+
+  const selectedCompany = company as SupabaseCompany;
+  const now = new Date();
+  const localOrderState = fulfillmentType === "delivery"
+    ? null
+    : getLocalOrderState(now, selectedCompany);
+
+  if (
+    fulfillmentType === "delivery" &&
+    selectedCompany.local_ordering_enabled &&
+    isLocalOnlyDay(now, selectedCompany)
+  ) {
+    return codedError(
+      "LOCAL_ONLY_DAY",
+      "Hoy no hay reparto para esta empresa. Puedes pedir para comer o recoger en el local.",
+      403,
+      { fulfillment_type: fulfillmentType }
+    );
+  }
+
+  if (fulfillmentType === "delivery" && !isOrderWindowOpen(now, globalSchedule)) {
+    return codedError("ORDER_WINDOW_CLOSED", orderWindowMessage(globalSchedule), 403, {
+      fulfillment_type: fulfillmentType
+    });
+  }
+
+  if (localOrderState && !localOrderState.open) {
+    return codedError("LOCAL_ORDER_WINDOW_CLOSED", localOrderState.message, 403, {
+      fulfillment_type: fulfillmentType,
+      local_date: localOrderState.localDate,
+      current_time: localOrderState.currentTime
+    });
+  }
+
+  if (localOrderState && !requestedTime) {
+    return codedError(
+      "LOCAL_REQUESTED_TIME_REQUIRED",
+      "Indica a qué hora quieres comer o recoger el pedido en Matica.",
+      400,
+      { fulfillment_type: fulfillmentType }
+    );
+  }
+
+  if (
+    localOrderState &&
+    requestedTime &&
+    !isRequestedLocalTimeAllowed(requestedTime, localOrderState.currentTime, selectedCompany)
+  ) {
+    const localOpenTime = selectedCompany.local_ordering_open_time?.slice(0, 5) ?? null;
+    const localCloseTime = selectedCompany.local_ordering_close_time?.slice(0, 5) ?? null;
+    return codedError(
+      "LOCAL_REQUESTED_TIME_OUTSIDE_WINDOW",
+      localOpenTime && localCloseTime
+        ? `Elige una hora desde ahora y antes de las ${localCloseTime}. El servicio local está disponible de ${localOpenTime} a ${localCloseTime}.`
+        : "La hora elegida no está disponible para pedidos en el local.",
+      409,
+      {
+        fulfillment_type: fulfillmentType,
+        requested_time: requestedTime,
+        current_time: localOrderState.currentTime,
+        local_open_time: localOpenTime,
+        local_close_time: localCloseTime
+      }
+    );
+  }
+
+  const menuSelectionMode: MenuSelectionMode = localOrderState?.afterGuaranteeCutoff
+    ? "on_arrival"
+    : "confirmed";
 
   const customer = body.customer;
   const items = Array.isArray(body.items) ? body.items : [];
@@ -160,21 +324,7 @@ export async function POST(request: NextRequest) {
   const customerEmail = customer.email.trim().toLowerCase();
   const customerPhone = customer.phone.trim();
   const companyBranchId = customer.company_branch_id;
-  const companySlug = body.company_slug?.trim() || "bureau-veritas";
   const notes = body.notes?.trim() ?? "";
-
-  const { data: company, error: companyError } = await supabase
-    .from("companies")
-    .select("*")
-    .eq("slug", companySlug)
-    .eq("active", true)
-    .maybeSingle();
-
-  if (companyError || !company) {
-    return badRequest("Empresa no encontrada.");
-  }
-
-  const selectedCompany = company as SupabaseCompany;
   const billingType = selectedCompany.billing_type ?? (companySlug === "bureau-veritas" ? "subsidized" : "employee");
   const emailValidation = validateCompanyOrderEmail(companySlug, customerEmail);
 
@@ -252,6 +402,60 @@ export async function POST(request: NextRequest) {
     return badRequest("Algún producto del carrito ya no está disponible.");
   }
 
+  if (
+    menuSelectionMode === "on_arrival" &&
+    normalizedItems.some((item) => !isDailyMenuProduct(productMap.get(item.product_id)!.product_type))
+  ) {
+    const guaranteeCutoff = selectedCompany.local_ordering_guarantee_cutoff?.slice(0, 5) || "13:30";
+    return codedError(
+      "LOCAL_MENU_CUTOFF",
+      `A partir de las ${guaranteeCutoff}, los pedidos para el local solo pueden incluir Menú del día o Medio menú. Los platos se eligen al llegar, según disponibilidad.`,
+      409,
+      {
+        fulfillment_type: fulfillmentType,
+        menu_selection_mode: menuSelectionMode,
+        allowed_product_types: ["daily_menu", "half_menu"],
+        guarantee_cutoff: guaranteeCutoff,
+        local_date: localOrderState?.localDate,
+        current_time: localOrderState?.currentTime
+      }
+    );
+  }
+
+
+  if (
+    menuSelectionMode === "on_arrival" &&
+    normalizedItems.some((item) => ["first_course", "second_course", "plate"].some((key) => item.metadata[key]?.trim()))
+  ) {
+    const guaranteeCutoff = selectedCompany.local_ordering_guarantee_cutoff?.slice(0, 5) || "13:30";
+    return codedError(
+      "LOCAL_SELECTION_CHANGED",
+      `A partir de las ${guaranteeCutoff}, los platos se eligen al llegar según disponibilidad. Revisa el carrito para continuar sin una selección confirmada.`,
+      409,
+      {
+        fulfillment_type: fulfillmentType,
+        menu_selection_mode: menuSelectionMode,
+        guarantee_cutoff: guaranteeCutoff,
+        local_date: localOrderState?.localDate,
+        current_time: localOrderState?.currentTime
+      }
+    );
+  }
+
+  if (menuSelectionMode === "on_arrival" && body.availability_acknowledged !== true) {
+    const guaranteeCutoff = selectedCompany.local_ordering_guarantee_cutoff?.slice(0, 5) || "13:30";
+    return codedError(
+      "LOCAL_AVAILABILITY_ACK_REQUIRED",
+      `Confirma que, a partir de las ${guaranteeCutoff}, elegirás los platos al llegar según disponibilidad.`,
+      409,
+      {
+        fulfillment_type: fulfillmentType,
+        menu_selection_mode: menuSelectionMode,
+        guarantee_cutoff: guaranteeCutoff
+      }
+    );
+  }
+
   // Validate only after loading current prices, before any customer/order writes.
   const pricedItems = normalizedItems.map((item) => {
     const product = productMap.get(item.product_id)!;
@@ -306,7 +510,7 @@ export async function POST(request: NextRequest) {
   ] = await Promise.all([
     subsidyRulesQuery,
     existingOrdersQuery,
-    menuItems.length ? readActiveDailyMenu(supabase, today) : null
+    menuItems.length && menuSelectionMode === "confirmed" ? readActiveDailyMenu(supabase, today) : null
   ]);
 
   if (subsidyRulesError) {
@@ -419,6 +623,9 @@ export async function POST(request: NextRequest) {
   const paymentProvider = paymentProviderForMethod(requestedPaymentMethod);
   const isOnlinePayment = isOnlinePaymentMethod(requestedPaymentMethod);
   const initialStatus: OrderStatus = isOnlinePayment ? "pendiente_pago" : "nuevo";
+  const serviceWindow = fulfillmentType === "delivery"
+    ? deliveryWindowLabel(globalSchedule) || selectedCompany.delivery_window || DELIVERY_WINDOW
+    : `En Matica · ${requestedTime}`;
 
   const orderPayload = {
     customer_id: null,
@@ -437,30 +644,64 @@ export async function POST(request: NextRequest) {
     company_invoice_total: companyInvoiceTotal,
     total,
     notes,
-    delivery_window: deliveryWindowLabel(globalSchedule) || selectedCompany.delivery_window || DELIVERY_WINDOW
+    fulfillment_type: fulfillmentType,
+    requested_time: requestedTime,
+    menu_selection_mode: menuSelectionMode,
+    delivery_window: serviceWindow
   };
 
-  let { data: order, error: orderError } = await supabase
-    .from("orders")
-    .insert(orderPayload)
-    .select("id")
-    .single();
+  let insertPayload: Record<string, unknown> = orderPayload;
+  let order: { id: string } | null = null;
+  let orderError: { code?: string | null; message?: string | null; details?: string | null; hint?: string | null } | null = null;
+  let removedLocalColumns = false;
+  let removedPaymentColumns = false;
 
-  if (orderError && !isOnlinePayment && isMissingDatabaseColumn(orderError, PAYMENT_COLUMNS)) {
-    const {
-      payment_method: _paymentMethod,
-      payment_status: _paymentStatus,
-      payment_provider: _paymentProvider,
-      employee_total: _employeeTotal,
-      company_invoice_total: _companyInvoiceTotal,
-      ...legacyOrderPayload
-    } = orderPayload;
-
+  for (let attempt = 0; attempt < 3; attempt += 1) {
     ({ data: order, error: orderError } = await supabase
       .from("orders")
-      .insert(legacyOrderPayload)
+      .insert(insertPayload)
       .select("id")
       .single());
+
+    if (!orderError && order) {
+      break;
+    }
+
+    if (!removedLocalColumns && isMissingDatabaseColumn(orderError, LOCAL_ORDER_COLUMNS)) {
+      if (fulfillmentType !== "delivery") {
+        return codedError(
+          "LOCAL_ORDERING_NOT_READY",
+          "La opción de comer o recoger en el local se está activando. Inténtalo de nuevo en unos minutos.",
+          503
+        );
+      }
+
+      const {
+        fulfillment_type: _fulfillmentType,
+        requested_time: _requestedTime,
+        menu_selection_mode: _menuSelectionMode,
+        ...legacyDeliveryPayload
+      } = insertPayload;
+      insertPayload = legacyDeliveryPayload;
+      removedLocalColumns = true;
+      continue;
+    }
+
+    if (!isOnlinePayment && !removedPaymentColumns && isMissingDatabaseColumn(orderError, PAYMENT_COLUMNS)) {
+      const {
+        payment_method: _paymentMethod,
+        payment_status: _paymentStatus,
+        payment_provider: _paymentProvider,
+        employee_total: _employeeTotal,
+        company_invoice_total: _companyInvoiceTotal,
+        ...legacyPaymentPayload
+      } = insertPayload;
+      insertPayload = legacyPaymentPayload;
+      removedPaymentColumns = true;
+      continue;
+    }
+
+    break;
   }
 
   if (orderError || !order) {
@@ -593,7 +834,10 @@ export async function POST(request: NextRequest) {
       company_invoice_total: companyInvoiceTotal,
       total,
       subsidy_applied: subsidyApplied,
-      prior_subsidy_used: priorSubsidyUsed
+      prior_subsidy_used: priorSubsidyUsed,
+      fulfillment_type: fulfillmentType,
+      requested_time: requestedTime,
+      menu_selection_mode: menuSelectionMode
     },
     payment: isOnlinePayment
       ? {

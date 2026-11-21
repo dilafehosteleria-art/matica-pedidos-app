@@ -47,6 +47,7 @@ test("filtra avisos de salida solo para pedidos de hoy en preparacion, confirmad
     baseOrder({ id: "pending-payment-order", status: "pendiente_pago" }),
     baseOrder({ id: "already-notified", delivery_notice_sent_at: "2026-06-29T10:30:00.000Z" }),
     baseOrder({ id: "without-email", customer_email: "" }),
+    baseOrder({ id: "local-order", fulfillment_type: "pickup" }),
     baseOrder({
       id: "incomplete-payment",
       payment_method: "stripe_card",
@@ -59,7 +60,7 @@ test("filtra avisos de salida solo para pedidos de hoy en preparacion, confirmad
 
   assert.deepEqual(eligibleOrders.map((order: AdminOrder) => order.id), ["eligible-order"]);
   assert.equal(summary.eligible, 1);
-  assert.equal(summary.omitted_not_preparing, 5);
+  assert.equal(summary.omitted_not_preparing, 6);
   assert.equal(summary.omitted_already_notified, 1);
   assert.equal(summary.omitted_no_email, 1);
   assert.equal(summary.omitted_invalid_payment, 1);

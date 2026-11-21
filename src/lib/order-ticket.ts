@@ -1,7 +1,7 @@
 import { formatCurrency } from "./format.ts";
 import { buildOrderItemOptionLines } from "./order-metadata.ts";
 import { operationalPaymentLabel } from "./payment-display.ts";
-import type { AdminOrder, OrderItem, OrderStatus } from "./types.ts";
+import type { AdminOrder, FulfillmentType, OrderItem, OrderStatus } from "./types.ts";
 
 export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
   pendiente_pago: "Pendiente pago",
@@ -120,6 +120,24 @@ function companyAddress(order: AdminOrder) {
   return order.companies?.delivery_address?.trim() ?? "";
 }
 
+export function isLocalOrder(order: Pick<AdminOrder, "fulfillment_type">) {
+  return order.fulfillment_type === "dine_in" || order.fulfillment_type === "pickup";
+}
+
+export function fulfillmentTypeLabel(value?: FulfillmentType | null) {
+  if (value === "dine_in") return "Local · Comer aquí";
+  if (value === "pickup") return "Local · Recoger";
+  return "Entrega en empresa";
+}
+
+export function requestedTimeLabel(value?: string | null) {
+  return value?.slice(0, 5) || "Sin hora indicada";
+}
+
+export function orderHasDeferredMenuSelection(order: Pick<AdminOrder, "menu_selection_mode">) {
+  return order.menu_selection_mode === "on_arrival";
+}
+
 function branchName(order: AdminOrder) {
   return order.company_branches?.name ?? "Sin empresa interna";
 }
@@ -175,9 +193,10 @@ export function formatCompanyDisplayName(value: string) {
 }
 
 export function buildOrderPlainText(order: AdminOrder) {
+  const localOrder = isLocalOrder(order);
   const lines = [
     "MATICA FRESH FOOD",
-    "SERVICIO DE ENTREGA PARA EMPRESAS",
+    localOrder ? fulfillmentTypeLabel(order.fulfillment_type).toUpperCase() : "SERVICIO DE ENTREGA PARA EMPRESAS",
     "",
     `Referencia: ${orderReference(order.id)}`,
     `Fecha/hora: ${formatOrderDateTime(order.created_at)}`,
@@ -187,7 +206,14 @@ export function buildOrderPlainText(order: AdminOrder) {
     "",
     "EMPRESA",
     formatCompanyDisplayName(branchName(order)),
-    ...(companyAddress(order) ? ["", "DIRECCIÓN DE ENTREGA", companyAddress(order)] : []),
+    "",
+    "MODALIDAD",
+    fulfillmentTypeLabel(order.fulfillment_type),
+    ...(localOrder ? [`Hora aproximada: ${requestedTimeLabel(order.requested_time)}`] : []),
+    ...(orderHasDeferredMenuSelection(order)
+      ? ["", "PLATOS", "Se eligen al llegar según disponibilidad"]
+      : []),
+    ...(!localOrder && companyAddress(order) ? ["", "DIRECCIÓN DE ENTREGA", companyAddress(order)] : []),
     "",
     "DATOS CLIENTE",
     `Nombre: ${order.customer_name}`,
@@ -232,6 +258,7 @@ export function buildOrderPlainText(order: AdminOrder) {
 }
 
 export function buildThermalOrderPlainText(order: AdminOrder) {
+  const localOrder = isLocalOrder(order);
   const lines = [
     thermalTicketText(companyName(order)).toUpperCase(),
     "------------------------------",
@@ -241,7 +268,12 @@ export function buildThermalOrderPlainText(order: AdminOrder) {
     "",
     "EMPRESA",
     `> ${thermalTicketText(formatCompanyDisplayName(branchName(order)))}`,
-    ...(companyAddress(order) ? ["", "DIRECCION", `> ${thermalTicketText(companyAddress(order))}`] : []),
+    "",
+    "MODALIDAD",
+    `> ${thermalTicketText(fulfillmentTypeLabel(order.fulfillment_type)).toUpperCase()}`,
+    ...(localOrder ? ["HORA APROX.", `> ${thermalTicketText(requestedTimeLabel(order.requested_time))}`] : []),
+    ...(orderHasDeferredMenuSelection(order) ? ["PLATOS", "> ELEGIR AL LLEGAR SEGUN DISPONIBILIDAD"] : []),
+    ...(!localOrder && companyAddress(order) ? ["", "DIRECCION", `> ${thermalTicketText(companyAddress(order))}`] : []),
     "------------------------------",
     "PRODUCTOS"
   ];

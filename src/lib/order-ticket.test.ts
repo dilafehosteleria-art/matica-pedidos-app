@@ -102,6 +102,25 @@ test("el ticket termico conserva pago a la entrega cuando aplica", () => {
   assert.match(ticket, /PAGO A LA ENTREGA/);
 });
 
+test("los pedidos locales destacan modalidad, hora y platos al llegar sin direccion de reparto", () => {
+  const localOrder = baseOrder({
+    fulfillment_type: "dine_in",
+    requested_time: "14:15",
+    menu_selection_mode: "on_arrival"
+  });
+  const plainText = buildOrderPlainText(localOrder);
+  const ticket = buildThermalOrderPlainText(localOrder);
+
+  assert.match(plainText, /MODALIDAD\nLocal · Comer aquí/);
+  assert.match(plainText, /Hora aproximada: 14:15/);
+  assert.match(plainText, /Se eligen al llegar según disponibilidad/);
+  assert.doesNotMatch(plainText, /DIRECCIÓN DE ENTREGA/);
+  assert.match(ticket, /LOCAL +COMER AQUI/);
+  assert.match(ticket, /HORA APROX\.\n> 14:15/);
+  assert.match(ticket, /ELEGIR AL LLEGAR SEGUN DISPONIBILIDAD/);
+  assert.doesNotMatch(ticket, /DIRECCION\n/);
+});
+
 test("el ticket termico mantiene guarnicion debajo del segundo plato", () => {
   const ticket = buildThermalOrderPlainText(
     baseOrder({
