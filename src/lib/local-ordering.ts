@@ -1,3 +1,6 @@
+import { normalizeGlobalSchedule } from "./schedule.ts";
+import type { GlobalSchedule } from "./types.ts";
+
 export type LocalFulfillmentType = "dine_in" | "pickup";
 
 export type LocalOrderingCompany = {
@@ -15,6 +18,9 @@ export type LocalOrderState = {
   afterGuaranteeCutoff: boolean;
   localDate: string;
   currentTime: string;
+  openTime: string;
+  closeTime: string;
+  openedByGlobalSchedule: boolean;
   message: string;
 };
 
@@ -80,6 +86,13 @@ function timeToMinutes(value: string) {
   const [hour, minute] = value.split(":").map(Number);
 
   return hour * 60 + minute;
+}
+
+function minutesToTime(value: number) {
+  const hour = String(Math.floor(value / 60)).padStart(2, "0");
+  const minute = String(value % 60).padStart(2, "0");
+
+  return `${hour}:${minute}`;
 }
 
 function parseSettingsTime(value: unknown) {
@@ -259,14 +272,25 @@ export function localOrderWindowLabel(company: LocalOrderingCompany) {
   return `${activeDaysLabel(config.days)} de ${config.openTime} a ${config.closeTime}`;
 }
 
-export function getLocalOrderState(date: Date, company: LocalOrderingCompany): LocalOrderState {
+export function getLocalOrderState(
+  date: Date,
+  company: LocalOrderingCompany,
+  globalSchedule?: Partial<GlobalSchedule> | null
+): LocalOrderState {
   const config = normalizedLocalOrdering(company);
   const { weekday, localDate, currentTime, currentMinutes } = getMadridParts(date);
   const openMinutes = timeToMinutes(config.openTime);
   const closeMinutes = timeToMinutes(config.closeTime);
   const guaranteeMinutes = timeToMinutes(config.guaranteeCutoff);
   const afterGuaranteeCutoff = currentMinutes >= guaranteeMinutes;
-  const baseState = { localDate, currentTime, afterGuaranteeCutoff };
+  const baseState = {
+    localDate,
+    currentTime,
+    afterGuaranteeCutoff,
+    openTime: config.openTime,
+    closeTime: config.closeTime,
+    openedByGlobalSchedule: false
+  };
 
   if (!config.enabled) {
     return {
@@ -284,7 +308,58 @@ export function getLocalOrderState(date: Date, company: LocalOrderingCompany): L
     };
   }
 
-  if (!config.days.includes(weekday)) {
+
+  const normalizedGlobal = globalSchedule ? normalizeGlobalSchedule(globalSchedule) : null;
+  const globalOpenMinutes = normalizedGlobal ? timeToMinutes(normalizedGlobal.order_open_time) : 0;
+  const globalCloseMinutes = normalizedGlobal ? timeToMinutes(normalizedGlobal.order_close_time) : 0;
+  const localDayEnabled = config.days.includes(weekday);
+  const globalDayEnabled = Boolean(
+    normalizedGlobal?.active && normalizedGlobal.active_days.includes(weekday)
+  );
+  const localWindowOpen = localDayEnabled && currentMinutes >= openMinutes && currentMinutes < closeMinutes;
+  const globalWindowOpen = globalDayEnabled &&
+    currentMinutes >= globalOpenMinutes &&
+    currentMinutes < globalCloseMinutes;
+
+  if (localWindowOpen || globalWindowOpen) {
+    let effectiveOpenMinutes = localWindowOpen ? openMinutes : globalOpenMinutes;
+    let effectiveCloseMinutes = localWindowOpen ? closeMinutes : globalCloseMinutes;
+    const windows = [
+      ...(localDayEnabled ? [{ opens: openMinutes, closes: closeMinutes }] : []),
+      ...(globalDayEnabled ? [{ opens: globalOpenMinutes, closes: globalCloseMinutes }] : [])
+    ];
+
+    for (const window of windows) {
+      if (window.opens <= effectiveCloseMinutes && window.closes >= effectiveOpenMinutes) {
+        effectiveOpenMinutes = Math.min(effectiveOpenMinutes, window.opens);
+        effectiveCloseMinutes = Math.max(effectiveCloseMinutes, window.closes);
+      }
+    }
+
+    const openedByGlobalSchedule = globalWindowOpen && (
+      !localWindowOpen ||
+      effectiveOpenMinutes !== openMinutes ||
+      effectiveCloseMinutes !== closeMinutes
+    );
+    const effectiveState = {
+      ...baseState,
+      openTime: minutesToTime(effectiveOpenMinutes),
+      closeTime: minutesToTime(effectiveCloseMinutes),
+      openedByGlobalSchedule
+    };
+
+    return {
+      ...effectiveState,
+      open: true,
+      message: openedByGlobalSchedule
+        ? `Apertura extraordinaria activa para comer o recoger hasta las ${effectiveState.closeTime}.`
+        : afterGuaranteeCutoff
+          ? "Pedido en el local disponible. La elección de platos queda sujeta a disponibilidad."
+          : `Pedidos para el local abiertos hasta las ${effectiveState.closeTime}.`
+    };
+  }
+
+  if (!localDayEnabled) {
     return {
       ...baseState,
       open: false,

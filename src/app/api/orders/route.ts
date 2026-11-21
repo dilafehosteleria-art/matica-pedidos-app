@@ -12,6 +12,7 @@ import {
   type LocalFulfillmentType,
   type LocalOrderingCompany
 } from "@/lib/local-ordering";
+import { isRequestedLocalTimeAllowed } from "@/lib/local-order-time";
 import { sendOrderNotificationEmail } from "@/lib/order-email";
 import { isSubsidyConsumingOrder } from "@/lib/order-validity";
 import { deliveryWindowLabel, isOrderWindowOpen, orderWindowMessage } from "@/lib/schedule";
@@ -105,41 +106,6 @@ function normalizeRequestedTime(value: unknown) {
   return match
     ? { valid: true, value: `${match[1]}:${match[2]}` } as const
     : { valid: false, value: null } as const;
-}
-
-function timeToMinutes(value: string | null | undefined) {
-  const match = value?.match(/^(\d{2}):(\d{2})/);
-
-  if (!match) {
-    return null;
-  }
-
-  const hours = Number(match[1]);
-  const minutes = Number(match[2]);
-  return hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59
-    ? hours * 60 + minutes
-    : null;
-}
-
-function isRequestedLocalTimeAllowed(
-  requestedTime: string,
-  currentTime: string,
-  company: SupabaseCompany
-) {
-  const requested = timeToMinutes(requestedTime);
-  const current = timeToMinutes(currentTime);
-  const opens = timeToMinutes(company.local_ordering_open_time);
-  const closes = timeToMinutes(company.local_ordering_close_time);
-
-  return (
-    requested !== null &&
-    current !== null &&
-    opens !== null &&
-    closes !== null &&
-    requested >= current - 5 &&
-    requested >= opens &&
-    requested < closes
-  );
 }
 
 function sanitizeMetadata(value: unknown) {
@@ -244,7 +210,7 @@ export async function POST(request: NextRequest) {
   const now = new Date();
   const localOrderState = fulfillmentType === "delivery"
     ? null
-    : getLocalOrderState(now, selectedCompany);
+    : getLocalOrderState(now, selectedCompany, globalSchedule);
 
   if (
     fulfillmentType === "delivery" &&
@@ -285,10 +251,15 @@ export async function POST(request: NextRequest) {
   if (
     localOrderState &&
     requestedTime &&
-    !isRequestedLocalTimeAllowed(requestedTime, localOrderState.currentTime, selectedCompany)
+    !isRequestedLocalTimeAllowed(
+      requestedTime,
+      localOrderState.currentTime,
+      localOrderState.openTime,
+      localOrderState.closeTime
+    )
   ) {
-    const localOpenTime = selectedCompany.local_ordering_open_time?.slice(0, 5) ?? null;
-    const localCloseTime = selectedCompany.local_ordering_close_time?.slice(0, 5) ?? null;
+    const localOpenTime = localOrderState.openTime;
+    const localCloseTime = localOrderState.closeTime;
     return codedError(
       "LOCAL_REQUESTED_TIME_OUTSIDE_WINDOW",
       localOpenTime && localCloseTime

@@ -34,6 +34,9 @@ type CheckoutHarnessOptions = {
     afterGuaranteeCutoff: boolean;
     localDate: string;
     currentTime: string;
+    openTime?: string;
+    closeTime?: string;
+    openedByGlobalSchedule?: boolean;
     message: string;
   };
   orderInsertErrors?: (DatabaseError | null)[];
@@ -221,7 +224,12 @@ function checkoutHarness(
     "@/lib/local-ordering": {
       isLocalFulfillmentType: (value: unknown) => value === "dine_in" || value === "pickup",
       isLocalOnlyDay: () => localOnlyDay,
-      getLocalOrderState: () => localState
+      getLocalOrderState: () => ({
+        openTime: "09:30",
+        closeTime: "15:00",
+        openedByGlobalSchedule: false,
+        ...localState
+      })
     },
     "@/lib/schedule": {
       isOrderWindowOpen: () => deliveryOpen,
@@ -514,6 +522,29 @@ test("la opción Ahora tolera cinco minutos mientras el cliente termina el check
 
   assert.equal(response.status, 200, JSON.stringify(await response.clone().json()));
   assert.equal((await response.json()).order.requested_time, "12:05");
+});
+
+test("una apertura extraordinaria anticipada permite confirmar Ahora en el local", async (t) => {
+  const h = checkoutHarness(t, halfMenu, "bureau-veritas", true, [halfMenu], {
+    localState: {
+      open: true,
+      afterGuaranteeCutoff: false,
+      localDate: "2026-11-21",
+      currentTime: "08:36",
+      openTime: "08:30",
+      closeTime: "12:40",
+      openedByGlobalSchedule: true,
+      message: "Apertura extraordinaria activa."
+    }
+  });
+  const response = await h.submitItems([{
+    product_id: halfMenu.id,
+    quantity: 1,
+    metadata: { plate: "Pasta", _configured_unit_price: "10.00" }
+  }], { fulfillment_type: "dine_in", requested_time: "08:36" });
+
+  assert.equal(response.status, 200, JSON.stringify(await response.clone().json()));
+  assert.equal((await response.json()).order.requested_time, "08:36");
 });
 
 test("un día configurado como sólo local bloquea reparto pero mantiene las modalidades locales", async (t) => {

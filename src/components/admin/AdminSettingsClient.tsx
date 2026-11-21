@@ -112,6 +112,9 @@ function SettingsEditor({ pin, clearPin }: { pin: string; clearPin: () => void }
               <p className="mt-2 text-sm font-semibold text-matica-ink/60">
                 Se aplica a todas las empresas tanto en frontend como al confirmar el pedido.
               </p>
+              <p className="mt-1 text-xs font-semibold text-matica-ink/50">
+                Una apertura global también habilita comer o recoger en las empresas que tengan esas modalidades activadas.
+              </p>
             </div>
             <label className="flex min-h-11 items-center gap-2 rounded-lg border border-matica-line px-3 font-black">
               <input

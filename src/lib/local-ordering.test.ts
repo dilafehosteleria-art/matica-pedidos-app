@@ -21,6 +21,15 @@ const bureauVeritasLocalOrdering: LocalOrderingCompany = {
   local_only_days: [5]
 };
 
+const saturdayExtendedOpening = {
+  active: true,
+  active_days: [1, 2, 3, 4, 5, 6],
+  order_open_time: "08:30",
+  order_close_time: "12:40",
+  delivery_start_time: "13:00",
+  delivery_end_time: "13:30"
+};
+
 test("reconoce únicamente las modalidades de pedido en el local", () => {
   assert.equal(isLocalFulfillmentType("dine_in"), true);
   assert.equal(isLocalFulfillmentType("pickup"), true);
@@ -89,6 +98,66 @@ test("bloquea sábados aunque la hora esté dentro de la franja", () => {
   const state = getLocalOrderState(new Date("2026-06-20T10:00:00.000Z"), bureauVeritasLocalOrdering);
 
   assert.equal(state.open, false);
+});
+
+test("la apertura global extraordinaria habilita el local en sábado y antes de las 09:30", () => {
+  const state = getLocalOrderState(
+    new Date("2026-11-21T07:36:00.000Z"),
+    bureauVeritasLocalOrdering,
+    saturdayExtendedOpening
+  );
+
+  assert.equal(state.open, true);
+  assert.equal(state.currentTime, "08:36");
+  assert.equal(state.openTime, "08:30");
+  assert.equal(state.closeTime, "12:40");
+  assert.equal(state.openedByGlobalSchedule, true);
+  assert.match(state.message, /apertura extraordinaria/i);
+});
+
+test("la apertura extraordinaria termina de forma exclusiva a su hora de cierre", () => {
+  const beforeClose = getLocalOrderState(
+    new Date("2026-11-21T11:39:00.000Z"),
+    bureauVeritasLocalOrdering,
+    saturdayExtendedOpening
+  );
+  const atClose = getLocalOrderState(
+    new Date("2026-11-21T11:40:00.000Z"),
+    bureauVeritasLocalOrdering,
+    saturdayExtendedOpening
+  );
+
+  assert.equal(beforeClose.open, true);
+  assert.equal(atClose.open, false);
+});
+
+test("una apertura global solapada muestra toda la franja efectiva ampliada", () => {
+  const state = getLocalOrderState(
+    new Date("2026-11-23T09:00:00.000Z"),
+    bureauVeritasLocalOrdering,
+    saturdayExtendedOpening
+  );
+
+  assert.equal(state.open, true);
+  assert.equal(state.openTime, "08:30");
+  assert.equal(state.closeTime, "15:00");
+  assert.equal(state.openedByGlobalSchedule, true);
+});
+
+test("desactivar o cerrar manualmente el local prevalece sobre la apertura extraordinaria", () => {
+  const saturday = new Date("2026-11-21T07:36:00.000Z");
+  const disabled = getLocalOrderState(saturday, {
+    ...bureauVeritasLocalOrdering,
+    local_ordering_enabled: false
+  }, saturdayExtendedOpening);
+  const manuallyClosed = getLocalOrderState(saturday, {
+    ...bureauVeritasLocalOrdering,
+    local_orders_closed_on: "2026-11-21"
+  }, saturdayExtendedOpening);
+
+  assert.equal(disabled.open, false);
+  assert.equal(manuallyClosed.open, false);
+  assert.match(manuallyClosed.message, /hoy no aceptamos/i);
 });
 
 test("bloquea la modalidad local cuando está deshabilitada", () => {
