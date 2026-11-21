@@ -443,7 +443,7 @@ function CompaniesEditor({ pin, clearPin }: { pin: string; clearPin: () => void 
                         <h3 className="text-base font-black">Pedidos para comer o recoger en el local</h3>
                       </div>
                       <p className="mt-1 text-sm font-semibold leading-5 text-matica-ink/60">
-                        Funciona con su propio horario y también durante una apertura global extraordinaria. Después del corte, los platos elegidos quedan sujetos a disponibilidad.
+                        Horario independiente del reparto. Después del corte, los platos elegidos quedan sujetos a disponibilidad.
                       </p>
                     </div>
                     <span className={`w-fit rounded-full px-3 py-1 text-xs font-black ${

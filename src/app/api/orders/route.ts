@@ -210,7 +210,7 @@ export async function POST(request: NextRequest) {
   const now = new Date();
   const localOrderState = fulfillmentType === "delivery"
     ? null
-    : getLocalOrderState(now, selectedCompany, globalSchedule);
+    : getLocalOrderState(now, selectedCompany);
 
   if (
     fulfillmentType === "delivery" &&
