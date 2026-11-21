@@ -27,3 +27,25 @@ export function buildLocalRequestedTimeOptions(currentTime: string, closeTime: s
 
   return options;
 }
+
+export function isRequestedLocalTimeAllowed(
+  requestedTime: string,
+  currentTime: string,
+  openTime: string,
+  closeTime: string
+) {
+  const requested = timeToMinutes(requestedTime);
+  const current = timeToMinutes(currentTime);
+  const opens = timeToMinutes(openTime);
+  const closes = timeToMinutes(closeTime);
+
+  return (
+    requested >= 0 &&
+    current >= 0 &&
+    opens >= 0 &&
+    closes >= 0 &&
+    requested >= current - 5 &&
+    requested >= opens &&
+    requested < closes
+  );
+}

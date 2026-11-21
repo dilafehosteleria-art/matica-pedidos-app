@@ -84,6 +84,9 @@ const EMPTY_LOCAL_ORDER_STATE: LocalOrderState = {
   afterGuaranteeCutoff: false,
   localDate: "",
   currentTime: "",
+  openTime: "09:30",
+  closeTime: "15:00",
+  openedByGlobalSchedule: false,
   message: ""
 };
 function lateLocalNotice(cutoff: string) {
@@ -755,12 +758,15 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
       setOrderWindow((current) => current.open === next.open && current.message === next.message ? current : next);
 
       if (data?.company) {
-        const nextLocal = getLocalOrderState(now, data.company);
+        const nextLocal = getLocalOrderState(now, data.company, schedule);
         setLocalOrderState((current) =>
           current.open === nextLocal.open &&
           current.afterGuaranteeCutoff === nextLocal.afterGuaranteeCutoff &&
           current.localDate === nextLocal.localDate &&
           current.currentTime === nextLocal.currentTime &&
+          current.openTime === nextLocal.openTime &&
+          current.closeTime === nextLocal.closeTime &&
+          current.openedByGlobalSchedule === nextLocal.openedByGlobalSchedule &&
           current.message === nextLocal.message
             ? current
             : nextLocal
@@ -1033,8 +1039,13 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
       ? localOrderState.currentTime
       : requestedTimeChoice
     : null;
-  const localCloseTime = data?.company.local_ordering_close_time?.slice(0, 5) || "15:00";
+  const localCloseTime = localOrderState.closeTime || data?.company.local_ordering_close_time?.slice(0, 5) || "15:00";
   const localGuaranteeCutoff = data?.company.local_ordering_guarantee_cutoff?.slice(0, 5) || "13:30";
+  const localWindowLabelForDisplay = data
+    ? localOrderState.openedByGlobalSchedule
+      ? `apertura extraordinaria de ${localOrderState.openTime} a ${localOrderState.closeTime}`
+      : localOrderWindowLabel(data.company)
+    : "";
   const localRequestedTimeOptions = useMemo(
     () => buildLocalRequestedTimeOptions(localOrderState.currentTime, localCloseTime),
     [localCloseTime, localOrderState.currentTime]
@@ -1099,11 +1110,14 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
   useEffect(() => {
     if (
       requestedTimeChoice !== "now" &&
-      timeToMinutes(requestedTimeChoice) < timeToMinutes(localOrderState.currentTime)
+      (
+        timeToMinutes(requestedTimeChoice) < timeToMinutes(localOrderState.currentTime) ||
+        timeToMinutes(requestedTimeChoice) >= timeToMinutes(localCloseTime)
+      )
     ) {
       setRequestedTimeChoice("now");
     }
-  }, [localOrderState.currentTime, requestedTimeChoice]);
+  }, [localCloseTime, localOrderState.currentTime, requestedTimeChoice]);
 
   useEffect(() => {
     if (!lateLocalMode) {
@@ -1228,7 +1242,7 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
     }
 
     const now = new Date();
-    const currentLocalState = getLocalOrderState(now, data.company);
+    const currentLocalState = getLocalOrderState(now, data.company, data.schedule);
     const currentLocalOnlyDay = data.company.local_ordering_enabled === true && isLocalOnlyDay(now, data.company);
     const currentLateLocalMode = localFulfillment && (currentLocalState.afterGuaranteeCutoff || serverRequiresOnArrival);
     const currentLateCartNeedsReview = currentLateLocalMode && cart.some((item) =>
@@ -1440,7 +1454,7 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
               deliveryMessage={deliveryAvailabilityMessage}
               deliveryWindow={deliveryWindow}
               localOrderState={localOrderState}
-              localWindowLabel={localOrderWindowLabel(data.company)}
+              localWindowLabel={localWindowLabelForDisplay}
               guaranteeCutoff={localGuaranteeCutoff}
               requestedTimeChoice={requestedTimeChoice}
               requestedTimeOptions={localRequestedTimeOptions}
@@ -1596,7 +1610,7 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
           deliveryAvailable={deliveryAvailable}
           deliveryAvailabilityMessage={deliveryAvailabilityMessage}
           localOrderState={localOrderState}
-          localWindowLabel={data ? localOrderWindowLabel(data.company) : ""}
+          localWindowLabel={localWindowLabelForDisplay}
           guaranteeCutoff={localGuaranteeCutoff}
           requestedTimeChoice={requestedTimeChoice}
           requestedTimeOptions={localRequestedTimeOptions}
