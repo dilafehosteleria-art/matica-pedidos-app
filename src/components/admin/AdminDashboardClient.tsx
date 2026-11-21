@@ -7,6 +7,7 @@ import { AdminGate } from "./AdminGate";
 import { ReportsPanel } from "./ReportsPanel";
 import { ThermalTicket } from "./ThermalTicket";
 import { hasCutlery } from "@/lib/cutlery";
+import { partitionDailyOrders } from "@/lib/admin-order-board";
 import { formatCurrency, formatTime } from "@/lib/format";
 import { summarizeDeliveryNoticeCandidates, type DeliveryNoticeSummary } from "@/lib/delivery-notice";
 import {
@@ -342,17 +343,19 @@ function OrdersBoard({ pin, clearPin }: { pin: string; clearPin: () => void }) {
     setSelectedOrder((current) => (current?.id === orderId ? payload.order : current));
   }
 
+  const { deliveryOrders, localOrders } = useMemo(() => partitionDailyOrders(orders), [orders]);
+
   const grouped = useMemo(() => {
     return DAILY_COLUMNS.reduce<Record<string, AdminOrder[]>>((acc, column) => {
-      acc[column.key] = orders.filter((order) => column.statuses.includes(order.status));
+      acc[column.key] = deliveryOrders.filter((order) => column.statuses.includes(order.status));
       return acc;
     }, {});
-  }, [orders]);
+  }, [deliveryOrders]);
 
   const deliveryNoticeActions = useMemo(() => {
     const byCompany = new Map<string, DeliveryNoticeAction>();
 
-    for (const order of orders) {
+    for (const order of deliveryOrders) {
       const { summary } = summarizeDeliveryNoticeCandidates([order]);
 
       if (!summary.eligible) {
@@ -370,7 +373,7 @@ function OrdersBoard({ pin, clearPin }: { pin: string; clearPin: () => void }) {
     }
 
     return Array.from(byCompany.values()).sort((a, b) => a.label.localeCompare(b.label, "es"));
-  }, [orders]);
+  }, [deliveryOrders]);
 
   const totalDeliveryNoticePending = useMemo(
     () => deliveryNoticeActions.reduce((total, action) => total + action.pending, 0),
@@ -531,6 +534,36 @@ function OrdersBoard({ pin, clearPin }: { pin: string; clearPin: () => void }) {
             ) : null}
           </section>
 
+          <section className="rounded-lg border border-matica-green/30 bg-matica-mint/40 p-3 sm:p-4">
+            <div className="mb-3 flex items-start justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-black text-matica-ink">Comer en el restaurante</h2>
+                <p className="mt-1 text-sm font-semibold text-matica-ink/55">
+                  Personas que vendrán hoy. Incluye a quienes prefieran recoger el pedido; esta lista es solo informativa.
+                </p>
+              </div>
+              <span className="shrink-0 rounded-lg bg-matica-green px-2 py-1 text-sm font-black text-white">
+                {localOrders.length}
+              </span>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+              {localOrders.map((order) => (
+                <OrderCard
+                  key={order.id}
+                  order={order}
+                  readOnly
+                  updating={false}
+                  onOpen={() => setSelectedOrder(order)}
+                />
+              ))}
+              {!localOrders.length ? (
+                <div className="col-span-full rounded-lg border border-dashed border-matica-green/25 bg-white/70 p-5 text-center text-sm font-bold text-matica-ink/45">
+                  Nadie ha indicado todavía que vendrá al restaurante.
+                </div>
+              ) : null}
+            </div>
+          </section>
+
           {DAILY_COLUMNS.map((column) => (
             <section key={column.key} className="rounded-lg border border-matica-line bg-white p-3 sm:p-4">
               <div className="mb-3 flex items-center justify-between gap-2">
@@ -655,6 +688,7 @@ function OrdersBoard({ pin, clearPin }: { pin: string; clearPin: () => void }) {
                   <OrderCard
                     key={order.id}
                     order={order}
+                    readOnly={isLocalOrder(order)}
                     updating={updatingId === order.id}
                     onStatusChange={(status) => updateStatus(order.id, status)}
                     onOpen={() => setSelectedOrder(order)}
@@ -704,13 +738,15 @@ function HistoryInput({
 
 function OrderCard({
   order,
+  readOnly = false,
   updating,
   onStatusChange,
   onOpen
 }: {
   order: AdminOrder;
+  readOnly?: boolean;
   updating: boolean;
-  onStatusChange: (status: OrderStatus) => void;
+  onStatusChange?: (status: OrderStatus) => void;
   onOpen: () => void;
 }) {
   const branchName = formatCompanyDisplayName(order.company_branches?.name ?? "Sin empresa interna");
@@ -805,9 +841,13 @@ function OrderCard({
       </div>
 
       <div className="mt-3 flex items-center justify-between gap-2">
-        <span className={`rounded-lg px-2 py-1 text-xs font-black ${theme.badge}`}>
-          {ORDER_STATUS_LABELS[order.status]}
-        </span>
+        {readOnly ? (
+          <span className="rounded-lg bg-matica-mint px-2 py-1 text-xs font-black text-matica-green">Solo registro</span>
+        ) : (
+          <span className={`rounded-lg px-2 py-1 text-xs font-black ${theme.badge}`}>
+            {ORDER_STATUS_LABELS[order.status]}
+          </span>
+        )}
         <button
           className="matica-focus inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-matica-green px-3 text-sm font-black text-white"
           onClick={onOpen}
@@ -818,22 +858,26 @@ function OrderCard({
         </button>
       </div>
 
-      <label className="mt-3 block space-y-1">
-        <span className="text-xs font-black uppercase text-matica-ink/45">Estado</span>
-        <select
-          className="matica-focus w-full rounded-lg border border-matica-line bg-white px-3 py-3 text-sm font-black disabled:cursor-wait disabled:bg-matica-ink/10"
-          value={order.status === "pendiente_pago" ? "nuevo" : order.status}
-          disabled={updating}
-          onChange={(event) => onStatusChange(event.target.value as OrderStatus)}
-        >
-          {ORDER_STATUS_OPTIONS.map((option) => (
-            <option key={option.status} value={option.status}>
-              {option.label}
-            </option>
-          ))}
-        </select>
-      </label>
-      {updating ? <p className="mt-2 text-xs font-bold text-matica-ink/50">Actualizando estado...</p> : null}
+      {!readOnly && onStatusChange ? (
+        <>
+          <label className="mt-3 block space-y-1">
+            <span className="text-xs font-black uppercase text-matica-ink/45">Estado</span>
+            <select
+              className="matica-focus w-full rounded-lg border border-matica-line bg-white px-3 py-3 text-sm font-black disabled:cursor-wait disabled:bg-matica-ink/10"
+              value={order.status === "pendiente_pago" ? "nuevo" : order.status}
+              disabled={updating}
+              onChange={(event) => onStatusChange(event.target.value as OrderStatus)}
+            >
+              {ORDER_STATUS_OPTIONS.map((option) => (
+                <option key={option.status} value={option.status}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          {updating ? <p className="mt-2 text-xs font-bold text-matica-ink/50">Actualizando estado...</p> : null}
+        </>
+      ) : null}
     </article>
   );
 }
@@ -883,7 +927,7 @@ function OrderDetailModal({
                 <InfoRow label="Cliente principal" value={companyName} />
                 <InfoRow label="Empresa interna" value={branchName} />
                 <InfoRow label="Modalidad" value={fulfillmentTypeLabel(order.fulfillment_type)} />
-                {localOrder ? <InfoRow label="Hora aproximada" value={requestedTimeLabel(order.requested_time)} /> : null}
+                {localOrder ? <InfoRow label="Hora prevista de llegada" value={requestedTimeLabel(order.requested_time)} /> : null}
                 {!localOrder && order.companies?.delivery_address ? (
                   <InfoRow label="Dirección de entrega" value={order.companies.delivery_address} />
                 ) : null}
@@ -954,33 +998,37 @@ function OrderDetailModal({
               </div>
             </section>
 
-            <section className="rounded-lg border border-matica-line p-4">
-              <label className="block space-y-1">
-                <span className="text-xs font-black uppercase text-matica-ink/45">Estado actual</span>
-                <select
-                  className="matica-focus w-full rounded-lg border border-matica-line bg-white px-3 py-3 text-sm font-black disabled:cursor-wait disabled:bg-matica-ink/10"
-                  value={order.status === "pendiente_pago" ? "nuevo" : order.status}
-                  disabled={updating}
-                  onChange={(event) => onStatusChange(event.target.value as OrderStatus)}
-                >
-                  {ORDER_STATUS_OPTIONS.map((option) => (
-                    <option key={option.status} value={option.status}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </section>
+            {!localOrder ? (
+              <section className="rounded-lg border border-matica-line p-4">
+                <label className="block space-y-1">
+                  <span className="text-xs font-black uppercase text-matica-ink/45">Estado actual</span>
+                  <select
+                    className="matica-focus w-full rounded-lg border border-matica-line bg-white px-3 py-3 text-sm font-black disabled:cursor-wait disabled:bg-matica-ink/10"
+                    value={order.status === "pendiente_pago" ? "nuevo" : order.status}
+                    disabled={updating}
+                    onChange={(event) => onStatusChange(event.target.value as OrderStatus)}
+                  >
+                    {ORDER_STATUS_OPTIONS.map((option) => (
+                      <option key={option.status} value={option.status}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </section>
+            ) : null}
 
             <div className="flex flex-col gap-2">
-              <button
-                className="matica-focus flex min-h-12 items-center justify-center gap-2 rounded-lg bg-matica-green px-4 font-black text-white"
-                onClick={() => window.print()}
-                type="button"
-              >
-                <Printer className="h-5 w-5" />
-                Imprimir ticket
-              </button>
+              {!localOrder ? (
+                <button
+                  className="matica-focus flex min-h-12 items-center justify-center gap-2 rounded-lg bg-matica-green px-4 font-black text-white"
+                  onClick={() => window.print()}
+                  type="button"
+                >
+                  <Printer className="h-5 w-5" />
+                  Imprimir ticket
+                </button>
+              ) : null}
               <button
                 className="matica-focus flex min-h-12 items-center justify-center rounded-lg border border-matica-line bg-white px-4 font-black text-matica-ink"
                 onClick={onClose}
@@ -991,7 +1039,7 @@ function OrderDetailModal({
             </div>
           </aside>
 
-          <ThermalTicket order={order} />
+          {!localOrder ? <ThermalTicket order={order} /> : null}
         </div>
       </div>
     </div>
