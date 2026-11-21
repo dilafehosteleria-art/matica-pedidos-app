@@ -46,7 +46,7 @@ export function ThermalTicket({ className = "hidden print:block thermal-ticket",
       </div>
       {localOrder ? (
         <div className="ticket-field-block">
-          <p className="ticket-field-label">HORA APROX.</p>
+          <p className="ticket-field-label">HORA PREVISTA</p>
           <p className="ticket-field-value">&gt; {thermalTicketText(requestedTimeLabel(order.requested_time))}</p>
         </div>
       ) : null}
@@ -97,7 +97,7 @@ export function ThermalTicket({ className = "hidden print:block thermal-ticket",
       <div className="ticket-separator" />
       <p className="ticket-highlight">ESTADO DE PAGO:</p>
       <p className="ticket-payment-status">{thermalTicketText(thermalPaymentLabel(order)).toUpperCase()}</p>
-      <p>ESTADO PEDIDO: {thermalTicketText(ORDER_STATUS_LABELS[order.status])}</p>
+      {!localOrder ? <p>ESTADO PEDIDO: {thermalTicketText(ORDER_STATUS_LABELS[order.status])}</p> : null}
       <div className="ticket-separator" />
       <p className="ticket-center">Gracias por confiar en Matica.</p>
     </section>
