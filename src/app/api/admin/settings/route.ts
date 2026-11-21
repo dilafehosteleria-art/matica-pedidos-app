@@ -108,7 +108,7 @@ function localScheduleFromCompany(company: JsonObject | null) {
     local_order_days: normalizedDays(company.local_order_days) ?? [1, 2, 3, 4, 5],
     local_ordering_open_time: normalizedTime(company.local_ordering_open_time) ?? "09:30",
     local_ordering_close_time: normalizedTime(company.local_ordering_close_time) ?? "15:00",
-    local_ordering_guarantee_cutoff: normalizedTime(company.local_ordering_guarantee_cutoff) ?? "13:30",
+    local_ordering_guarantee_cutoff: normalizedTime(company.local_ordering_guarantee_cutoff) ?? "12:40",
     local_orders_closed_on: validDate(company.local_orders_closed_on) ? company.local_orders_closed_on : null,
     local_only_days: normalizedDays(company.local_only_days, true) ?? []
   };

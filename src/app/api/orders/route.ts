@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { readActiveDailyMenu } from "@/lib/active-daily-menu";
+import { isMenuSaladSandwichProduct } from "@/lib/catalog";
 import { getUnavailableMenuFields, isDailyMenuProduct } from "@/lib/daily-menu-courses";
 import { validateCompanyOrderEmail } from "@/lib/email-rules";
 import { toDateInputValue } from "@/lib/format";
 import { getGlobalSchedule } from "@/lib/global-settings";
 import {
   getLocalOrderState,
+  hasLateLocalMenuConfiguration,
   isLocalFulfillmentType,
   type LocalFulfillmentType,
   type LocalOrderingCompany
@@ -283,6 +285,9 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  const guaranteeCutoff = localOrderState?.guaranteeCutoff
+    ?? selectedCompany.local_ordering_guarantee_cutoff?.slice(0, 5)
+    ?? "12:40";
   const menuSelectionMode: MenuSelectionMode = localOrderState?.afterGuaranteeCutoff
     ? "on_arrival"
     : "confirmed";
@@ -381,13 +386,24 @@ export async function POST(request: NextRequest) {
   }
 
   if (
+    localOrderState &&
+    normalizedItems.some((item) => isMenuSaladSandwichProduct(productMap.get(item.product_id)!))
+  ) {
+    return codedError(
+      "LOCAL_PRODUCT_NOT_AVAILABLE",
+      "El Menú de ensalada pequeña con bocadillo no está disponible para comer o recoger en el restaurante porque no tiene subvención.",
+      409,
+      { fulfillment_type: fulfillmentType }
+    );
+  }
+
+  if (
     menuSelectionMode === "on_arrival" &&
     normalizedItems.some((item) => !isDailyMenuProduct(productMap.get(item.product_id)!.product_type))
   ) {
-    const guaranteeCutoff = selectedCompany.local_ordering_guarantee_cutoff?.slice(0, 5) || "13:30";
     return codedError(
       "LOCAL_MENU_CUTOFF",
-      `A partir de las ${guaranteeCutoff}, los pedidos para el local solo pueden incluir Menú del día o Medio menú. Los platos se eligen al llegar, según disponibilidad.`,
+      `En los pedidos realizados a partir de las ${guaranteeCutoff}, solo puedes incluir Menú del día o Medio menú. Los platos se eligen al llegar, según disponibilidad.`,
       409,
       {
         fulfillment_type: fulfillmentType,
@@ -403,12 +419,11 @@ export async function POST(request: NextRequest) {
 
   if (
     menuSelectionMode === "on_arrival" &&
-    normalizedItems.some((item) => ["first_course", "second_course", "plate"].some((key) => item.metadata[key]?.trim()))
+    normalizedItems.some((item) => hasLateLocalMenuConfiguration(item.metadata))
   ) {
-    const guaranteeCutoff = selectedCompany.local_ordering_guarantee_cutoff?.slice(0, 5) || "13:30";
     return codedError(
       "LOCAL_SELECTION_CHANGED",
-      `A partir de las ${guaranteeCutoff}, los platos se eligen al llegar según disponibilidad. Revisa el carrito para continuar sin una selección confirmada.`,
+      `En los pedidos realizados a partir de las ${guaranteeCutoff}, los platos se eligen al llegar según disponibilidad. Revisa el carrito para continuar sin una selección confirmada.`,
       409,
       {
         fulfillment_type: fulfillmentType,
@@ -421,10 +436,9 @@ export async function POST(request: NextRequest) {
   }
 
   if (menuSelectionMode === "on_arrival" && body.availability_acknowledged !== true) {
-    const guaranteeCutoff = selectedCompany.local_ordering_guarantee_cutoff?.slice(0, 5) || "13:30";
     return codedError(
       "LOCAL_AVAILABILITY_ACK_REQUIRED",
-      `Confirma que, a partir de las ${guaranteeCutoff}, elegirás los platos al llegar según disponibilidad.`,
+      `Confirma que, al realizar el pedido a partir de las ${guaranteeCutoff}, elegirás los platos al llegar según disponibilidad.`,
       409,
       {
         fulfillment_type: fulfillmentType,

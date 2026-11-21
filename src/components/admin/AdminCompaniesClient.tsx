@@ -70,7 +70,7 @@ function getDraft(company: AdminCompany): CompanyDraft {
     local_order_days: localOrderDays,
     local_ordering_open_time: normalizeTimeInput(company.local_ordering_open_time, "09:30"),
     local_ordering_close_time: normalizeTimeInput(company.local_ordering_close_time, "15:00"),
-    local_ordering_guarantee_cutoff: normalizeTimeInput(company.local_ordering_guarantee_cutoff, "13:30"),
+    local_ordering_guarantee_cutoff: normalizeTimeInput(company.local_ordering_guarantee_cutoff, "12:40"),
     local_orders_closed_on: company.local_orders_closed_on ?? null,
     local_only_days: localOnlyDays
   };

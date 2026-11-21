@@ -16,7 +16,7 @@ const bureauVeritasLocalOrdering: LocalOrderingCompany = {
   local_order_days: [1, 2, 3, 4, 5],
   local_ordering_open_time: "09:30:00",
   local_ordering_close_time: "15:00:00",
-  local_ordering_guarantee_cutoff: "13:30:00",
+  local_ordering_guarantee_cutoff: "12:40:00",
   local_orders_closed_on: null,
   local_only_days: [5]
 };
@@ -36,23 +36,47 @@ test("el menú tardío conserva el precio visto sin confundirlo con una selecci�
   assert.equal(hasLateLocalMenuConfiguration({ ...metadata, first_course: "Pasta" }), true);
 });
 
-test("abre a las 09:30 y mantiene garantizada la selección antes de las 13:30", () => {
+test("abre a las 09:30 y mantiene garantizada la selección antes de las 12:40", () => {
   const state = getLocalOrderState(new Date("2026-06-19T07:30:00.000Z"), bureauVeritasLocalOrdering);
 
   assert.equal(state.open, true);
   assert.equal(state.afterGuaranteeCutoff, false);
+  assert.equal(state.guaranteeCutoff, "12:40");
   assert.equal(state.localDate, "2026-06-19");
   assert.equal(state.currentTime, "09:30");
   assert.equal(state.message, "Puedes pedir para comer en el restaurante o recoger hasta las 15:00.");
 });
 
-test("a las 13:30 sigue abierto pero la selección deja de estar garantizada", () => {
+test("una excepción puntual traslada también el corte de garantía", () => {
+  const state = getLocalOrderState(
+    new Date("2026-06-19T10:30:00.000Z"),
+    bureauVeritasLocalOrdering,
+    {
+      exceptions: [{
+        date: "2026-06-19",
+        channel: "local",
+        company_id: null,
+        mode: "custom_hours",
+        open_time: "09:30",
+        close_time: "15:00",
+        service_start: null,
+        service_end: null,
+        menu_guarantee_cutoff: "12:00"
+      }]
+    }
+  );
+
+  assert.equal(state.guaranteeCutoff, "12:00");
+  assert.equal(state.afterGuaranteeCutoff, true);
+});
+
+test("a las 12:40 sigue abierto pero la selección deja de estar garantizada", () => {
   const beforeCutoff = getLocalOrderState(
-    new Date("2026-06-19T11:29:00.000Z"),
+    new Date("2026-06-19T10:39:00.000Z"),
     bureauVeritasLocalOrdering
   );
   const atCutoff = getLocalOrderState(
-    new Date("2026-06-19T11:30:00.000Z"),
+    new Date("2026-06-19T10:40:00.000Z"),
     bureauVeritasLocalOrdering
   );
 
@@ -176,7 +200,7 @@ test("normaliza una configuración administrativa válida", () => {
     local_order_days: [1, 2, 3, 4, 5],
     local_ordering_open_time: "09:30",
     local_ordering_close_time: "15:00",
-    local_ordering_guarantee_cutoff: "13:30",
+    local_ordering_guarantee_cutoff: "12:40",
     local_orders_closed_on: null,
     local_only_days: [5]
   });
