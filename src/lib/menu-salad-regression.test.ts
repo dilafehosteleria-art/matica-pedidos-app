@@ -257,6 +257,9 @@ test("el catálogo y la actualización pública usan solo la carta activa de hoy
             },
             async maybeSingle() {
               if (table === "companies") return { data: company, error: null };
+              if (table === "official_calendar_syncs") {
+                return { data: { year: 2026, complete: true, official_count: 14 }, error: null };
+              }
               assert.equal(table, "daily_menus");
               assert.equal(filters.get("date"), today);
               assert.equal(filters.get("active"), true);

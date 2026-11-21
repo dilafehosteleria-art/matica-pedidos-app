@@ -43,6 +43,14 @@ function mapException(row: ScheduleExceptionRow): ScheduleException | null {
   };
 }
 
+function requestedYear(date?: string) {
+  if (date && /^\d{4}-\d{2}-\d{2}$/.test(date)) return Number(date.slice(0, 4));
+  return Number(new Intl.DateTimeFormat("en", {
+    timeZone: "Europe/Madrid",
+    year: "numeric"
+  }).format(new Date()));
+}
+
 export async function readOperatingCalendar(
   supabase: SupabaseClient,
   options: { companyId?: string | null; date?: string } = {}
@@ -54,15 +62,30 @@ export async function readOperatingCalendar(
   let exceptionQuery = supabase
     .from("schedule_exceptions")
     .select("id,date,channel,company_id,mode,open_time,close_time,service_start_time,service_end_time,menu_guarantee_cutoff");
+  const coverageQuery = supabase
+    .from("official_calendar_syncs")
+    .select("year,complete,official_count")
+    .eq("year", requestedYear(options.date))
+    .maybeSingle();
 
   if (options.date) {
     closureQuery = closureQuery.eq("date", options.date);
     exceptionQuery = exceptionQuery.eq("date", options.date);
   }
 
-  const [closureResult, exceptionResult] = await Promise.all([closureQuery, exceptionQuery]);
+  const [closureResult, exceptionResult, coverageResult] = await Promise.all([
+    closureQuery,
+    exceptionQuery,
+    coverageQuery
+  ]);
 
-  if (closureResult.error || exceptionResult.error) {
+  if (
+    closureResult.error ||
+    exceptionResult.error ||
+    coverageResult.error ||
+    coverageResult.data?.complete !== true ||
+    coverageResult.data?.official_count !== 14
+  ) {
     return { closures: [], exceptions: [], available: false };
   }
 

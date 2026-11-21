@@ -108,6 +108,18 @@ curl -X POST https://TU_DOMINIO/api/cron/close-daily-orders \
 
 El endpoint marca como `entregado` los pedidos del dia en `pendiente_pago`, `preparando` o `listo`. No modifica pedidos en `nuevo` ni `cancelado`. Para pruebas controladas se puede anadir `?date=YYYY-MM-DD`.
 
+### Calendario oficial automático
+
+El servicio cron independiente `Sincronización festivos Madrid` ejecuta cada lunes:
+
+```bash
+npm run sync:official-holidays
+```
+
+Ese proceso llama a `/api/cron/sync-official-holidays` con `CRON_SECRET`, consulta el conjunto oficial de Datos Abiertos del Ayuntamiento de Madrid y comprueba el año actual y el siguiente. Solo reemplaza un año cuando encuentra exactamente 14 festivos válidos, incluidos los 2 locales de Madrid capital. Los cierres manuales y las excepciones puntuales nunca se modifican.
+
+El servicio cron necesita `HOLIDAY_SYNC_BASE_URL` con la URL pública de la app y el mismo `CRON_SECRET` que el servicio web. Si el año siguiente aún no está publicado, termina correctamente y vuelve a comprobarlo la semana siguiente. Si el año actual queda incompleto o cambia el formato oficial, conserva el último calendario bueno, registra el error y falla de forma visible.
+
 ## GitHub
 
 Desde la carpeta del proyecto:
