@@ -26,6 +26,7 @@ import {
   normalizeCatalogText as normalize,
   type PublicSection
 } from "@/lib/catalog";
+import { normalizeOrderOptionValue } from "@/lib/order-metadata";
 import { applyCartPriceUpdate } from "@/lib/cart-price-update";
 import { employeeProductPrice } from "@/lib/product-prices";
 import { DELIVERY_WINDOW } from "@/lib/constants";
@@ -408,7 +409,7 @@ function metadataLabel(metadata?: Record<string, string>) {
 
   return Object.entries(metadata)
     .filter(([key, value]) => Boolean(value) && !key.startsWith("_") && key !== "display_name")
-    .map(([key, value]) => `${formatMetadataKey(key)}: ${value}`)
+    .map(([key, value]) => `${formatMetadataKey(key)}: ${normalizeOrderOptionValue(key, value)}`)
     .join(" · ");
 }
 
@@ -2316,7 +2317,7 @@ function ConfigModal({
 
     for (const group of activeGroups) {
       if (group.key === BREAD_CUTLERY_GROUP_KEY) {
-        metadata.bread = singleValues.bread ? "SÃ­" : "No";
+        metadata.bread = singleValues.bread ? "Sí" : "No";
 
         if (singleValues[CUTLERY_METADATA_KEY]) {
           metadata[CUTLERY_METADATA_KEY] = CUTLERY_SELECTED_LABEL;

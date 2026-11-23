@@ -10,6 +10,10 @@ import type { AdminOrder } from "@/lib/types";
 import { ThermalTicket } from "./ThermalTicket";
 
 type PrintedOrders = { day: string; ids: string[] };
+type PrintMode = "separate" | "combined";
+type PrintRun = { day: string; jobs: AdminOrder[][]; index: number };
+const modeKey = "matica:admin:print-mode";
+
 type PrintBatchProps = {
   orders: AdminOrder[];
   pin: string;
@@ -96,6 +100,8 @@ export function NewOrdersPrintBatch({ orders, pin, onUpdated, onUnauthorized }: 
   const day = toDateInputValue();
   const [confirmed, setConfirmed] = useState<string[]>([]);
   const [ready, setReady] = useState(false);
+  const [mode, setMode] = useState<PrintMode>("separate");
+  const [run, setRun] = useState<PrintRun | null>(null);
   const [printing, setPrinting] = useState<AdminOrder[]>([]);
   const [sending, setSending] = useState(false);
   const [message, setMessage] = useState("");
@@ -108,23 +114,75 @@ export function NewOrdersPrintBatch({ orders, pin, onUpdated, onUnauthorized }: 
     return () => window.removeEventListener(storageKey, update);
   }, [day]);
 
+  useEffect(() => {
+    try {
+      if (window.localStorage.getItem(modeKey) === "combined") setMode("combined");
+    } catch {
+      // This station can still choose a mode with storage disabled.
+    }
+  }, []);
+
+  function chooseMode(next: PrintMode) {
+    setMode(next);
+    try {
+      window.localStorage.setItem(modeKey, next);
+    } catch {
+      // The selection applies for the current visit.
+    }
+  }
+
   const confirmedIds = new Set(confirmed);
   const unprinted = orders.filter((order) => !confirmedIds.has(order.id));
 
+  const activeRun = run?.day === day ? run : null;
+  const currentJob = activeRun?.jobs[activeRun.index];
+
+  function openJob(next: PrintRun) {
+    const job = [...next.jobs[next.index]];
+    flushSync(() => {
+      setMessage("");
+      setRun(next);
+      setPrinting(job);
+    });
+    try {
+      printAndWaitForClose(() => setPrinting((previous) => previous === job ? [] : previous));
+    } catch {
+      setRun(null);
+      setPrinting([]);
+      setMessage("No se pudo abrir la impresión. Las comandas pendientes siguen disponibles.");
+    }
+  }
+
   function printNew() {
     if (!unprinted.length) return;
-    const snapshot = unprinted;
-    flushSync(() => setPrinting(snapshot));
-    try {
-      setMessage("");
-      printAndWaitForClose(() => {
-        setPrinting([]);
-        confirmPrinted(day, snapshot.map((order) => order.id), `¿Se han impreso correctamente todas las comandas del lote (${snapshot.length})?`);
-      });
-    } catch {
-      setPrinting([]);
-      setMessage("No se pudo abrir la impresión. Vuelve a intentarlo.");
+    // A separate call to print for each receipt lets the driver cut at the end of each job.
+    const jobs = mode === "separate" ? unprinted.map((order) => [order]) : [unprinted];
+    openJob({ day, jobs, index: 0 });
+  }
+
+  function confirmCurrentJob() {
+    if (!activeRun || !currentJob || activeRun.day !== toDateInputValue()) return;
+    const printedIds = new Set(readPrinted(day));
+    currentJob.forEach((order) => printedIds.add(order.id));
+    savePrinted(day, [...printedIds]);
+
+    const newIds = new Set(orders.map((order) => order.id));
+    const nextIndex = activeRun.jobs.findIndex((job, index) =>
+      index > activeRun.index && job.some((order) => newIds.has(order.id) && !printedIds.has(order.id))
+    );
+    if (nextIndex !== -1) {
+      openJob({ ...activeRun, index: nextIndex });
+      return;
     }
+    setRun(null);
+    setPrinting([]);
+    setMessage("Impresión confirmada. Ya puedes pasar las comandas impresas a preparación.");
+  }
+
+  function stopRun() {
+    setRun(null);
+    setPrinting([]);
+    setMessage("Tanda detenida. Las comandas sin confirmar se podrán volver a imprimir.");
   }
 
   async function preparePrinted() {
@@ -165,11 +223,41 @@ export function NewOrdersPrintBatch({ orders, pin, onUpdated, onUnauthorized }: 
   return (
     <div className="space-y-2 print:hidden">
       <div className="flex flex-wrap items-center gap-2">
-        <button type="button" disabled={!ready || !unprinted.length || sending || printing.length > 0} className={`${buttonClass} bg-matica-green text-white`} onClick={printNew}>
-          <Printer size={16} aria-hidden="true" />
-          Imprimir todas las comandas nuevas ({unprinted.length})
-        </button>
-        {confirmed.length > 0 ? (
+        {activeRun && currentJob ? (
+          <>
+            <p className="w-full text-sm font-bold" role="status">
+              {currentJob.length === 1
+                ? `Comanda ${activeRun.index + 1} de ${activeRun.jobs.length} · Ref. ${orderReference(currentJob[0].id)}`
+                : `Lote de ${currentJob.length} comandas`}
+            </p>
+            <button type="button" className={`${buttonClass} bg-matica-green text-white`} onClick={confirmCurrentJob}>
+              {activeRun.index + 1 < activeRun.jobs.length ? "Ha salido · Imprimir siguiente" : "Confirmar impresión"}
+            </button>
+            <button type="button" className={`${buttonClass} border border-matica-line`} onClick={() => openJob(activeRun)}>
+              Reimprimir
+            </button>
+            <button type="button" className={buttonClass} onClick={stopRun}>Detener tanda</button>
+          </>
+        ) : (
+          <>
+            <button type="button" disabled={!ready || !unprinted.length || sending} className={`${buttonClass} bg-matica-green text-white`} onClick={printNew}>
+              <Printer size={16} aria-hidden="true" />
+              Imprimir todas las comandas nuevas ({unprinted.length})
+            </button>
+            <label className="flex items-center gap-2 text-sm font-semibold text-matica-ink">
+              Impresión
+              <select
+                className="matica-focus rounded border border-matica-line bg-white px-2 py-2"
+                value={mode}
+                onChange={(event) => chooseMode(event.target.value as PrintMode)}
+              >
+                <option value="separate">Una comanda por trabajo</option>
+                <option value="combined">Todo en un trabajo</option>
+              </select>
+            </label>
+          </>
+        )}
+        {!activeRun && confirmed.length > 0 ? (
           <button type="button" disabled={sending} className={`${buttonClass} border border-matica-green text-matica-green`} onClick={preparePrinted}>
             Pasar impresas a En preparación ({confirmed.length})
           </button>

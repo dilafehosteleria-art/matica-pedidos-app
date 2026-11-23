@@ -1,5 +1,5 @@
 import { formatCurrency } from "./format.ts";
-import { buildOrderItemOptionLines } from "./order-metadata.ts";
+import { buildOrderItemOptionLines, normalizeOrderOptionValue } from "./order-metadata.ts";
 import { operationalPaymentLabel } from "./payment-display.ts";
 import type { AdminOrder, FulfillmentType, OrderItem, OrderStatus } from "./types.ts";
 
@@ -73,6 +73,11 @@ export function thermalTicketText(value: string) {
     .replace(/[^\x20-\x7E\r\n]/g, "");
 }
 
+export function thermalOptionValue(key: string, value: string) {
+  const text = thermalTicketText(value);
+  return key === "bread" || key === "cutlery" ? text.toUpperCase() : text;
+}
+
 export function formatThermalCurrency(value: number) {
   return thermalTicketText(formatCurrency(value));
 }
@@ -87,7 +92,7 @@ export function metadataEntries(metadata?: Record<string, string> | null): Metad
     .map(([key, value]) => ({
       key,
       label: METADATA_LABELS[key] ?? key.replaceAll("_", " ").replace(/^\w/, (letter) => letter.toUpperCase()),
-      value
+      value: normalizeOrderOptionValue(key, value)
     }));
 }
 
@@ -282,9 +287,7 @@ export function buildThermalOrderPlainText(order: AdminOrder) {
     for (const entry of orderItemOptionLines(item.metadata)) {
       lines.push(thermalTicketText(entry.label).toUpperCase());
       for (const value of metadataEntryValues(entry)) {
-        const thermalValue = entry.key === "cutlery" ? thermalTicketText(value).toUpperCase() : thermalTicketText(value);
-
-        lines.push(`> ${thermalValue}`);
+        lines.push(`> ${thermalOptionValue(entry.key, value)}`);
       }
     }
     lines.push("");

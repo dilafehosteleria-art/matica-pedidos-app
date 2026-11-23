@@ -13,6 +13,7 @@ import {
 } from "@/lib/local-ordering";
 import { isRequestedLocalTimeAllowed } from "@/lib/local-order-time";
 import { readOperatingCalendar } from "@/lib/operating-calendar-data";
+import { normalizeOrderOptionValue } from "@/lib/order-metadata";
 import { sendOrderNotificationEmail } from "@/lib/order-email";
 import { isSubsidyConsumingOrder } from "@/lib/order-validity";
 import { getOrderWindowState } from "@/lib/schedule";
@@ -125,7 +126,7 @@ function sanitizeMetadata(value: unknown) {
       continue;
     }
 
-    metadata[key] = entry;
+    metadata[key] = normalizeOrderOptionValue(key, entry);
   }
 
   return metadata;

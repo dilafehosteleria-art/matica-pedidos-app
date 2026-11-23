@@ -12,6 +12,7 @@ import {
   orderItemOptionLines,
   orderReference,
   requestedTimeLabel,
+  thermalOptionValue,
   thermalPaymentLabel,
   thermalTicketText
 } from "@/lib/order-ticket";
@@ -76,7 +77,7 @@ export function ThermalTicket({ className = "hidden print:block thermal-ticket",
               <p className="ticket-option-label">{thermalTicketText(entry.label).toUpperCase()}</p>
               {metadataEntryValues(entry).map((value) => (
                 <p key={`${item.id}-${entry.key}-${value}`} className="ticket-option">
-                  &gt; {entry.key === "cutlery" ? thermalTicketText(value).toUpperCase() : thermalTicketText(value)}
+                  &gt; {thermalOptionValue(entry.key, value)}
                 </p>
               ))}
             </div>
@@ -100,6 +101,7 @@ export function ThermalTicket({ className = "hidden print:block thermal-ticket",
       {!localOrder ? <p>ESTADO PEDIDO: {thermalTicketText(ORDER_STATUS_LABELS[order.status])}</p> : null}
       <div className="ticket-separator" />
       <p className="ticket-center">Gracias por confiar en Matica.</p>
+      <div className="ticket-cut-mark" aria-hidden="true" />
     </section>
   );
 }

@@ -1038,6 +1038,14 @@ for (const product of [dailyMenu, halfMenu]) {
   }
 }
 
+test("un carrito antiguo guarda la opción de pan con la codificación correcta", async (t) => {
+  const h = checkoutHarness(t);
+  const response = await h.submit("13.50", { first_course: "Pasta", bread: "S\u00c3\u00ad" });
+  assert.equal(response.status, 200);
+  const lines = h.writes.find((write) => write.table === "order_items")?.value as Row[];
+  assert.equal((lines[0].metadata as Row).bread, "Sí");
+});
+
 test("carrito anterior a una subida: actualiza precio, conserva selección y permite confirmar de nuevo", async (t) => {
   const h = checkoutHarness(t);
   const { applyCartPriceUpdate } = await import("./cart-price-update.ts");
