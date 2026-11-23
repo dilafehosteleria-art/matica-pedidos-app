@@ -68,7 +68,7 @@ function printAndWaitForClose(onClose: () => void) {
   }
   function finish() {
     cleanup();
-    onClose();
+    window.setTimeout(onClose, 0);
   }
   window.addEventListener("afterprint", finish);
   // A few mobile print dialogs omit afterprint. The next interaction is on the page again.
