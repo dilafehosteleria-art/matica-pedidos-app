@@ -210,3 +210,25 @@ button {
     font-weight: 900;
   }
 }
+
+.order-batch-print {
+  display: none;
+}
+
+@media print {
+  body:has(> .order-batch-print) > :not(.order-batch-print) {
+    display: none !important;
+  }
+
+  .order-batch-print {
+    display: block;
+  }
+
+  .order-batch-print .thermal-ticket {
+    position: static;
+  }
+
+  .order-batch-print .thermal-ticket + .thermal-ticket {
+    break-before: page;
+  }
+}

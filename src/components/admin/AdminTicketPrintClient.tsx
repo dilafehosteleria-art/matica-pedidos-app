@@ -4,6 +4,7 @@ import { Loader2, Printer } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { ADMIN_PIN_KEY } from "./AdminGate";
+import { printIndividualKitchenTicket } from "./NewOrdersPrintBatch";
 import { ThermalTicket } from "./ThermalTicket";
 import type { AdminOrder } from "@/lib/types";
 
@@ -67,7 +68,12 @@ export function AdminTicketPrintClient({ orderId }: AdminTicketPrintClientProps)
     <main className="ticket-print-page">
       <style>{ticketPrintStyles}</style>
       <div className="ticket-screen-actions">
-        <button className="ticket-print-button" onClick={() => window.print()} type="button">
+        <button
+          className="ticket-print-button"
+          disabled={state.status !== "ready"}
+          onClick={() => state.status === "ready" && printIndividualKitchenTicket(state.order)}
+          type="button"
+        >
           <Printer aria-hidden="true" size={18} />
           Imprimir
         </button>

@@ -3,7 +3,7 @@ import test from "node:test";
 import type { AdminOrder } from "./types.ts";
 
 const modulePath = "./admin-order-board.ts";
-const { partitionDailyOrders } = await import(modulePath);
+const { groupDeliveryOrders, partitionDailyOrders } = await import(modulePath);
 
 function order(id: string, overrides: Partial<AdminOrder> = {}): AdminOrder {
   return {
@@ -49,4 +49,24 @@ test("ordena los pedidos locales por hora prevista y deja al final los que no ti
   ]);
 
   assert.deepEqual(result.localOrders.map((item: AdminOrder) => item.id), ["earlier", "later", "without-time"]);
+});
+
+test("agrupa por empresa principal y respeta entrada, empates de hora y nombres coincidentes", () => {
+  const byCompany = (id: string, companyId: string, name: string, hour: string) => order(id, {
+    company_id: companyId, companies: { name },
+    company_branches: { name: "Sede central" },
+    created_at: `2026-11-23T${hour}:00Z`
+  });
+  const result = groupDeliveryOrders([
+    byCompany("b", "2", "Zeta", "09:30"),
+    byCompany("c", "1", "Álamo", "10:15"),
+    byCompany("d", "3", "Álamo", "09:05"),
+    byCompany("a", "1", "Álamo", "10:15"),
+    byCompany("e", "1", "Álamo", "09:20")
+  ]);
+
+  assert.deepEqual(result.map((group: { id: string; orders: AdminOrder[] }) =>
+    [group.id, group.orders.map((item) => item.id)]), [
+    ["1", ["e", "a", "c"]], ["3", ["d"]], ["2", ["b"]]
+  ]);
 });

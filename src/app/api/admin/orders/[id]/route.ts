@@ -1,12 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
+import { MANUAL_ORDER_STATUSES } from "@/lib/admin-order-board";
 import { assertAdmin } from "@/lib/admin";
 import { isVisibleAdminOrder } from "@/lib/order-validity";
 import { getSupabaseAdminClient } from "@/lib/supabase/server";
 import type { AdminOrder, OrderStatus } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
-
-const VALID_STATUSES: OrderStatus[] = ["pendiente_pago", "nuevo", "preparando", "listo", "entregado", "cancelado"];
 
 export async function GET(
   request: NextRequest,
@@ -64,7 +63,7 @@ export async function PATCH(
   const body = (await request.json()) as { status?: OrderStatus };
   const status = body.status;
 
-  if (!status || !VALID_STATUSES.includes(status)) {
+  if (!status || !MANUAL_ORDER_STATUSES.some((allowed) => allowed === status)) {
     return NextResponse.json({ error: "Estado no válido." }, { status: 400 });
   }
 
