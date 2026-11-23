@@ -84,8 +84,13 @@ function isCustomSaladSelection(value?: string) {
   return isCustomSaladChoice(value ?? "");
 }
 
+// Earlier menu forms wrote the UTF-8 bytes of í as two Latin-1 characters.
+export function normalizeOrderOptionValue(key: string, value: string) {
+  return key === "bread" && value.trim() === "S\u00c3\u00ad" ? "Sí" : value;
+}
+
 function splitSelectionValues(key: string, value: string) {
-  const normalized = value.trim();
+  const normalized = normalizeOrderOptionValue(key, value).trim();
 
   if (!normalized) {
     return [];

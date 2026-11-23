@@ -79,6 +79,15 @@ test("el ticket termico usa EUR y texto compatible con impresoras termicas", () 
   assert.equal(thermalTicketText("Menú del día · 10,00 €"), "Menu del dia  10,00 EUR");
 });
 
+test("el pan de pedidos nuevos y antiguos se lee en el panel y se imprime en ASCII", () => {
+  for (const [bread, plain, thermal] of [["Sí", "Sí", "SI"], ["S\u00c3\u00ad", "Sí", "SI"], ["No", "No", "NO"]]) {
+    const order = baseOrder();
+    order.order_items[0].metadata = { bread };
+    assert.ok(buildOrderPlainText(order).includes(`PAN\n> ${plain}\n`));
+    assert.ok(buildThermalOrderPlainText(order).includes(`PAN\n> ${thermal}\n`));
+  }
+});
+
 test("el ticket termico imprime pago online para Stripe pagado", () => {
   const ticket = buildThermalOrderPlainText(
     baseOrder({

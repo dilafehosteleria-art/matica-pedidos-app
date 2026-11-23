@@ -228,6 +228,21 @@ button {
     position: static;
   }
 
+  .thermal-ticket > header,
+  .ticket-print-ticket > header {
+    padding-top: 6mm;
+  }
+
+  /* A visible mark preserves feed below the footer on drivers that trim blank paper. */
+  .ticket-cut-mark {
+    box-sizing: content-box;
+    height: 9mm;
+    width: 12mm;
+    margin: 0 auto 3mm;
+    border-bottom: 1px dashed #000;
+    break-before: avoid;
+  }
+
   .order-batch-print .thermal-ticket + .thermal-ticket {
     break-before: page;
   }
