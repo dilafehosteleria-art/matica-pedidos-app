@@ -4,10 +4,11 @@ import { AlertCircle, BarChart3, Building2, CalendarDays, ClipboardList, Clock, 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AdminGate } from "./AdminGate";
+import { NewOrdersPrintBatch, printIndividualKitchenTicket } from "./NewOrdersPrintBatch";
 import { ReportsPanel } from "./ReportsPanel";
 import { ThermalTicket } from "./ThermalTicket";
 import { hasCutlery } from "@/lib/cutlery";
-import { partitionDailyOrders } from "@/lib/admin-order-board";
+import { groupDeliveryOrders, MANUAL_ORDER_STATUSES, partitionDailyOrders, type ManualOrderStatus } from "@/lib/admin-order-board";
 import { formatCurrency, formatTime } from "@/lib/format";
 import { summarizeDeliveryNoticeCandidates, type DeliveryNoticeSummary } from "@/lib/delivery-notice";
 import {
@@ -27,20 +28,13 @@ import {
 import { operationalPaymentLabel } from "@/lib/payment-display";
 import type { AdminOrder, OrderStatus } from "@/lib/types";
 
-const DAILY_COLUMNS: { key: string; statuses: OrderStatus[]; title: string }[] = [
-  { key: "nuevo", statuses: ["nuevo"], title: "Nuevos" },
-  { key: "preparando", statuses: ["preparando"], title: "En preparación" },
-  { key: "listo", statuses: ["listo"], title: "Listos" },
-  { key: "cancelado", statuses: ["cancelado"], title: "Cancelados" }
-];
+const DAILY_TITLES: Record<ManualOrderStatus, string> = {
+  nuevo: "Nuevos",
+  preparando: "En preparación",
+  cancelado: "Cancelados"
+};
 
-const ORDER_STATUS_OPTIONS: { status: OrderStatus; label: string }[] = [
-  { status: "nuevo", label: "Nuevo" },
-  { status: "preparando", label: "En preparación" },
-  { status: "listo", label: "Listo" },
-  { status: "entregado", label: "Entregado" },
-  { status: "cancelado", label: "Cancelado" }
-];
+const HISTORY_STATUSES: OrderStatus[] = ["nuevo", "preparando", "listo", "entregado", "cancelado"];
 
 type OrdersView = "daily" | "history";
 
@@ -321,6 +315,15 @@ function OrdersBoard({ pin, clearPin }: { pin: string; clearPin: () => void }) {
   }, [loadOrders]);
 
   async function updateStatus(orderId: string, status: OrderStatus) {
+    const order = orders.find((item) => item.id === orderId) ?? historyOrders.find((item) => item.id === orderId);
+    if (status === "cancelado" && order?.payment_status === "paid" && order.payment_method !== "pay_on_delivery") {
+      const provider = order.payment_provider || order.payment_method?.split("_")[0];
+      const gateways: Record<string, string> = { sumup: "SumUp", stripe: "Stripe" };
+      const gateway = gateways[provider ?? ""] ?? "la pasarela de pago";
+      if (!window.confirm(`Este pedido está pagado. Para devolver el importe, tramita el reembolso en ${gateway}. ¿Cancelar el pedido?`)) {
+        return;
+      }
+    }
     setUpdatingId(orderId);
     const response = await fetch(`/api/admin/orders/${orderId}`, {
       method: "PATCH",
@@ -345,12 +348,11 @@ function OrdersBoard({ pin, clearPin }: { pin: string; clearPin: () => void }) {
 
   const { deliveryOrders, localOrders } = useMemo(() => partitionDailyOrders(orders), [orders]);
 
-  const grouped = useMemo(() => {
-    return DAILY_COLUMNS.reduce<Record<string, AdminOrder[]>>((acc, column) => {
-      acc[column.key] = deliveryOrders.filter((order) => column.statuses.includes(order.status));
-      return acc;
-    }, {});
-  }, [deliveryOrders]);
+  const groupsByStatus = useMemo(() => ({
+    nuevo: groupDeliveryOrders(deliveryOrders.filter((order) => order.status === "nuevo")),
+    preparando: groupDeliveryOrders(deliveryOrders.filter((order) => order.status === "preparando")),
+    cancelado: groupDeliveryOrders(deliveryOrders.filter((order) => order.status === "cancelado"))
+  }), [deliveryOrders]);
 
   const deliveryNoticeActions = useMemo(() => {
     const byCompany = new Map<string, DeliveryNoticeAction>();
@@ -427,6 +429,46 @@ function OrdersBoard({ pin, clearPin }: { pin: string; clearPin: () => void }) {
 
     setError("");
     await loadOrders();
+  }
+
+  function renderDeliverySection(status: ManualOrderStatus) {
+    const groups = groupsByStatus[status];
+    const sectionOrders = groups.flatMap((group) => group.orders);
+
+    return (
+      <section className="rounded-lg border border-matica-line bg-white p-3 sm:p-4">
+        <div className="mb-3 flex items-center justify-between gap-2">
+          <h2 className="text-lg font-black">{DAILY_TITLES[status]}</h2>
+          <span className={`rounded-lg px-2 py-1 text-sm font-black ${STATUS_THEME[status].count}`}>
+            {sectionOrders.length}
+          </span>
+        </div>
+        {status === "nuevo" ? (
+          <NewOrdersPrintBatch orders={sectionOrders} pin={pin} onUnauthorized={clearPin} onUpdated={loadOrders} />
+        ) : null}
+        {groups.map((group) => (
+          <div key={group.id} className="mt-3">
+            <h3 className="mb-2 text-sm font-black text-matica-green">{group.name}</h3>
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+              {group.orders.map((order) => (
+                <OrderCard
+                  key={order.id}
+                  order={order}
+                  updating={updatingId === order.id}
+                  onStatusChange={(next) => updateStatus(order.id, next)}
+                  onOpen={() => setSelectedOrder(order)}
+                />
+              ))}
+            </div>
+          </div>
+        ))}
+        {!groups.length ? (
+          <div className="rounded-lg border border-dashed border-matica-line bg-matica-soft p-5 text-center text-sm font-bold text-matica-ink/45">
+            Sin pedidos
+          </div>
+        ) : null}
+      </section>
+    );
   }
 
   return (
@@ -534,12 +576,14 @@ function OrdersBoard({ pin, clearPin }: { pin: string; clearPin: () => void }) {
             ) : null}
           </section>
 
+          {renderDeliverySection("nuevo")}
+
           <section className="rounded-lg border border-matica-green/30 bg-matica-mint/40 p-3 sm:p-4">
             <div className="mb-3 flex items-start justify-between gap-3">
               <div>
                 <h2 className="text-lg font-black text-matica-ink">Comer en el restaurante</h2>
                 <p className="mt-1 text-sm font-semibold text-matica-ink/55">
-                  Personas que vendrán hoy. Incluye a quienes prefieran recoger el pedido; esta lista es solo informativa.
+                  Pedidos para comer aquí o recoger, por hora prevista de llegada.
                 </p>
               </div>
               <span className="shrink-0 rounded-lg bg-matica-green px-2 py-1 text-sm font-black text-white">
@@ -564,32 +608,8 @@ function OrdersBoard({ pin, clearPin }: { pin: string; clearPin: () => void }) {
             </div>
           </section>
 
-          {DAILY_COLUMNS.map((column) => (
-            <section key={column.key} className="rounded-lg border border-matica-line bg-white p-3 sm:p-4">
-              <div className="mb-3 flex items-center justify-between gap-2">
-                <h2 className="text-lg font-black">{column.title}</h2>
-                <span className={`rounded-lg px-2 py-1 text-sm font-black ${STATUS_THEME[column.statuses[0]].count}`}>
-                  {grouped[column.key]?.length ?? 0}
-                </span>
-              </div>
-              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-                {(grouped[column.key] ?? []).map((order) => (
-                  <OrderCard
-                    key={order.id}
-                    order={order}
-                    updating={updatingId === order.id}
-                    onStatusChange={(status) => updateStatus(order.id, status)}
-                    onOpen={() => setSelectedOrder(order)}
-                  />
-                ))}
-                {!grouped[column.key]?.length ? (
-                  <div className="col-span-full rounded-lg border border-dashed border-matica-line bg-matica-soft p-5 text-center text-sm font-bold text-matica-ink/45">
-                    Sin pedidos
-                  </div>
-                ) : null}
-              </div>
-            </section>
-          ))}
+          {renderDeliverySection("preparando")}
+          {renderDeliverySection("cancelado")}
         </div>
       ) : null}
 
@@ -623,9 +643,9 @@ function OrdersBoard({ pin, clearPin }: { pin: string; clearPin: () => void }) {
                 onChange={(event) => setHistoryFilters((current) => ({ ...current, status: event.target.value }))}
               >
                 <option value="">Todos</option>
-                {ORDER_STATUS_OPTIONS.map((option) => (
-                  <option key={option.status} value={option.status}>
-                    {option.label}
+                {HISTORY_STATUSES.map((status) => (
+                  <option key={status} value={status}>
+                    {ORDER_STATUS_LABELS[status]}
                   </option>
                 ))}
               </select>
@@ -702,6 +722,7 @@ function OrdersBoard({ pin, clearPin }: { pin: string; clearPin: () => void }) {
 
       {selectedOrder ? (
         <OrderDetailModal
+          daily={view === "daily"}
           order={selectedOrder}
           updating={updatingId === selectedOrder.id}
           onClose={() => setSelectedOrder(null)}
@@ -709,6 +730,19 @@ function OrdersBoard({ pin, clearPin }: { pin: string; clearPin: () => void }) {
         />
       ) : null}
     </div>
+  );
+}
+
+function ManualStatusOptions({ current }: { current: OrderStatus }) {
+  return (
+    <>
+      {!MANUAL_ORDER_STATUSES.some((status) => status === current) ? (
+        <option value={current} disabled>{ORDER_STATUS_LABELS[current]}</option>
+      ) : null}
+      {MANUAL_ORDER_STATUSES.map((status) => (
+        <option key={status} value={status}>{ORDER_STATUS_LABELS[status]}</option>
+      ))}
+    </>
   );
 }
 
@@ -864,15 +898,11 @@ function OrderCard({
             <span className="text-xs font-black uppercase text-matica-ink/45">Estado</span>
             <select
               className="matica-focus w-full rounded-lg border border-matica-line bg-white px-3 py-3 text-sm font-black disabled:cursor-wait disabled:bg-matica-ink/10"
-              value={order.status === "pendiente_pago" ? "nuevo" : order.status}
+              value={order.status}
               disabled={updating}
               onChange={(event) => onStatusChange(event.target.value as OrderStatus)}
             >
-              {ORDER_STATUS_OPTIONS.map((option) => (
-                <option key={option.status} value={option.status}>
-                  {option.label}
-                </option>
-              ))}
+              <ManualStatusOptions current={order.status} />
             </select>
           </label>
           {updating ? <p className="mt-2 text-xs font-bold text-matica-ink/50">Actualizando estado...</p> : null}
@@ -883,11 +913,13 @@ function OrderCard({
 }
 
 function OrderDetailModal({
+  daily,
   order,
   updating,
   onClose,
   onStatusChange
 }: {
+  daily: boolean;
   order: AdminOrder;
   updating: boolean;
   onClose: () => void;
@@ -1004,15 +1036,11 @@ function OrderDetailModal({
                   <span className="text-xs font-black uppercase text-matica-ink/45">Estado actual</span>
                   <select
                     className="matica-focus w-full rounded-lg border border-matica-line bg-white px-3 py-3 text-sm font-black disabled:cursor-wait disabled:bg-matica-ink/10"
-                    value={order.status === "pendiente_pago" ? "nuevo" : order.status}
+                    value={order.status}
                     disabled={updating}
                     onChange={(event) => onStatusChange(event.target.value as OrderStatus)}
                   >
-                    {ORDER_STATUS_OPTIONS.map((option) => (
-                      <option key={option.status} value={option.status}>
-                        {option.label}
-                      </option>
-                    ))}
+                    <ManualStatusOptions current={order.status} />
                   </select>
                 </label>
               </section>
@@ -1021,7 +1049,7 @@ function OrderDetailModal({
             <div className="flex flex-col gap-2">
               <button
                 className="matica-focus flex min-h-12 items-center justify-center gap-2 rounded-lg bg-matica-green px-4 font-black text-white"
-                onClick={() => window.print()}
+                onClick={() => printIndividualKitchenTicket(order, daily)}
                 type="button"
               >
                 <Printer className="h-5 w-5" />
