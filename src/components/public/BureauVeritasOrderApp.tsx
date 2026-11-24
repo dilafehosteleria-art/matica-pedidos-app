@@ -32,7 +32,7 @@ import { employeeProductPrice } from "@/lib/product-prices";
 import { DELIVERY_WINDOW } from "@/lib/constants";
 import { LEMON_TEA_LABEL, normalizeDrinkChoice } from "@/lib/drink-options";
 import { CUTLERY_METADATA_KEY, CUTLERY_PRICE, CUTLERY_SELECTED_LABEL, hasCutlery } from "@/lib/cutlery";
-import { getDailyMenuCourses, getUnavailableMenuFields, isDailyMenuProduct, type MenuCourseField } from "@/lib/daily-menu-courses";
+import { getDailyMenuCourses, getHalfMenuPlates, getUnavailableMenuFields, isDailyMenuProduct, type MenuCourseField } from "@/lib/daily-menu-courses";
 import { validateCompanyOrderEmail } from "@/lib/email-rules";
 import { formatCurrency } from "@/lib/format";
 import { activeConfigFlowGroups, displayConfigFlowStep, nextConfigFlowStepIndex } from "@/lib/config-flow";
@@ -421,17 +421,17 @@ function menuSecondCourseOptions(menu: DailyMenu | null): MenuDishOption[] {
   return getDailyMenuCourses(menu).second.map((label) => ({ label }));
 }
 
-function hasMenuChoices(product: Product, menu: DailyMenu | null) {
+function hasMenuChoices(product: Product, menu: DailyMenu | null, companySlug: string) {
   if (!isDailyMenuProduct(product.product_type)) {
     return true;
   }
 
-  const { first, second } = getDailyMenuCourses(menu);
-  if (product.product_type === "daily_menu") {
-    return first.length > 0 && second.length > 0;
+  if (product.product_type === "half_menu") {
+    return getHalfMenuPlates(menu, companySlug).length > 0;
   }
 
-  return first.length + second.length > 0;
+  const { first, second } = getDailyMenuCourses(menu);
+  return first.length > 0 && second.length > 0;
 }
 
 function menuDrinkOrDessertOptions(_menu: DailyMenu | null): Option[] {
@@ -440,11 +440,6 @@ function menuDrinkOrDessertOptions(_menu: DailyMenu | null): Option[] {
 
 function grillDrinkOrDessertOptions(_menu: DailyMenu | null) {
   return GRILL_DRINK_OR_DESSERT_OPTIONS;
-}
-
-function menuPlateOptions(menu: DailyMenu | null): Option[] {
-  const { first, second } = getDailyMenuCourses(menu);
-  return [...first, ...second].map((label) => ({ label }));
 }
 
 function halfMenuSecondCourseLabels(menu: DailyMenu | null) {
@@ -542,9 +537,8 @@ function getConfigSpec(
 
   if (product.product_type === "half_menu") {
     const secondCourseLabels = halfMenuSecondCourseLabels(menu);
-    const customSaladPlates = menuPlateOptions(menu)
-      .filter((option) => isCustomSaladChoice(option.label))
-      .map((option) => option.label);
+    const plates = getHalfMenuPlates(menu, company?.slug);
+    const customSaladPlates = plates.filter(isCustomSaladChoice);
     const subsidy = getSubsidyAmount(product.product_type, company);
 
     return {
@@ -555,7 +549,7 @@ function getConfigSpec(
         ...(customSaladPlates.length ? [MEDIUM_SALAD_SIZE_LABEL] : [])
       ],
       groups: [
-        { key: "plate", label: "Plato único", type: "single", options: menuPlateOptions(menu) },
+        { key: "plate", label: "Plato único", type: "single", options: plates.map((label) => ({ label })) },
         ...getSaladGroups({ dependsOn: { key: "plate", values: customSaladPlates } }),
         {
           key: "side",
@@ -829,8 +823,8 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
   }, [catalogLoaded, refreshDailyMenu]);
 
   useEffect(() => {
-    setConfiguring((current) => current && hasMenuChoices(current.product, dailyMenu) ? current : null);
-  }, [dailyMenu]);
+    setConfiguring((current) => current && hasMenuChoices(current.product, dailyMenu, companySlug) ? current : null);
+  }, [dailyMenu, companySlug]);
 
   useEffect(() => {
     void refreshPublicData()
@@ -1081,19 +1075,19 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
 
     for (const item of cart) {
       if (!isDailyMenuProduct(item.product_type)) continue;
-      const fields = getUnavailableMenuFields(item.product_type, item.metadata ?? {}, dailyMenu);
+      const fields = getUnavailableMenuFields(item.product_type, item.metadata ?? {}, dailyMenu, companySlug);
       if (!fields.length) continue;
 
       const section = publicSections.find(({ products }) => products.some(({ id }) => id === item.product_id));
       const product = section?.products.find(({ id }) => id === item.product_id);
-      const replacement = section && product && !product.sold_out && hasMenuChoices(product, dailyMenu)
+      const replacement = section && product && !product.sold_out && hasMenuChoices(product, dailyMenu, companySlug)
         ? { product, section }
         : undefined;
       reviews.set(item.key, { fields, replacement });
     }
 
     return reviews;
-  }, [cart, dailyMenu, lateLocalMode, publicSections]);
+  }, [cart, dailyMenu, lateLocalMode, publicSections, companySlug]);
   const paymentOptions = useMemo(() => publicPaymentOptions(data?.company), [data?.company]);
 
   useEffect(() => {
@@ -1607,7 +1601,7 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
                       </p>
                     </div>
                   </div>
-                  {!lateLocalMode && section.products.some((product) => isDailyMenuProduct(product.product_type) && !product.sold_out && !hasMenuChoices(product, dailyMenu)) ? (
+                  {!lateLocalMode && section.products.some((product) => isDailyMenuProduct(product.product_type) && !product.sold_out && !hasMenuChoices(product, dailyMenu, companySlug)) ? (
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-matica-line bg-white p-3 text-sm font-semibold text-matica-ink/65">
                       <p>El menú de hoy aún no está disponible.</p>
                       <button type="button" className="matica-focus font-bold text-matica-green underline" onClick={() => void refreshDailyMenu()}>
@@ -1721,7 +1715,7 @@ export function BureauVeritasOrderApp({ companySlug = "bureau-veritas" }: { comp
         />
       ) : null}
 
-      {configuring && !lateLocalMode && hasMenuChoices(configuring.product, dailyMenu) ? (
+      {configuring && !lateLocalMode && hasMenuChoices(configuring.product, dailyMenu, companySlug) ? (
         <ConfigModal
           key={configuring.replaceItem?.key ?? `${configuring.product.id}:${getDisplayName(configuring.product, configuring.section.kind)}`}
           product={configuring.product}
@@ -2022,7 +2016,7 @@ function ProductCard({
   allowUnconfiguredMenu?: boolean;
   onOpen: () => void;
 }) {
-  const canAdd = !product.sold_out && (allowUnconfiguredMenu || hasMenuChoices(product, menu));
+  const canAdd = !product.sold_out && (allowUnconfiguredMenu || hasMenuChoices(product, menu, company.slug));
   const subsidy = getSubsidyAmount(product.product_type, company);
   const employeePrice = employeeProductPrice(Number(product.base_price), product.product_type, company.billing_type === "subsidized" ? company.subsidy_rules : []);
   const displayName = getDisplayName(product, section.kind);

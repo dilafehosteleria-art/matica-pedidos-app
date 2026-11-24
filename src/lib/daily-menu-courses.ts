@@ -1,4 +1,5 @@
-import { normalizeMenuSaladChoice } from "./salad-config.ts";
+import { BUREAU_VERITAS_COMPANY } from "./constants.ts";
+import { isCustomSaladChoice, normalizeMenuSaladChoice } from "./salad-config.ts";
 import type { DailyMenu, ProductType } from "./types.ts";
 
 type MenuCourses = Pick<DailyMenu, "first_courses" | "second_courses">;
@@ -18,20 +19,31 @@ export function getDailyMenuCourses(menu: MenuCourses | null) {
   };
 }
 
+export function isHalfMenuPlateAllowedForCompany(plate: string, companySlug: string | undefined) {
+  return companySlug === BUREAU_VERITAS_COMPANY.slug || !isCustomSaladChoice(plate);
+}
+
+export function getHalfMenuPlates(menu: MenuCourses | null, companySlug: string | undefined) {
+  const { first, second } = getDailyMenuCourses(menu);
+  return [...first, ...second].filter((plate) => isHalfMenuPlateAllowedForCompany(plate, companySlug));
+}
+
 export function getUnavailableMenuFields(
   type: MenuProductType,
   metadata: Record<string, string>,
-  menu: MenuCourses | null
+  menu: MenuCourses | null,
+  companySlug: string
 ): MenuCourseField[] {
-  const { first, second } = getDailyMenuCourses(menu);
   const choice = (field: MenuCourseField) =>
     typeof metadata[field] === "string" ? metadata[field].trim() : "";
 
   if (type === "half_menu") {
     const plate = choice("plate");
-    return first.includes(normalizeMenuSaladChoice(plate)) || second.includes(plate) ? [] : ["plate"];
+    const plates = getHalfMenuPlates(menu, companySlug);
+    return plates.includes(plate) || plates.includes(normalizeMenuSaladChoice(plate)) ? [] : ["plate"];
   }
 
+  const { first, second } = getDailyMenuCourses(menu);
   const invalidFields: MenuCourseField[] = [];
   if (!first.includes(normalizeMenuSaladChoice(choice("first_course")))) invalidFields.push("first_course");
   if (!second.includes(choice("second_course"))) invalidFields.push("second_course");

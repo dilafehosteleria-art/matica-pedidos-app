@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { readActiveDailyMenu } from "@/lib/active-daily-menu";
-import { getUnavailableMenuFields, isDailyMenuProduct } from "@/lib/daily-menu-courses";
+import { getUnavailableMenuFields, isDailyMenuProduct, isHalfMenuPlateAllowedForCompany } from "@/lib/daily-menu-courses";
 import { validateCompanyOrderEmail } from "@/lib/email-rules";
 import { toDateInputValue } from "@/lib/format";
 import { getGlobalSchedule } from "@/lib/global-settings";
@@ -469,6 +469,16 @@ export async function POST(request: NextRequest) {
     const type = productMap.get(item.product_id)!.product_type;
     return isDailyMenuProduct(type) ? [{ item, type }] : [];
   });
+  if (menuItems.some(({ item, type }) =>
+    type === "half_menu" && !isHalfMenuPlateAllowedForCompany(item.metadata.plate ?? "", companySlug)
+  )) {
+    return codedError(
+      "HALF_MENU_SALAD_UNAVAILABLE",
+      "La ensalada a tu manera ya no está disponible en el Medio menú de tu empresa. Actualiza la página y vuelve a elegir el plato.",
+      409
+    );
+  }
+
   const today = toDateInputValue(now);
   const recentLimit = new Date(now.getTime() - 36 * 60 * 60 * 1000).toISOString();
   const subsidyRulesQuery = supabase
@@ -518,7 +528,7 @@ export async function POST(request: NextRequest) {
     }
 
     const invalidItems = menuItems.flatMap(({ item, type }) => {
-      const fields = getUnavailableMenuFields(type, item.metadata, menu);
+      const fields = getUnavailableMenuFields(type, item.metadata, menu, companySlug);
       return fields.length ? [{ index: item.index, fields }] : [];
     });
 

@@ -330,6 +330,37 @@ test("medio menú: rechaza el pollo de ayer antes de cobrar y acepta un primero 
   assert.equal(h.menuReads.length, 3);
 });
 
+test("ICF: el Medio menú rechaza una ensalada configurable en una cesta anterior sin registrar ni cobrar el pedido", async (t) => {
+  const h = checkoutHarness(t, halfMenu, "icf");
+  const response = await h.submit("10.00", {
+    plate: "ENSALDA A TUU MANERA",
+    salad_size: "Tamaño Mediano 1000ML",
+    salad_base: "Mezclum de lechugas",
+    protein: "Pollo",
+    toppings: "Maíz",
+    dressing: "Mahonesa de soja"
+  });
+  assert.equal(response.status, 409);
+  assert.equal((await response.json()).code, "HALF_MENU_SALAD_UNAVAILABLE");
+  assert.equal(h.writes.length, 0);
+  assert.equal(h.stripeRequests.length, 0);
+  assert.equal(h.emailCalls(), 0);
+});
+
+test("ICF: el Menú del día conserva la ensalada configurable", async (t) => {
+  const h = checkoutHarness(t, dailyMenu, "icf");
+  const response = await h.submit("13.50", {
+    first_course: "Ensalada a tu manera",
+    salad_size: "Tamaño Pequeño 750ML",
+    salad_base: "Mezclum de lechugas",
+    protein: "Pollo",
+    toppings: "Maíz",
+    dressing: "Mahonesa de soja"
+  });
+  assert.equal(response.status, 200, JSON.stringify(await response.clone().json()));
+  assert.equal((await response.json()).order.company_invoice_total, 13.5);
+});
+
 test("carrito mixto: una sola lectura del menú identifica los platos retirados por línea", async (t) => {
   const h = checkoutHarness(t, dailyMenu, "bureau-veritas", true, [bowl, dailyMenu, halfMenu]);
   const response = await h.submitItems([

@@ -53,6 +53,7 @@ const { activeConfigFlowGroups, nextConfigFlowStepIndex } = await import(flowPat
 type Group = ConfigFlowGroup & { options: { label: string }[] };
 const section = { kind: "menus", title: "Menús" };
 const expectedSaladLabel = "ENSALADA A TU MANERA (diseña tu ensalada con tus ingredientes favoritos)";
+const bureauVeritas = { slug: "bureau-veritas" };
 
 test("Nestea aparece en menú, medio menú, grill y bebidas aunque el catálogo conserve el nombre anterior", () => {
   for (const productType of ["daily_menu", "half_menu"]) {
@@ -73,7 +74,7 @@ test("Nestea aparece en menú, medio menú, grill y bebidas aunque el catálogo 
 for (const productType of ["daily_menu", "half_menu"] as const) {
   test(`${productType}: la configuración real abre los cuatro pasos con el menú del 14/09`, () => {
     const product = { product_type: productType, base_price: productType === "daily_menu" ? 13.5 : 10 } as Product;
-    const spec = getConfigSpec(product, section, menu) as { groups: Group[] };
+    const spec = getConfigSpec(product, section, menu, bureauVeritas) as { groups: Group[] };
     const key = productType === "daily_menu" ? "first_course" : "plate";
     const course = spec.groups.find((group) => group.key === key)!;
     assert.equal(course.options[0].label, expectedSaladLabel);
@@ -84,10 +85,23 @@ for (const productType of ["daily_menu", "half_menu"] as const) {
     assert.equal(active[nextConfigFlowStepIndex(spec.groups, key, selected)].key, "salad_base");
     assert.equal(activeConfigFlowGroups(spec.groups, { [key]: "GAZPACHO ANDALUZ" }).some((group: Group) => group.key === "salad_base"), false);
     const fixedSaladMenu = { ...menu, first_courses: ["ENSALADA MIXTA ( ATUN Y HUEVO )", ...menu.first_courses.slice(1)] };
-    const fixedSpec = getConfigSpec(product, section, fixedSaladMenu);
+    const fixedSpec = getConfigSpec(product, section, fixedSaladMenu, bureauVeritas);
     assert.equal(activeConfigFlowGroups(fixedSpec.groups, { [key]: fixedSaladMenu.first_courses[0] }).some((group: Group) => group.key === "salad_base"), false);
   });
 }
+
+test("sólo Bureau Veritas ofrece la ensalada configurable en Medio menú; los otros platos conservan su orden", () => {
+  const menuWithFixedSalad = { ...menu, first_courses: [menu.first_courses[0], "ENSALADA MIXTA", ...menu.first_courses.slice(2)] };
+  const otherPlates = [...menuWithFixedSalad.first_courses.slice(1), ...menuWithFixedSalad.second_courses];
+  for (const slug of ["bureau-veritas", "icf", "acciona", "empresa-nueva"]) {
+    const half = getConfigSpec({ product_type: "half_menu" }, section, menuWithFixedSalad, { slug });
+    const full = getConfigSpec({ product_type: "daily_menu" }, section, menuWithFixedSalad, { slug });
+    assert.deepEqual(half.groups[0].options.map((option: { label: string }) => option.label),
+      slug === "bureau-veritas" ? [expectedSaladLabel, ...otherPlates] : otherPlates, slug);
+    assert.equal(full.groups[0].options[0].label, expectedSaladLabel, slug);
+    assert.ok(activeConfigFlowGroups(half.groups, { plate: "Pollo a la brasa" }).some((group: Group) => group.key === "side"), slug);
+  }
+});
 
 test("ensalada pequeña + bocadillo y ensalada independiente conservan sus configuradores", () => {
   for (const [name, keys] of [
@@ -108,7 +122,7 @@ for (const scenario of [
 ]) {
   test(`${scenario.name} ${scenario.size}: el modal indica las mezclas y bloquea avanzar o añadir si falta otra base`, () => {
     const product = { name: scenario.name, product_type: scenario.product_type, base_price: 10 };
-    const spec = getConfigSpec(product, section, menu);
+    const spec = getConfigSpec(product, section, menu, bureauVeritas);
     const singles: Record<string, string> = {};
     const multiples: Record<string, string[]> = {};
     for (const group of spec.groups) {
@@ -128,7 +142,7 @@ for (const scenario of [
       multiples.salad_base = bases;
       hookIndex = 0;
       const html = renderToStaticMarkup(createElement(ConfigModal, {
-        product, products: [], section, menu, subsidyAlreadyUsed: true, onClose: () => {}, onAdd: () => {}
+        product, products: [], section, menu, company: bureauVeritas, subsidyAlreadyUsed: true, onClose: () => {}, onAdd: () => {}
       }));
       assert.match(html, /Lentejas/);
       assert.match(html, /Garbanzos/);
