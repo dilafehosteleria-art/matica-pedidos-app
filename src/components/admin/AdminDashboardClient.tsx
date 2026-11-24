@@ -4,6 +4,7 @@ import { AlertCircle, BarChart3, Building2, CalendarDays, ClipboardList, Clock, 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AdminGate } from "./AdminGate";
+import { DailyOrdersSummary } from "./DailyOrdersSummary";
 import { NewOrdersPrintBatch, printIndividualKitchenTicket } from "./NewOrdersPrintBatch";
 import { ReportsPanel } from "./ReportsPanel";
 import { ThermalTicket } from "./ThermalTicket";
@@ -27,6 +28,7 @@ import {
 } from "@/lib/order-ticket";
 import { operationalPaymentLabel } from "@/lib/payment-display";
 import type { AdminOrder, OrderStatus } from "@/lib/types";
+import type { DailyOrderSummary } from "@/lib/admin-daily-summary";
 
 const DAILY_TITLES: Record<ManualOrderStatus, string> = {
   nuevo: "Nuevos",
@@ -239,6 +241,7 @@ function AdminHome() {
 
 function OrdersBoard({ pin, clearPin }: { pin: string; clearPin: () => void }) {
   const [orders, setOrders] = useState<AdminOrder[]>([]);
+  const [dailySummary, setDailySummary] = useState<DailyOrderSummary | null>(null);
   const [view, setView] = useState<OrdersView>("daily");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -253,26 +256,32 @@ function OrdersBoard({ pin, clearPin }: { pin: string; clearPin: () => void }) {
   const [deliveryNoticeSummary, setDeliveryNoticeSummary] = useState<DeliveryNoticeSummary | null>(null);
 
   const loadOrders = useCallback(async () => {
-    const response = await fetch("/api/admin/orders", {
-      headers: { "x-admin-pin": pin }
-    });
-    const payload = await response.json();
+    try {
+      const response = await fetch("/api/admin/orders", {
+        headers: { "x-admin-pin": pin }
+      });
+      const payload = await response.json();
 
-    if (response.status === 401) {
-      clearPin();
-      return;
-    }
+      if (response.status === 401) {
+        clearPin();
+        return;
+      }
 
-    if (!response.ok) {
-      setError(payload.error ?? "No se pudieron cargar los pedidos.");
+      if (!response.ok) {
+        setError(payload.error ?? "No se pudieron cargar los pedidos.");
+        setLoading(false);
+        return;
+      }
+
+      setOrders(payload.orders ?? []);
+      setDailySummary(payload.dailySummary ?? null);
+      setError("");
       setLoading(false);
-      return;
+      setLastRefresh(new Date());
+    } catch {
+      setError("No se pudieron cargar los pedidos. Vuelve a intentarlo en unos segundos.");
+      setLoading(false);
     }
-
-    setOrders(payload.orders ?? []);
-    setError("");
-    setLoading(false);
-    setLastRefresh(new Date());
   }, [clearPin, pin]);
 
   const loadHistory = useCallback(async () => {
@@ -344,6 +353,7 @@ function OrdersBoard({ pin, clearPin }: { pin: string; clearPin: () => void }) {
     setOrders((current) => current.map((order) => (order.id === orderId ? payload.order : order)));
     setHistoryOrders((current) => current.map((order) => (order.id === orderId ? payload.order : order)));
     setSelectedOrder((current) => (current?.id === orderId ? payload.order : current));
+    await loadOrders();
   }
 
   const { deliveryOrders, localOrders } = useMemo(() => partitionDailyOrders(orders), [orders]);
@@ -448,7 +458,7 @@ function OrdersBoard({ pin, clearPin }: { pin: string; clearPin: () => void }) {
         ) : null}
         {groups.map((group) => (
           <div key={group.id} className="mt-3">
-            <h3 className="mb-2 text-sm font-black text-matica-green">{group.name}</h3>
+            <h3 className="mb-2 text-sm font-black text-matica-green">{group.name} ({group.orders.length})</h3>
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
               {group.orders.map((order) => (
                 <OrderCard
@@ -473,7 +483,7 @@ function OrdersBoard({ pin, clearPin }: { pin: string; clearPin: () => void }) {
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-5 sm:px-6 lg:px-8">
-      <div className="mb-4 flex flex-col gap-3 rounded-lg border border-matica-line bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
+      <DailyOrdersSummary summary={dailySummary} loading={loading} visible={view === "daily"}>
         <div>
           <div className="flex items-center gap-2 text-sm font-bold text-matica-ink/60">
             <RefreshCw className="h-4 w-4 text-matica-green" />
@@ -491,7 +501,7 @@ function OrdersBoard({ pin, clearPin }: { pin: string; clearPin: () => void }) {
           <RefreshCw className="h-4 w-4" />
           Actualizar
         </button>
-      </div>
+      </DailyOrdersSummary>
 
       {error ? (
         <div className="mb-4 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-4 text-sm font-bold text-red-700">
