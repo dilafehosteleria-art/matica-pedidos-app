@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { assertAdmin } from "@/lib/admin";
+import { buildDailyOrderSummary } from "@/lib/admin-daily-summary";
 import { isVisibleAdminOrder } from "@/lib/order-validity";
 import { getSupabaseAdminClient } from "@/lib/supabase/server";
 import type { AdminOrder, OrderStatus } from "@/lib/types";
@@ -8,6 +9,7 @@ export const dynamic = "force-dynamic";
 
 const TIME_ZONE = "Europe/Madrid";
 const DAILY_STATUSES: OrderStatus[] = ["nuevo", "preparando", "listo", "cancelado"];
+const DAILY_PAGE_SIZE = 1000;
 const VALID_STATUSES: OrderStatus[] = ["pendiente_pago", "nuevo", "preparando", "listo", "entregado", "cancelado"];
 
 function isDateInput(value: string | null) {
@@ -117,10 +119,48 @@ export async function GET(request: NextRequest) {
   const params = request.nextUrl.searchParams;
   const mode = params.get("mode") === "history" ? "history" : "daily";
   const today = currentMadridDate();
-  const dateFrom = isDateInput(params.get("date_from")) ? params.get("date_from")! : today;
-  const dateTo = isDateInput(params.get("date_to")) ? params.get("date_to")! : dateFrom;
+  const dateFrom = mode === "history" && isDateInput(params.get("date_from")) ? params.get("date_from")! : today;
+  const dateTo = mode === "history" && isDateInput(params.get("date_to")) ? params.get("date_to")! : dateFrom;
   const start = madridDateToUtcIso(dateFrom);
   const end = madridDateToUtcIso(addDays(dateTo, 1));
+
+  if (mode === "daily") {
+    const allOrders: AdminOrder[] = [];
+    let expectedCount: number | null = null;
+
+    do {
+      const { data, error, count } = await supabase
+        .from("orders")
+        .select("*,order_items(*),companies(name,delivery_address),company_branches(name)", { count: "exact" })
+        .gte("created_at", start)
+        .lt("created_at", end)
+        // Include pending rows while paging so payment/status transitions do not move the offsets.
+        .in("status", VALID_STATUSES)
+        .order("created_at", { ascending: true })
+        .order("id", { ascending: true })
+        .range(allOrders.length, allOrders.length + DAILY_PAGE_SIZE - 1);
+
+      if (error) {
+        return NextResponse.json({ error: error.message }, { status: 400 });
+      }
+      if (count === null) {
+        return NextResponse.json({ error: "No se pudo comprobar el total de pedidos del día." }, { status: 503 });
+      }
+
+      expectedCount = count;
+      const page = (data as AdminOrder[] | null) ?? [];
+      if (page.length === 0 && allOrders.length < expectedCount) {
+        return NextResponse.json({ error: "No se pudieron cargar todos los pedidos del día." }, { status: 503 });
+      }
+      allOrders.push(...page);
+    } while (allOrders.length < expectedCount);
+
+    const confirmedOrders = allOrders.filter(isVisibleAdminOrder);
+    return NextResponse.json({
+      orders: confirmedOrders.filter((order) => DAILY_STATUSES.includes(order.status)),
+      dailySummary: buildDailyOrderSummary(confirmedOrders, today)
+    });
+  }
 
   let query = supabase
     .from("orders")
@@ -129,14 +169,10 @@ export async function GET(request: NextRequest) {
     .lt("created_at", end)
     .order("created_at", { ascending: true });
 
-  if (mode === "daily") {
-    query = query.in("status", DAILY_STATUSES);
-  } else {
-    const status = params.get("status")?.trim() ?? "";
+  const status = params.get("status")?.trim() ?? "";
 
-    if (VALID_STATUSES.includes(status as OrderStatus)) {
-      query = query.eq("status", status);
-    }
+  if (VALID_STATUSES.includes(status as OrderStatus)) {
+    query = query.eq("status", status);
   }
 
   const { data, error } = await query;
@@ -146,7 +182,7 @@ export async function GET(request: NextRequest) {
   }
 
   const confirmedOrders = ((data as AdminOrder[] | null) ?? []).filter(isVisibleAdminOrder);
-  const visibleOrders = mode === "history" ? filterHistoryOrders(confirmedOrders, request) : confirmedOrders;
+  const visibleOrders = filterHistoryOrders(confirmedOrders, request);
 
   return NextResponse.json({ orders: visibleOrders });
 }
