@@ -72,7 +72,7 @@ function SummaryMobileRow({
           <dd className="font-black tabular-nums">{counts.preparing}</dd>
         </div>
         <div className="flex items-baseline justify-between gap-2">
-          <dt className="text-matica-ink/65">Local y recogida</dt>
+          <dt className="text-matica-ink/65">Restaurante y recogida</dt>
           <dd className="font-black tabular-nums">{counts.local}</dd>
         </div>
         <div className="flex items-baseline justify-between gap-2">
@@ -80,7 +80,7 @@ function SummaryMobileRow({
           <dd className="font-black tabular-nums text-red-700">{counts.cancelled}</dd>
         </div>
         <div className="col-span-2 flex items-start justify-between gap-3 border-t border-matica-line pt-2 text-sm">
-          <dt className="font-bold">Total válido</dt>
+          <dt className="font-bold">Total pedidos</dt>
           <dd className="text-right font-black tabular-nums text-matica-green">
             {counts.total}
             <PreviousStatusesNote counts={counts} />
@@ -143,11 +143,11 @@ export function DailyOrdersSummary({
             <thead>
               <tr className="text-xs font-semibold text-matica-ink/65">
                 <th className="w-[26%] px-3 pb-3 text-left" scope="col">Empresa</th>
-                <th className="px-2 pb-3 text-right" scope="col">Nuevos<span className="mt-1 block font-normal">reparto</span></th>
-                <th className="px-2 pb-3 text-right" scope="col">En preparación<span className="mt-1 block font-normal">reparto</span></th>
-                <th className="px-2 pb-3 text-right" scope="col">Comer en el local<span className="mt-1 block font-normal">incl. recogida</span></th>
+                <th className="px-2 pb-3 text-right" scope="col">Nuevos</th>
+                <th className="px-2 pb-3 text-right" scope="col">En preparación</th>
+                <th className="px-2 pb-3 text-right" scope="col">Restaurante y recogida</th>
                 <th className="px-2 pb-3 text-right" scope="col">Cancelados</th>
-                <th className="px-3 pb-3 text-right" scope="col">Total válido</th>
+                <th className="px-3 pb-3 text-right" scope="col">Total pedidos</th>
               </tr>
             </thead>
             <tbody>
@@ -168,9 +168,6 @@ export function DailyOrdersSummary({
           {!summary.companies.length ? (
             <p className="py-4 text-center text-sm font-semibold text-matica-ink/60">Todavía no hay pedidos confirmados hoy.</p>
           ) : null}
-          <p className="mt-3 text-xs font-semibold leading-5 text-matica-ink/60">
-            Total válido sin cancelados. Nuevos y En preparación corresponden a reparto; Comer en el local incluye recogida.
-          </p>
         </div>
       ) : null}
     </section>
